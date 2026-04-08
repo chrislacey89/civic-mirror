@@ -39,10 +39,15 @@ fi
 VITEST_OUTPUT=$(pnpm vitest run --changed 2>&1)
 VITEST_EXIT=$?
 
+# Skip if no test files found (exit 1 + "No test files found")
 if [ $VITEST_EXIT -ne 0 ]; then
-  echo "Tests failed for changed files:" >&2
-  echo "$VITEST_OUTPUT" >&2
-  exit 2
+  if echo "$VITEST_OUTPUT" | grep -q "No test files found"; then
+    : # no tests yet, not a failure
+  else
+    echo "Tests failed for changed files:" >&2
+    echo "$VITEST_OUTPUT" >&2
+    exit 2
+  fi
 fi
 
 exit 0

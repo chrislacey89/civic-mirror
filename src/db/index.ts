@@ -1,5 +1,6 @@
-import { drizzle } from 'drizzle-orm/better-sqlite3'
+import { drizzle } from "drizzle-orm/better-sqlite3";
 
-import * as schema from './schema.ts'
+import * as schema from "./schema.ts";
 
-export const db = drizzle(process.env.DATABASE_URL!, { schema })
+const url = process.env.DATABASE_URL ?? "";
+export const db = drizzle(url, { schema });
