@@ -11,3 +11,6 @@ dist-ssr
 .vinxi
 __unconfig*
 todos.json
+.claude/.tdd-active
+.claude/.tdd-skipped
+.claude/.ralph-checked

@@ -6,6 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
+    "preinstall": "npx only-allow pnpm",
     "dev": "vite dev --port 3000",
     "build": "vite build",
     "preview": "vite preview",
@@ -17,7 +18,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "ralph:once": "./ralph-once.sh",
+    "ralph": "./ralph.sh 5"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",
@@ -54,6 +57,7 @@
     "@vitejs/plugin-react": "^5.1.4",
     "dotenv": "^17.3.1",
     "jsdom": "^28.1.0",
+    "lefthook": "^2.1.5",
     "tsx": "^4.21.0",
     "typescript": "^5.7.2",
     "vite": "^7.3.1",
@@ -64,7 +68,8 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "lightningcss",
-      "better-sqlite3"
+      "better-sqlite3",
+      "lefthook"
     ]
   }
 }
