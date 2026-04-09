@@ -5,6 +5,7 @@ import type {
 	FiscalByBody,
 	FiscalByCategory,
 	FiscalByTimePeriod,
+	GoverningBodySummary,
 	MeetingCardData,
 	NotableFiscalDecision,
 } from "#/db/queries.ts";
@@ -19,7 +20,7 @@ import {
 
 type LandingData = {
 	meetings: MeetingCardData[];
-	bodies: Array<{ name: string; slug: string; type: string }>;
+	bodies: GoverningBodySummary[];
 	fiscalByBody: FiscalByBody[];
 	fiscalByCategory: FiscalByCategory[];
 	fiscalByTimePeriod: FiscalByTimePeriod[];
@@ -28,7 +29,8 @@ type LandingData = {
 
 export const Route = createFileRoute("/")({
 	validateSearch: (search: Record<string, unknown>) => ({
-		body: (search.body as string) || undefined,
+		body:
+			typeof search.body === "string" ? search.body || undefined : undefined,
 	}),
 	loaderDeps: ({ search }) => ({ body: search.body }),
 	loader: async ({ deps }): Promise<LandingData> => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, it } from "vitest";
 import { LandingPage } from "./index.tsx";
 
 afterEach(cleanup);
@@ -32,7 +32,7 @@ const populatedData = {
 		{
 			name: "Ellettsville Town Council",
 			slug: "ellettsville-town-council",
-			type: "town",
+			type: "town" as const,
 		},
 	],
 	fiscalByBody: [
@@ -65,31 +65,30 @@ describe("LandingPage", () => {
 	it("renders hero section with site title", () => {
 		render(<LandingPage data={emptyData} />);
 
-		expect(screen.getByText("Civic Mirror")).toBeDefined();
+		screen.getByText("Civic Mirror");
 	});
 
 	it("shows empty state when no meetings exist", () => {
 		render(<LandingPage data={emptyData} />);
 
-		expect(screen.getByText(/no meetings/i)).toBeDefined();
+		screen.getByText(/no meetings/i);
 	});
 
 	it("renders meeting cards when meetings exist", () => {
 		render(<LandingPage data={populatedData} />);
 
-		expect(screen.getByText("March 23, 2026")).toBeDefined();
+		screen.getByText("March 23, 2026");
 	});
 
 	it("renders fiscal summary section", () => {
 		render(<LandingPage data={populatedData} />);
 
-		expect(screen.getByText("Fiscal Overview")).toBeDefined();
+		screen.getByText("Fiscal Overview");
 	});
 
 	it("renders body filter options", () => {
 		render(<LandingPage data={populatedData} />);
 
-		const select = screen.getByRole("combobox");
-		expect(select).toBeDefined();
+		screen.getByRole("combobox");
 	});
 });

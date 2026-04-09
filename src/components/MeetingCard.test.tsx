@@ -21,22 +21,22 @@ describe("MeetingCard", () => {
 	it("renders body name and formatted date", () => {
 		render(<MeetingCard meeting={baseMeeting} />);
 
-		expect(screen.getByText("Ellettsville Town Council")).toBeDefined();
-		expect(screen.getByText("March 23, 2026")).toBeDefined();
+		screen.getByText("Ellettsville Town Council");
+		screen.getByText("March 23, 2026");
 	});
 
 	it("renders highlights as a list", () => {
 		render(<MeetingCard meeting={baseMeeting} />);
 
-		expect(screen.getByText("Approved road repairs")).toBeDefined();
-		expect(screen.getByText("Discussed park budget")).toBeDefined();
+		screen.getByText("Approved road repairs");
+		screen.getByText("Discussed park budget");
 	});
 
 	it("renders fiscal decision count and total spending", () => {
 		render(<MeetingCard meeting={baseMeeting} />);
 
-		expect(screen.getByText("$75,000")).toBeDefined();
-		expect(screen.getByText(/2 decisions/i)).toBeDefined();
+		screen.getByText("$75,000");
+		screen.getByText(/2 decisions/i);
 	});
 
 	it("links to the meeting detail page", () => {

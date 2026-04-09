@@ -2,10 +2,27 @@ import { and, desc, eq, sql, sum } from "drizzle-orm";
 import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema.ts";
 
+export type MeetingType = "regular" | "special" | "workshop";
+export type FiscalStatus = "approved" | "denied" | "tabled";
+export type BodyType = "town" | "county" | "school";
+
+const MEETING_TYPES = new Set<string>(["regular", "special", "workshop"]);
+const FISCAL_STATUSES = new Set<string>(["approved", "denied", "tabled"]);
+
+function parseMeetingType(raw: string): MeetingType {
+	if (MEETING_TYPES.has(raw)) return raw as MeetingType;
+	throw new Error(`Invalid meeting type: ${raw}`);
+}
+
+function parseFiscalStatus(raw: string): FiscalStatus {
+	if (FISCAL_STATUSES.has(raw)) return raw as FiscalStatus;
+	throw new Error(`Invalid fiscal status: ${raw}`);
+}
+
 export type MeetingCardData = {
 	id: number;
 	date: string;
-	meetingType: "regular" | "special" | "workshop";
+	meetingType: MeetingType;
 	bodyName: string;
 	bodySlug: string;
 	highlights: string[];
@@ -36,10 +53,16 @@ export type FiscalByTimePeriod = {
 export type NotableFiscalDecision = {
 	title: string;
 	amount: number;
-	status: "approved" | "denied" | "tabled";
+	status: FiscalStatus;
 	bodyName: string;
 	bodySlug: string;
 	date: string;
+};
+
+export type GoverningBodySummary = {
+	name: string;
+	slug: string;
+	type: BodyType;
 };
 
 /**
@@ -95,7 +118,7 @@ export function listRecentMeetingsQuery(
 		result.push({
 			id: m.id,
 			date: m.date,
-			meetingType: m.meetingType as MeetingCardData["meetingType"],
+			meetingType: parseMeetingType(m.meetingType),
 			bodyName: body.name,
 			bodySlug: body.slug,
 			highlights: summary.highlights as string[],
@@ -224,7 +247,7 @@ export function listNotableFiscalDecisionsQuery(
 	return rows.map((r) => ({
 		title: r.title,
 		amount: r.amount,
-		status: r.status as NotableFiscalDecision["status"],
+		status: parseFiscalStatus(r.status),
 		bodyName: r.bodyName,
 		bodySlug: r.bodySlug,
 		date: r.date,
@@ -236,7 +259,7 @@ export function listNotableFiscalDecisionsQuery(
  */
 export function listGoverningBodiesQuery(
 	db: BetterSQLite3Database<typeof schema>,
-): Array<{ name: string; slug: string; type: string }> {
+): GoverningBodySummary[] {
 	return db
 		.select({
 			name: schema.governingBodies.name,
@@ -245,7 +268,8 @@ export function listGoverningBodiesQuery(
 		})
 		.from(schema.governingBodies)
 		.orderBy(schema.governingBodies.name)
-		.all();
+		.all()
+		.map((r) => ({ ...r, type: r.type as BodyType }));
 }
 
 export type FiscalDecisionDetail = {
@@ -254,7 +278,7 @@ export type FiscalDecisionDetail = {
 	amount: number;
 	originalAmount: string;
 	budgetCategory: string | null;
-	status: "approved" | "denied" | "tabled";
+	status: FiscalStatus;
 	voteRecord: { yea: number; nay: number; abstain: number } | null;
 	vendor: string | null;
 	fundingSource: string | null;
@@ -270,7 +294,7 @@ export type FiscalDecisionDetail = {
 export type MeetingDetail = {
 	id: number;
 	date: string;
-	meetingType: "regular" | "special" | "workshop";
+	meetingType: MeetingType;
 	bodyName: string;
 	bodySlug: string;
 	documents: Array<{
@@ -347,7 +371,7 @@ export function getMeetingByBodyAndDateQuery(
 	return {
 		id: meeting.id,
 		date: meeting.date,
-		meetingType: meeting.meetingType as MeetingDetail["meetingType"],
+		meetingType: parseMeetingType(meeting.meetingType),
 		bodyName: body.name,
 		bodySlug: body.slug,
 		documents: docs.map((d) => ({
@@ -367,7 +391,7 @@ export function getMeetingByBodyAndDateQuery(
 			amount: f.amount,
 			originalAmount: f.originalAmount,
 			budgetCategory: f.budgetCategory,
-			status: f.status as FiscalDecisionDetail["status"],
+			status: parseFiscalStatus(f.status),
 			voteRecord: f.voteRecord as {
 				yea: number;
 				nay: number;

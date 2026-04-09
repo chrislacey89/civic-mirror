@@ -44,33 +44,33 @@ describe("FiscalSummary", () => {
 	it("renders spending by body totals", () => {
 		render(<FiscalSummary {...sampleProps} />);
 
-		expect(screen.getByText("Spending by Body")).toBeDefined();
-		expect(screen.getByText("$75,000")).toBeDefined();
+		screen.getByText("Spending by Body");
+		screen.getByText("$75,000");
 		expect(
 			screen.getAllByText("Ellettsville Town Council").length,
 		).toBeGreaterThanOrEqual(1);
-		expect(screen.getByText("RBBSC School Board")).toBeDefined();
+		screen.getByText("RBBSC School Board");
 	});
 
 	it("renders spending by category", () => {
 		render(<FiscalSummary {...sampleProps} />);
 
-		expect(screen.getByText("Spending by Category")).toBeDefined();
-		expect(screen.getByText("infrastructure")).toBeDefined();
-		expect(screen.getByText("education")).toBeDefined();
+		screen.getByText("Spending by Category");
+		screen.getByText("infrastructure");
+		screen.getByText("education");
 	});
 
 	it("renders spending by time period", () => {
 		render(<FiscalSummary {...sampleProps} />);
 
-		expect(screen.getByText("2026-03")).toBeDefined();
-		expect(screen.getByText("$65,000")).toBeDefined();
+		screen.getByText("2026-03");
+		screen.getByText("$65,000");
 	});
 
 	it("renders notable fiscal decisions", () => {
 		render(<FiscalSummary {...sampleProps} />);
 
-		expect(screen.getByText("Sale Street Road Repairs")).toBeDefined();
+		screen.getByText("Sale Street Road Repairs");
 	});
 
 	it("shows empty state when no fiscal data", () => {
@@ -83,6 +83,6 @@ describe("FiscalSummary", () => {
 			/>,
 		);
 
-		expect(screen.getByText(/no fiscal data/i)).toBeDefined();
+		screen.getByText(/no fiscal data/i);
 	});
 });
