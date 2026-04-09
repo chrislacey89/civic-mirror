@@ -54,6 +54,14 @@ type MeetingInput = {
 	}>;
 };
 
+type TranscriptInput = {
+	meetingId: number;
+	source: "captions" | "whisper";
+	rawText: string;
+	segments?: Array<{ text: string; startMs: number; durationMs: number }>;
+	sourceUrl?: string;
+};
+
 /** Minimal handle returned after a successful store — just enough to reference the meeting. */
 type Meeting = { id: number; date: string; bodyId: number };
 
@@ -74,6 +82,7 @@ interface StorageServiceInterface {
 		slug: string,
 		date: string,
 	): Effect.Effect<MeetingDetail | null, DatabaseError>;
+	storeTranscript(input: TranscriptInput): Effect.Effect<void, DatabaseError>;
 }
 
 class StorageService extends Context.Tag("StorageService")<
@@ -120,6 +129,25 @@ function StorageServiceLive(db: BetterSQLite3Database<typeof schema>) {
 				catch: (error) =>
 					new DatabaseError({
 						operation: "getMeetingByBodyAndDate",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		storeTranscript: (input) =>
+			Effect.try({
+				try: () => {
+					db.insert(schema.transcripts)
+						.values({
+							meetingId: input.meetingId,
+							source: input.source,
+							rawText: input.rawText,
+							segments: input.segments,
+							sourceUrl: input.sourceUrl,
+						})
+						.run();
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "storeTranscript",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
