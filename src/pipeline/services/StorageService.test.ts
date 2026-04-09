@@ -177,4 +177,91 @@ describe("StorageService", () => {
 			expect(result).toBeNull();
 		});
 	});
+
+	describe("storeTranscript", () => {
+		it("stores a transcript linked to a meeting", async () => {
+			const db = createTestDb();
+			const layer = StorageServiceLive(db);
+
+			// First store a meeting
+			const meeting = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(testMeetingInput);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			// Store a transcript for that meeting
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeTranscript({
+						meetingId: meeting.id,
+						source: "captions",
+						rawText: "Meeting called to order. Motion to approve.",
+						segments: [
+							{
+								text: "Meeting called to order.",
+								startMs: 0,
+								durationMs: 3000,
+							},
+							{ text: "Motion to approve.", startMs: 3000, durationMs: 2000 },
+						],
+						sourceUrl: "https://youtube.com/watch?v=test123",
+					});
+				}).pipe(Effect.provide(layer)),
+			);
+
+			// Verify transcript was stored
+			const transcripts = db.select().from(schema.transcripts).all();
+			expect(transcripts).toHaveLength(1);
+			expect(transcripts[0].source).toBe("captions");
+			expect(transcripts[0].rawText).toContain("Motion to approve");
+			expect(transcripts[0].meetingId).toBe(meeting.id);
+			expect(transcripts[0].sourceUrl).toBe(
+				"https://youtube.com/watch?v=test123",
+			);
+		});
+
+		it("stores a whisper transcript with segments", async () => {
+			const db = createTestDb();
+			const layer = StorageServiceLive(db);
+
+			const meeting = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(testMeetingInput);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeTranscript({
+						meetingId: meeting.id,
+						source: "whisper",
+						rawText: "The council discussed budget.",
+						segments: [
+							{
+								text: "The council discussed budget.",
+								startMs: 0,
+								durationMs: 5000,
+							},
+						],
+					});
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const transcripts = db.select().from(schema.transcripts).all();
+			expect(transcripts).toHaveLength(1);
+			expect(transcripts[0].source).toBe("whisper");
+			expect(transcripts[0].segments).toEqual([
+				{
+					text: "The council discussed budget.",
+					startMs: 0,
+					durationMs: 5000,
+				},
+			]);
+		});
+	});
 });
