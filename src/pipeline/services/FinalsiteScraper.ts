@@ -68,7 +68,9 @@ function parseFinalsiteHtml(html: string): FinalsiteMeetingListing[] {
 			if (cells.length < 3) continue;
 
 			const date = (cells[0].textContent ?? "").trim();
-			const meetingType = (cells[1].textContent ?? "").trim();
+			const meetingType = (cells[1].textContent ?? "")
+				.replace(/\s+/g, " ")
+				.trim();
 
 			if (!date) continue;
 

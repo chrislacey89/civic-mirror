@@ -180,5 +180,65 @@ describe("FinalsiteScraper", () => {
 			const results = parseFinalsiteHtml("<div>No content</div>");
 			expect(results).toEqual([]);
 		});
+
+		it("normalizes multiline meeting type text", () => {
+			const fixture = `
+<section class="fsElement fsPanel fsStyleAutoclear" role="tabpanel">
+	<header><h2 class="fsElementTitle"><a>2026</a></h2></header>
+	<div class="fsElementContent">
+		<div class="fsElement fsContent">
+			<div class="fsElementContent">
+				<table class="table-styled">
+					<tbody>
+						<tr><th>Date</th><th>Type</th><th>Links</th></tr>
+						<tr>
+							<td><p>September 15, 2026</p></td>
+							<td>
+								<p>Regular Meeting 6:00 PM</p>
+								<p>Public Hearing</p>
+								<p>Proposed 2027 Budget, 2027 Capital Projects Plan,</p>
+								<p>2027 Bus Replacement Plan</p>
+							</td>
+							<td><p>&nbsp;</p></td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+</section>`;
+			const results = parseFinalsiteHtml(fixture);
+
+			expect(results).toHaveLength(1);
+			// Multiline text should be collapsed to a single line with spaces
+			expect(results[0].meetingType).toBe(
+				"Regular Meeting 6:00 PM Public Hearing Proposed 2027 Budget, 2027 Capital Projects Plan, 2027 Bus Replacement Plan",
+			);
+		});
+
+		it("skips rows with empty date cells", () => {
+			const fixture = `
+<section class="fsElement fsPanel fsStyleAutoclear" role="tabpanel">
+	<header><h2 class="fsElementTitle"><a>2026</a></h2></header>
+	<div class="fsElementContent">
+		<div class="fsElement fsContent">
+			<div class="fsElementContent">
+				<table class="table-styled">
+					<tbody>
+						<tr><th>Date</th><th>Type</th><th>Links</th></tr>
+						<tr>
+							<td></td>
+							<td>Orphan row</td>
+							<td><p>&nbsp;</p></td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</div>
+	</div>
+</section>`;
+			const results = parseFinalsiteHtml(fixture);
+			expect(results).toEqual([]);
+		});
 	});
 });
