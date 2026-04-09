@@ -1,4 +1,6 @@
+import { Context, Effect, Layer } from "effect";
 import { JSDOM } from "jsdom";
+import { NetworkError, ParseError } from "#/pipeline/errors.ts";
 
 /**
  * A single document attached to a Finalsite meeting listing.
@@ -100,5 +102,101 @@ function parseFinalsiteHtml(html: string): FinalsiteMeetingListing[] {
 	return results;
 }
 
-export { parseFinalsiteHtml };
-export type { FinalsiteMeetingListing, FinalsiteDocument };
+/**
+ * Effect teaching note: This is the second implementation of a scraper service,
+ * demonstrating how Effect's dependency injection makes implementations swappable.
+ * Both EgovScraper and FinalsiteScraper can be provided to the same pipeline —
+ * the consumer depends on the Tag, not the concrete implementation. Swapping is
+ * just changing which Layer you provide.
+ */
+
+interface FinalsiteScraperInterface {
+	/** Fetch the Finalsite school board page and parse meeting listings. */
+	scrapeListings(): Effect.Effect<
+		FinalsiteMeetingListing[],
+		NetworkError | ParseError
+	>;
+	/** Download a PDF document by its UUID and return the raw bytes. */
+	downloadDocument(uuid: string): Effect.Effect<ArrayBuffer, NetworkError>;
+}
+
+class FinalsiteScraper extends Context.Tag("FinalsiteScraper")<
+	FinalsiteScraper,
+	FinalsiteScraperInterface
+>() {}
+
+type FinalsiteScraperConfig = {
+	/** Base URL for the Finalsite school board page. */
+	baseUrl: string;
+	/** Injectable fetch function for testability. */
+	fetchFn?: typeof globalThis.fetch;
+};
+
+/**
+ * Effect teaching note: Layer.succeed provides a service value directly —
+ * used when construction can't fail. Each method wraps its HTTP calls in
+ * Effect.tryPromise, converting thrown exceptions into typed NetworkError
+ * or ParseError values. The fetchFn parameter enables testing without
+ * hitting the real Finalsite server.
+ */
+function FinalsiteScraperLive(config: FinalsiteScraperConfig) {
+	const fetchFn = config.fetchFn ?? globalThis.fetch;
+
+	return Layer.succeed(FinalsiteScraper, {
+		scrapeListings: () =>
+			Effect.gen(function* () {
+				const html = yield* Effect.tryPromise({
+					try: async () => {
+						const response = await fetchFn(config.baseUrl);
+						if (!response.ok) {
+							throw new Error(
+								`HTTP ${response.status}: ${response.statusText}`,
+							);
+						}
+						return response.text();
+					},
+					catch: (error) =>
+						new NetworkError({
+							url: config.baseUrl,
+							message: error instanceof Error ? error.message : String(error),
+						}),
+				});
+
+				return yield* Effect.try({
+					try: () => parseFinalsiteHtml(html),
+					catch: (error) =>
+						new ParseError({
+							source: "finalsite",
+							message: error instanceof Error ? error.message : String(error),
+						}),
+				});
+			}),
+
+		downloadDocument: (uuid) =>
+			Effect.tryPromise({
+				try: async () => {
+					const url = new URL(
+						`/fs/resource-manager/view/${uuid}`,
+						config.baseUrl,
+					);
+					const response = await fetchFn(url.toString());
+					if (!response.ok) {
+						throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+					}
+					return response.arrayBuffer();
+				},
+				catch: (error) =>
+					new NetworkError({
+						url: `/fs/resource-manager/view/${uuid}`,
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+	});
+}
+
+export { FinalsiteScraper, FinalsiteScraperLive, parseFinalsiteHtml };
+export type {
+	FinalsiteMeetingListing,
+	FinalsiteDocument,
+	FinalsiteScraperConfig,
+};

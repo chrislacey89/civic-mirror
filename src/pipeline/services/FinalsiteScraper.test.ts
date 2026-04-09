@@ -1,5 +1,10 @@
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { parseFinalsiteHtml } from "./FinalsiteScraper.ts";
+import {
+	FinalsiteScraper,
+	FinalsiteScraperLive,
+	parseFinalsiteHtml,
+} from "./FinalsiteScraper.ts";
 
 // Real HTML structure from rbbschools.net/school-board
 // Minimal fixture: one year panel with one meeting row containing one document link
@@ -239,6 +244,82 @@ describe("FinalsiteScraper", () => {
 </section>`;
 			const results = parseFinalsiteHtml(fixture);
 			expect(results).toEqual([]);
+		});
+	});
+
+	describe("FinalsiteScraperLive", () => {
+		it("fetches page HTML and returns parsed listings via Effect", async () => {
+			const mockFetch = async (url: string) => {
+				if (url === "https://www.rbbschools.net/school-board") {
+					return new Response(SINGLE_ROW_FIXTURE, { status: 200 });
+				}
+				return new Response("Not Found", { status: 404 });
+			};
+
+			const program = Effect.gen(function* () {
+				const scraper = yield* FinalsiteScraper;
+				return yield* scraper.scrapeListings();
+			}).pipe(
+				Effect.provide(
+					FinalsiteScraperLive({
+						baseUrl: "https://www.rbbschools.net/school-board",
+						fetchFn: mockFetch as typeof globalThis.fetch,
+					}),
+				),
+			);
+
+			const results = await Effect.runPromise(program);
+			expect(results).toHaveLength(1);
+			expect(results[0].date).toBe("January 6, 2026");
+			expect(results[0].documents[0].uuid).toBe(
+				"0e57bdf7-c837-4f03-8a79-8a1c69744ee7",
+			);
+		});
+
+		it("returns NetworkError when fetch fails", async () => {
+			const mockFetch = async () => {
+				throw new Error("Connection refused");
+			};
+
+			const program = Effect.gen(function* () {
+				const scraper = yield* FinalsiteScraper;
+				return yield* scraper.scrapeListings();
+			}).pipe(
+				Effect.provide(
+					FinalsiteScraperLive({
+						baseUrl: "https://www.rbbschools.net/school-board",
+						fetchFn: mockFetch as typeof globalThis.fetch,
+					}),
+				),
+			);
+
+			const exit = await Effect.runPromiseExit(program);
+			expect(exit._tag).toBe("Failure");
+		});
+
+		it("downloads a document by UUID", async () => {
+			const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // %PDF
+			const mockFetch = async (url: string) => {
+				if (url.includes("/fs/resource-manager/view/")) {
+					return new Response(pdfBytes, { status: 200 });
+				}
+				return new Response("Not Found", { status: 404 });
+			};
+
+			const program = Effect.gen(function* () {
+				const scraper = yield* FinalsiteScraper;
+				return yield* scraper.downloadDocument("test-uuid-1234");
+			}).pipe(
+				Effect.provide(
+					FinalsiteScraperLive({
+						baseUrl: "https://www.rbbschools.net/school-board",
+						fetchFn: mockFetch as typeof globalThis.fetch,
+					}),
+				),
+			);
+
+			const result = await Effect.runPromise(program);
+			expect(new Uint8Array(result)).toEqual(pdfBytes);
 		});
 	});
 });
