@@ -143,10 +143,10 @@ function fetchCaptionAvailability(
 	});
 }
 
-// biome-ignore lint/suspicious/noExplicitAny: YouTube API response shape varies by endpoint
 function fetchJson(
 	url: string,
 	fetchFn: typeof globalThis.fetch,
+	// biome-ignore lint/suspicious/noExplicitAny: YouTube API JSON shape varies by endpoint
 ): Effect.Effect<any, NetworkError> {
 	return Effect.tryPromise({
 		try: async () => {
