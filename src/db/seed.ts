@@ -1,4 +1,5 @@
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
 import { governingBodies } from "./schema.ts";
 
 /**
@@ -72,14 +73,22 @@ const GOVERNING_BODIES = [
 	},
 ] as const;
 
-const url = process.env.DATABASE_URL ?? "dev.db";
-const db = drizzle(url);
+const client = createClient({
+	url: process.env.TURSO_DATABASE_URL ?? "file:dev.db",
+	authToken: process.env.TURSO_AUTH_TOKEN,
+});
+const db = drizzle(client);
 
-for (const body of GOVERNING_BODIES) {
-	db.insert(governingBodies)
-		.values(body)
-		.onConflictDoNothing({ target: governingBodies.slug })
-		.run();
+async function seed() {
+	for (const body of GOVERNING_BODIES) {
+		await db
+			.insert(governingBodies)
+			.values(body)
+			.onConflictDoNothing({ target: governingBodies.slug })
+			.run();
+	}
+
+	console.log(`Seeded ${GOVERNING_BODIES.length} governing bodies.`);
 }
 
-console.log(`Seeded ${GOVERNING_BODIES.length} governing bodies.`);
+seed();

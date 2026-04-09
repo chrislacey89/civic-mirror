@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { Context, Effect, Layer } from "effect";
 import type { MeetingDetail } from "#/db/queries.ts";
 import { getMeetingByBodyAndDateQuery } from "#/db/queries.ts";
@@ -106,16 +106,16 @@ class StorageService extends Context.Tag("StorageService")<
  *     (e.g. opening a DB connection that might be refused).
  *
  * Here we use `Layer.succeed` because the `db` handle is already open (passed in
- * as a closure parameter). Each method wraps its work in `Effect.try`, which
- * catches synchronous exceptions and maps them to typed `DatabaseError` values.
+ * as a closure parameter). Each method wraps its work in `Effect.tryPromise`, which
+ * catches async exceptions and maps them to typed `DatabaseError` values.
  *
  * @param db - An open Drizzle database handle. In tests this is `:memory:` SQLite;
- *             in production it's the file-backed database.
+ *             in production it's the Turso-backed database.
  */
-function StorageServiceLive(db: BetterSQLite3Database<typeof schema>) {
+function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 	return Layer.succeed(StorageService, {
 		storeMeeting: (input) =>
-			Effect.try({
+			Effect.tryPromise({
 				try: () => storeMeetingTransaction(db, input),
 				catch: (error) =>
 					new DatabaseError({
@@ -124,7 +124,7 @@ function StorageServiceLive(db: BetterSQLite3Database<typeof schema>) {
 					}),
 			}),
 		getMeetingByBodyAndDate: (slug, date) =>
-			Effect.try({
+			Effect.tryPromise({
 				try: () => getMeetingByBodyAndDateQuery(db, slug, date),
 				catch: (error) =>
 					new DatabaseError({
@@ -133,9 +133,10 @@ function StorageServiceLive(db: BetterSQLite3Database<typeof schema>) {
 					}),
 			}),
 		storeTranscript: (input) =>
-			Effect.try({
-				try: () => {
-					db.insert(schema.transcripts)
+			Effect.tryPromise({
+				try: async () => {
+					await db
+						.insert(schema.transcripts)
 						.values({
 							meetingId: input.meetingId,
 							source: input.source,
@@ -155,21 +156,20 @@ function StorageServiceLive(db: BetterSQLite3Database<typeof schema>) {
 }
 
 /**
- * Effect teaching note: We use a plain synchronous function for the transaction
- * body because better-sqlite3 transactions are synchronous. Effect.tryPromise
- * wraps this at the boundary, converting thrown exceptions into typed
- * DatabaseError values that propagate through the Effect error channel.
+ * Effect teaching note: The transaction body is now async because libsql
+ * (Turso) uses an async driver. Drizzle's transaction API handles this
+ * transparently — the callback receives an async transaction handle.
  *
  * Key invariant: A meeting must never exist with a summary but without its
  * source text. The transaction ensures all-or-nothing writes.
  */
-function storeMeetingTransaction(
-	db: BetterSQLite3Database<typeof schema>,
+async function storeMeetingTransaction(
+	db: LibSQLDatabase<typeof schema>,
 	input: MeetingInput,
-): Meeting {
-	return db.transaction((tx) => {
+): Promise<Meeting> {
+	return await db.transaction(async (tx) => {
 		// Resolve governing body by slug
-		const body = tx
+		const body = await tx
 			.select()
 			.from(schema.governingBodies)
 			.where(eq(schema.governingBodies.slug, input.bodySlug))
@@ -180,7 +180,7 @@ function storeMeetingTransaction(
 		}
 
 		// Insert meeting
-		const meeting = tx
+		const meeting = await tx
 			.insert(schema.meetings)
 			.values({
 				bodyId: body.id,
@@ -192,7 +192,8 @@ function storeMeetingTransaction(
 
 		// Insert documents
 		for (const doc of input.documents) {
-			tx.insert(schema.documents)
+			await tx
+				.insert(schema.documents)
 				.values({
 					meetingId: meeting.id,
 					sourceUrl: doc.sourceUrl,
@@ -203,7 +204,8 @@ function storeMeetingTransaction(
 		}
 
 		// Insert summary
-		tx.insert(schema.summaries)
+		await tx
+			.insert(schema.summaries)
 			.values({
 				meetingId: meeting.id,
 				highlights: input.summary.highlights,
@@ -214,7 +216,8 @@ function storeMeetingTransaction(
 
 		// Insert fiscal decisions
 		for (const fd of input.fiscalDecisions) {
-			tx.insert(schema.fiscalDecisions)
+			await tx
+				.insert(schema.fiscalDecisions)
 				.values({
 					meetingId: meeting.id,
 					title: fd.title,
@@ -236,7 +239,8 @@ function storeMeetingTransaction(
 		// Insert budget discussions
 		if (input.budgetDiscussions) {
 			for (const bd of input.budgetDiscussions) {
-				tx.insert(schema.budgetDiscussions)
+				await tx
+					.insert(schema.budgetDiscussions)
 					.values({
 						meetingId: meeting.id,
 						topic: bd.topic,
