@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MeetingsBodySlugDateRouteImport } from './routes/meetings/$bodySlug/$date'
 
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
@@ -22,31 +23,40 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MeetingsBodySlugDateRoute = MeetingsBodySlugDateRouteImport.update({
+  id: '/meetings/$bodySlug/$date',
+  path: '/meetings/$bodySlug/$date',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/meetings/$bodySlug/$date': typeof MeetingsBodySlugDateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/meetings/$bodySlug/$date': typeof MeetingsBodySlugDateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/meetings/$bodySlug/$date': typeof MeetingsBodySlugDateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about'
+  fullPaths: '/' | '/about' | '/meetings/$bodySlug/$date'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about'
-  id: '__root__' | '/' | '/about'
+  to: '/' | '/about' | '/meetings/$bodySlug/$date'
+  id: '__root__' | '/' | '/about' | '/meetings/$bodySlug/$date'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  MeetingsBodySlugDateRoute: typeof MeetingsBodySlugDateRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -65,12 +75,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/meetings/$bodySlug/$date': {
+      id: '/meetings/$bodySlug/$date'
+      path: '/meetings/$bodySlug/$date'
+      fullPath: '/meetings/$bodySlug/$date'
+      preLoaderRoute: typeof MeetingsBodySlugDateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  MeetingsBodySlugDateRoute: MeetingsBodySlugDateRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
