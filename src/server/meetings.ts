@@ -1,113 +1,22 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, eq } from "drizzle-orm";
-import { db } from "#/db/index.ts";
+import { drizzle } from "drizzle-orm/better-sqlite3";
 import * as schema from "#/db/schema.ts";
+import { getMeetingByBodyAndDateQuery } from "#/pipeline/services/StorageService.ts";
+
+const url = process.env.DATABASE_URL ?? "";
+const db = drizzle(url, { schema });
 
 /**
  * Server function to load a meeting's full detail by governing body slug and date.
  *
- * This is a TanStack Start server function — it runs exclusively on the server
- * but can be called from React components (via the route `loader`) as if it were
- * a regular function. TanStack serializes the input/output across the network
- * boundary automatically.
- *
- * Note: This currently duplicates the query logic from StorageService's
- * `getMeetingByBodyAndDate`. In the tracer bullet this is intentional — it
- * proves the server function layer works independently. A future refactor will
- * have this delegate to the Effect service instead.
- *
- * @returns The assembled meeting detail, or `null` if the body/date combo doesn't exist.
+ * Delegates to the shared `getMeetingByBodyAndDateQuery` from StorageService,
+ * keeping the query logic in one place. The server function is a thin wrapper
+ * that bridges TanStack Start's RPC layer to the query function.
  */
 export const getMeetingByBodyAndDate = createServerFn({
 	method: "GET",
 })
 	.inputValidator((input: { bodySlug: string; date: string }) => input)
 	.handler(async ({ data }) => {
-		const body = db
-			.select()
-			.from(schema.governingBodies)
-			.where(eq(schema.governingBodies.slug, data.bodySlug))
-			.get();
-
-		if (!body) return null;
-
-		const meeting = db
-			.select()
-			.from(schema.meetings)
-			.where(
-				and(
-					eq(schema.meetings.bodyId, body.id),
-					eq(schema.meetings.date, data.date),
-				),
-			)
-			.get();
-
-		if (!meeting) return null;
-
-		const docs = db
-			.select()
-			.from(schema.documents)
-			.where(eq(schema.documents.meetingId, meeting.id))
-			.all();
-
-		const summary = db
-			.select()
-			.from(schema.summaries)
-			.where(eq(schema.summaries.meetingId, meeting.id))
-			.get();
-
-		if (!summary) return null;
-
-		const fiscals = db
-			.select()
-			.from(schema.fiscalDecisions)
-			.where(eq(schema.fiscalDecisions.meetingId, meeting.id))
-			.all();
-
-		const discussions = db
-			.select()
-			.from(schema.budgetDiscussions)
-			.where(eq(schema.budgetDiscussions.meetingId, meeting.id))
-			.all();
-
-		return {
-			id: meeting.id,
-			date: meeting.date,
-			meetingType: meeting.meetingType,
-			bodyName: body.name,
-			bodySlug: body.slug,
-			documents: docs.map((d) => ({
-				sourceUrl: d.sourceUrl,
-				rawText: d.rawText,
-				documentType: d.documentType,
-			})),
-			summary: {
-				highlights: summary.highlights as string[],
-				prose: summary.prose,
-				model: summary.model,
-			},
-			fiscalDecisions: fiscals.map((f) => ({
-				title: f.title,
-				description: f.description,
-				amount: f.amount,
-				originalAmount: f.originalAmount,
-				budgetCategory: f.budgetCategory,
-				status: f.status,
-				voteRecord: f.voteRecord as {
-					yea: number;
-					nay: number;
-					abstain: number;
-				} | null,
-				vendor: f.vendor,
-				fundingSource: f.fundingSource,
-				ordinanceNumber: f.ordinanceNumber,
-				confidence: f.confidence,
-				isRecurring: f.isRecurring,
-			})),
-			budgetDiscussions: discussions.map((bd) => ({
-				topic: bd.topic,
-				estimatedAmount: bd.estimatedAmount,
-				notes: bd.notes,
-			})),
-		};
+		return getMeetingByBodyAndDateQuery(db, data.bodySlug, data.date);
 	});

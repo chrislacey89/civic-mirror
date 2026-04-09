@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import type { FiscalDecisionDetail } from "#/pipeline/services/StorageService.ts";
 import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
 
 /**
@@ -149,20 +150,7 @@ function MeetingDetailPage() {
 	);
 }
 
-type FiscalDecision = {
-	title: string;
-	description: string;
-	amount: number;
-	originalAmount: string;
-	budgetCategory: string | null;
-	status: string;
-	voteRecord: { yea: number; nay: number; abstain: number } | null;
-	vendor: string | null;
-	fundingSource: string | null;
-	ordinanceNumber: string | null;
-	confidence: number;
-	isRecurring: boolean;
-};
+type FiscalDecision = FiscalDecisionDetail;
 
 /**
  * Card component for a single fiscal decision.

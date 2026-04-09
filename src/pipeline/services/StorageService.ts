@@ -55,6 +55,21 @@ type MeetingInput = {
 /** Minimal handle returned after a successful store — just enough to reference the meeting. */
 type Meeting = { id: number; date: string; bodyId: number };
 
+type FiscalDecisionDetail = {
+	title: string;
+	description: string;
+	amount: number;
+	originalAmount: string;
+	budgetCategory: string | null;
+	status: string;
+	voteRecord: { yea: number; nay: number; abstain: number } | null;
+	vendor: string | null;
+	fundingSource: string | null;
+	ordinanceNumber: string | null;
+	confidence: number;
+	isRecurring: boolean;
+};
+
 /**
  * The "read shape" — a fully assembled meeting with all related records
  * joined together. This is what the server function returns to the UI.
@@ -71,20 +86,7 @@ type MeetingDetail = {
 		documentType: string;
 	}>;
 	summary: { highlights: string[]; prose: string; model: string };
-	fiscalDecisions: Array<{
-		title: string;
-		description: string;
-		amount: number;
-		originalAmount: string;
-		budgetCategory: string | null;
-		status: string;
-		voteRecord: { yea: number; nay: number; abstain: number } | null;
-		vendor: string | null;
-		fundingSource: string | null;
-		ordinanceNumber: string | null;
-		confidence: number;
-		isRecurring: boolean;
-	}>;
+	fiscalDecisions: Array<FiscalDecisionDetail>;
 	budgetDiscussions: Array<{
 		topic: string;
 		estimatedAmount: number | null;
@@ -357,5 +359,5 @@ function getMeetingByBodyAndDateQuery(
 	};
 }
 
-export { StorageService, StorageServiceLive };
-export type { MeetingInput, Meeting, MeetingDetail };
+export { StorageService, StorageServiceLive, getMeetingByBodyAndDateQuery };
+export type { MeetingInput, Meeting, MeetingDetail, FiscalDecisionDetail };
