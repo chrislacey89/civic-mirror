@@ -157,12 +157,22 @@ function MeetingDetailPage() {
  * vendor, funding source, ordinance number) in a compact flex row beneath.
  */
 function FiscalCard({ decision }: { decision: FiscalDecisionDetail }) {
-	const statusColor =
-		decision.status === "approved"
-			? "text-emerald-700 bg-emerald-50"
-			: decision.status === "denied"
-				? "text-red-700 bg-red-50"
-				: "text-amber-700 bg-amber-50";
+	let statusColor: string;
+	switch (decision.status) {
+		case "approved":
+			statusColor = "text-emerald-700 bg-emerald-50";
+			break;
+		case "denied":
+			statusColor = "text-red-700 bg-red-50";
+			break;
+		case "tabled":
+			statusColor = "text-amber-700 bg-amber-50";
+			break;
+		default: {
+			const _exhaustive: never = decision.status;
+			return _exhaustive;
+		}
+	}
 
 	return (
 		<div className="rounded-xl border border-[rgba(23,58,64,0.1)] p-4">

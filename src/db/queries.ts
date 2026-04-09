@@ -8,7 +8,7 @@ export type FiscalDecisionDetail = {
 	amount: number;
 	originalAmount: string;
 	budgetCategory: string | null;
-	status: string;
+	status: "approved" | "denied" | "tabled";
 	voteRecord: { yea: number; nay: number; abstain: number } | null;
 	vendor: string | null;
 	fundingSource: string | null;
@@ -24,13 +24,13 @@ export type FiscalDecisionDetail = {
 export type MeetingDetail = {
 	id: number;
 	date: string;
-	meetingType: string;
+	meetingType: "regular" | "special" | "workshop";
 	bodyName: string;
 	bodySlug: string;
 	documents: Array<{
 		sourceUrl: string;
 		rawText: string;
-		documentType: string;
+		documentType: "agenda" | "minutes" | "ordinance";
 	}>;
 	summary: { highlights: string[]; prose: string; model: string };
 	fiscalDecisions: Array<FiscalDecisionDetail>;
@@ -101,13 +101,14 @@ export function getMeetingByBodyAndDateQuery(
 	return {
 		id: meeting.id,
 		date: meeting.date,
-		meetingType: meeting.meetingType,
+		meetingType: meeting.meetingType as MeetingDetail["meetingType"],
 		bodyName: body.name,
 		bodySlug: body.slug,
 		documents: docs.map((d) => ({
 			sourceUrl: d.sourceUrl,
 			rawText: d.rawText,
-			documentType: d.documentType,
+			documentType:
+				d.documentType as MeetingDetail["documents"][number]["documentType"],
 		})),
 		summary: {
 			highlights: summary.highlights as string[],
@@ -120,7 +121,7 @@ export function getMeetingByBodyAndDateQuery(
 			amount: f.amount,
 			originalAmount: f.originalAmount,
 			budgetCategory: f.budgetCategory,
-			status: f.status,
+			status: f.status as FiscalDecisionDetail["status"],
 			voteRecord: f.voteRecord as {
 				yea: number;
 				nay: number;
