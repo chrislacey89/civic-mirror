@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { FiscalDecisionDetail } from "#/pipeline/services/StorageService.ts";
+import type { FiscalDecisionDetail } from "#/db/queries.ts";
 import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
 
 /**
@@ -150,15 +150,13 @@ function MeetingDetailPage() {
 	);
 }
 
-type FiscalDecision = FiscalDecisionDetail;
-
 /**
  * Card component for a single fiscal decision.
  * Color-codes the status badge: green (approved), red (denied), amber (tabled).
  * Displays the dollar amount prominently, with metadata (vote record, category,
  * vendor, funding source, ordinance number) in a compact flex row beneath.
  */
-function FiscalCard({ decision }: { decision: FiscalDecision }) {
+function FiscalCard({ decision }: { decision: FiscalDecisionDetail }) {
 	const statusColor =
 		decision.status === "approved"
 			? "text-emerald-700 bg-emerald-50"
