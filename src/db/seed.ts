@@ -1,6 +1,17 @@
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { governingBodies } from "./schema.ts";
 
+/**
+ * Seed script for all governing bodies that Civic Mirror tracks.
+ *
+ * Idempotent — uses `onConflictDoNothing` on the unique `slug` column,
+ * so running this multiple times is safe and won't create duplicates.
+ *
+ * Three tiers of government are represented:
+ * - **town**: Ellettsville boards and commissions (source: eGov document center)
+ * - **county**: Monroe County bodies (source: TBD)
+ * - **school**: Richland-Bean Blossom school board (source: Finalsite)
+ */
 const GOVERNING_BODIES = [
 	{
 		name: "Ellettsville Town Council",

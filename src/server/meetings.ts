@@ -3,6 +3,21 @@ import { and, eq } from "drizzle-orm";
 import { db } from "#/db/index.ts";
 import * as schema from "#/db/schema.ts";
 
+/**
+ * Server function to load a meeting's full detail by governing body slug and date.
+ *
+ * This is a TanStack Start server function — it runs exclusively on the server
+ * but can be called from React components (via the route `loader`) as if it were
+ * a regular function. TanStack serializes the input/output across the network
+ * boundary automatically.
+ *
+ * Note: This currently duplicates the query logic from StorageService's
+ * `getMeetingByBodyAndDate`. In the tracer bullet this is intentional — it
+ * proves the server function layer works independently. A future refactor will
+ * have this delegate to the Effect service instead.
+ *
+ * @returns The assembled meeting detail, or `null` if the body/date combo doesn't exist.
+ */
 export const getMeetingByBodyAndDate = createServerFn({
 	method: "GET",
 })

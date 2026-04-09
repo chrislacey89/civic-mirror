@@ -12,6 +12,11 @@ import { DatabaseError } from "#/pipeline/errors.ts";
  * requires a StorageService in its environment — and won't compile without one.
  */
 
+/**
+ * Everything needed to persist one meeting and all its child records.
+ * This is the "write shape" — what the pipeline produces after scraping
+ * and summarizing, ready to be stored atomically in a single transaction.
+ */
 type MeetingInput = {
 	bodySlug: string;
 	date: string;
@@ -47,8 +52,13 @@ type MeetingInput = {
 	}>;
 };
 
+/** Minimal handle returned after a successful store — just enough to reference the meeting. */
 type Meeting = { id: number; date: string; bodyId: number };
 
+/**
+ * The "read shape" — a fully assembled meeting with all related records
+ * joined together. This is what the server function returns to the UI.
+ */
 type MeetingDetail = {
 	id: number;
 	date: string;
@@ -82,8 +92,19 @@ type MeetingDetail = {
 	}>;
 };
 
+/**
+ * The contract that StorageService consumers depend on.
+ *
+ * Effect teaching note: Notice the return types are Effect values, not Promises.
+ * `Effect.Effect<Meeting, DatabaseError>` means "a computation that produces a
+ * Meeting on success, or a DatabaseError on failure." The third type parameter
+ * (requirements) is omitted here — it defaults to `never`, meaning these
+ * methods have no additional service dependencies of their own.
+ */
 interface StorageServiceInterface {
+	/** Persist a full meeting and all child records in a single transaction. */
 	storeMeeting(input: MeetingInput): Effect.Effect<Meeting, DatabaseError>;
+	/** Look up a meeting by governing body slug + ISO date. Returns null if not found. */
 	getMeetingByBodyAndDate(
 		slug: string,
 		date: string,
@@ -101,6 +122,21 @@ class StorageService extends Context.Tag("StorageService")<
  * keeping the Effect service decoupled from how the database is constructed.
  * This makes testing trivial — pass an in-memory SQLite db in tests, the real
  * db file in production.
+ */
+/**
+ * Constructs the live (real database) implementation of StorageService.
+ *
+ * Effect teaching note — Layer.succeed vs Layer.effect:
+ *   - `Layer.succeed` provides a value directly — used when construction can't fail.
+ *   - `Layer.effect` provides via an Effect — used when construction itself may fail
+ *     (e.g. opening a DB connection that might be refused).
+ *
+ * Here we use `Layer.succeed` because the `db` handle is already open (passed in
+ * as a closure parameter). Each method wraps its work in `Effect.try`, which
+ * catches synchronous exceptions and maps them to typed `DatabaseError` values.
+ *
+ * @param db - An open Drizzle database handle. In tests this is `:memory:` SQLite;
+ *             in production it's the file-backed database.
  */
 function StorageServiceLive(db: BetterSQLite3Database<typeof schema>) {
 	return Layer.succeed(StorageService, {
@@ -222,6 +258,14 @@ function storeMeetingTransaction(
 	});
 }
 
+/**
+ * Read-side query that assembles the full meeting detail from multiple tables.
+ * Uses individual queries rather than a single JOIN for readability and because
+ * SQLite's query planner handles simple primary-key lookups efficiently.
+ *
+ * Returns `null` at the first missing piece (no body, no meeting, no summary)
+ * rather than returning partial data.
+ */
 function getMeetingByBodyAndDateQuery(
 	db: BetterSQLite3Database<typeof schema>,
 	slug: string,

@@ -1,6 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
 
+/**
+ * Meeting detail page — the end of the tracer bullet.
+ *
+ * Route: `/meetings/:bodySlug/:date` (e.g. `/meetings/ellettsville-town-council/2026-03-23`)
+ *
+ * The `loader` calls the server function before the component renders, so the
+ * page has data available immediately (no loading spinners). TanStack Router
+ * extracts `bodySlug` and `date` from the URL params automatically via
+ * file-based routing (`$bodySlug/$date.tsx` → params `{ bodySlug, date }`).
+ */
 export const Route = createFileRoute("/meetings/$bodySlug/$date")({
 	loader: ({ params }) =>
 		getMeetingByBodyAndDate({
@@ -25,6 +35,14 @@ export const Route = createFileRoute("/meetings/$bodySlug/$date")({
 	),
 });
 
+/**
+ * Renders the full meeting detail: header with source links, highlights,
+ * prose summary, fiscal decision cards, and budget discussion items.
+ *
+ * Uses `Route.useLoaderData()` to access the data fetched by the loader —
+ * this is type-safe, so TypeScript knows the shape of `meeting` without
+ * any manual type annotations.
+ */
 function MeetingDetailPage() {
 	const meeting = Route.useLoaderData();
 
@@ -146,6 +164,12 @@ type FiscalDecision = {
 	isRecurring: boolean;
 };
 
+/**
+ * Card component for a single fiscal decision.
+ * Color-codes the status badge: green (approved), red (denied), amber (tabled).
+ * Displays the dollar amount prominently, with metadata (vote record, category,
+ * vendor, funding source, ordinance number) in a compact flex row beneath.
+ */
 function FiscalCard({ decision }: { decision: FiscalDecision }) {
 	const statusColor =
 		decision.status === "approved"
@@ -195,6 +219,7 @@ function FiscalCard({ decision }: { decision: FiscalDecision }) {
 	);
 }
 
+/** Converts an ISO date string (YYYY-MM-DD) to a human-readable format (e.g. "March 23, 2026"). */
 function formatDate(iso: string): string {
 	const [year, month, day] = iso.split("-");
 	const date = new Date(Number(year), Number(month) - 1, Number(day));
@@ -205,6 +230,7 @@ function formatDate(iso: string): string {
 	});
 }
 
+/** Formats a number as USD with no decimal places (e.g. 50000 → "$50,000"). */
 function formatCurrency(amount: number): string {
 	return new Intl.NumberFormat("en-US", {
 		style: "currency",
