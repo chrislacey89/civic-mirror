@@ -249,8 +249,8 @@ describe("FinalsiteScraper", () => {
 
 	describe("FinalsiteScraperLive", () => {
 		it("fetches page HTML and returns parsed listings via Effect", async () => {
-			const mockFetch = async (url: string) => {
-				if (url === "https://www.rbbschools.net/school-board") {
+			const mockFetch: typeof globalThis.fetch = async (url) => {
+				if (String(url) === "https://www.rbbschools.net/school-board") {
 					return new Response(SINGLE_ROW_FIXTURE, { status: 200 });
 				}
 				return new Response("Not Found", { status: 404 });
@@ -263,7 +263,7 @@ describe("FinalsiteScraper", () => {
 				Effect.provide(
 					FinalsiteScraperLive({
 						baseUrl: "https://www.rbbschools.net/school-board",
-						fetchFn: mockFetch as typeof globalThis.fetch,
+						fetchFn: mockFetch,
 					}),
 				),
 			);
@@ -277,7 +277,7 @@ describe("FinalsiteScraper", () => {
 		});
 
 		it("returns NetworkError when fetch fails", async () => {
-			const mockFetch = async () => {
+			const mockFetch: typeof globalThis.fetch = async () => {
 				throw new Error("Connection refused");
 			};
 
@@ -288,19 +288,20 @@ describe("FinalsiteScraper", () => {
 				Effect.provide(
 					FinalsiteScraperLive({
 						baseUrl: "https://www.rbbschools.net/school-board",
-						fetchFn: mockFetch as typeof globalThis.fetch,
+						fetchFn: mockFetch,
 					}),
 				),
 			);
 
-			const exit = await Effect.runPromiseExit(program);
-			expect(exit._tag).toBe("Failure");
+			const error = await Effect.runPromise(program.pipe(Effect.flip));
+			expect(error._tag).toBe("NetworkError");
+			expect(error.message).toBe("Connection refused");
 		});
 
 		it("downloads a document by UUID", async () => {
 			const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // %PDF
-			const mockFetch = async (url: string) => {
-				if (url.includes("/fs/resource-manager/view/")) {
+			const mockFetch: typeof globalThis.fetch = async (url) => {
+				if (String(url).includes("/fs/resource-manager/view/")) {
 					return new Response(pdfBytes, { status: 200 });
 				}
 				return new Response("Not Found", { status: 404 });
@@ -313,7 +314,7 @@ describe("FinalsiteScraper", () => {
 				Effect.provide(
 					FinalsiteScraperLive({
 						baseUrl: "https://www.rbbschools.net/school-board",
-						fetchFn: mockFetch as typeof globalThis.fetch,
+						fetchFn: mockFetch,
 					}),
 				),
 			);

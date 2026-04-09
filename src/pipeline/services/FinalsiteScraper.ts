@@ -2,6 +2,8 @@ import { Context, Effect, Layer } from "effect";
 import { JSDOM } from "jsdom";
 import { NetworkError, ParseError } from "#/pipeline/errors.ts";
 
+type FinalsiteDocumentType = "agenda" | "minutes" | "notice";
+
 /**
  * A single document attached to a Finalsite meeting listing.
  * Each document has a UUID used for the download URL path.
@@ -9,8 +11,8 @@ import { NetworkError, ParseError } from "#/pipeline/errors.ts";
 type FinalsiteDocument = {
 	/** Finalsite resource UUID, parsed from the href path. */
 	uuid: string;
-	/** Normalized document type: "agenda" | "minutes" | "notice". */
-	documentType: string;
+	/** Normalized document type. */
+	documentType: FinalsiteDocumentType;
 	/** Relative URL path for downloading the document. */
 	downloadUrl: string;
 	/** Original filename from the data-file-name attribute. */
@@ -79,13 +81,22 @@ function parseFinalsiteHtml(html: string): FinalsiteMeetingListing[] {
 			const documents: FinalsiteDocument[] = [];
 			const links = cells[2].querySelectorAll("a[data-resource-uuid]");
 
+			const VALID_DOC_TYPES: FinalsiteDocumentType[] = [
+				"agenda",
+				"minutes",
+				"notice",
+			];
+
 			for (const link of links) {
 				const uuid = link.getAttribute("data-resource-uuid") ?? "";
 				const href = link.getAttribute("href") ?? "";
 				const fileName = link.getAttribute("data-file-name") ?? "";
-				const linkText = (link.textContent ?? "").trim().toLowerCase();
+				const linkText = (link.textContent ?? "")
+					.trim()
+					.toLowerCase() as FinalsiteDocumentType;
 
 				if (!uuid) continue;
+				if (!VALID_DOC_TYPES.includes(linkText)) continue;
 
 				documents.push({
 					uuid,
@@ -139,7 +150,9 @@ type FinalsiteScraperConfig = {
  * or ParseError values. The fetchFn parameter enables testing without
  * hitting the real Finalsite server.
  */
-function FinalsiteScraperLive(config: FinalsiteScraperConfig) {
+function FinalsiteScraperLive(
+	config: FinalsiteScraperConfig,
+): Layer.Layer<FinalsiteScraper> {
 	const fetchFn = config.fetchFn ?? globalThis.fetch;
 
 	return Layer.succeed(FinalsiteScraper, {
@@ -196,6 +209,7 @@ function FinalsiteScraperLive(config: FinalsiteScraperConfig) {
 
 export { FinalsiteScraper, FinalsiteScraperLive, parseFinalsiteHtml };
 export type {
+	FinalsiteDocumentType,
 	FinalsiteMeetingListing,
 	FinalsiteDocument,
 	FinalsiteScraperConfig,
