@@ -5,6 +5,7 @@ import {
 	aggregateFiscalByCategoryQuery,
 	aggregateFiscalByTimePeriodQuery,
 	getMeetingByBodyAndDateQuery,
+	listFiscalDecisionsQuery,
 	listGoverningBodiesQuery,
 	listNotableFiscalDecisionsQuery,
 	listRecentMeetingsQuery,
@@ -50,6 +51,16 @@ export const listNotableFiscalDecisions = createServerFn({
 	.inputValidator((input: { limit?: number }) => input)
 	.handler(async ({ data }) => {
 		return await listNotableFiscalDecisionsQuery(db, data.limit);
+	});
+
+export const listFiscalDecisions = createServerFn({
+	method: "GET",
+})
+	.inputValidator(
+		(input: { bodySlug?: string; category?: string; period?: string }) => input,
+	)
+	.handler(async ({ data }) => {
+		return await listFiscalDecisionsQuery(db, data);
 	});
 
 export const listGoverningBodies = createServerFn({
