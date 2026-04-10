@@ -227,6 +227,41 @@ function runPipelineForBody(
 }
 
 // ---------------------------------------------------------------------------
+// Shared per-source helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Effect teaching note: All three source paths share the same "fetch the
+ * listings or fall through to an alert" pattern. Rather than inline the
+ * Effect.map + Effect.catchAll in every runXForBody function, this helper
+ * takes a pre-composed fetch effect (the caller is responsible for applying
+ * retry, because the retry schedule is scoped to the caller's config) and
+ * returns a discriminated union the caller can switch on.
+ *
+ * The generic `E extends TaggedPipelineError` constraint lets callers pass
+ * scraper-specific error unions (e.g. NetworkError | ParseError) without
+ * casting — the structural overlap with TaggedPipelineError is what matters
+ * for the alertAndRecover call.
+ */
+function fetchListingsOrAlert<T, E extends TaggedPipelineError>(
+	body: BodyConfig,
+	fetchEffect: Effect.Effect<T[], E>,
+): Effect.Effect<
+	{ ok: true; listings: T[] } | { ok: false },
+	never,
+	AlertService
+> {
+	return fetchEffect.pipe(
+		Effect.map((listings) => ({ ok: true as const, listings })),
+		Effect.catchAll((error) =>
+			alertAndRecover(body, "scrape", error).pipe(
+				Effect.as({ ok: false as const }),
+			),
+		),
+	);
+}
+
+// ---------------------------------------------------------------------------
 // eGov path
 // ---------------------------------------------------------------------------
 
@@ -244,17 +279,12 @@ function runEgovForBody(
 
 		const scraper = yield* EgovScraper;
 
-		const listingsResult = yield* scraper
-			.scrapeListings({ searchType, page: 1 })
-			.pipe(
-				Effect.retry(config.networkSchedule),
-				Effect.map((listings) => ({ ok: true as const, listings })),
-				Effect.catchAll((error) =>
-					alertAndRecover(body, "scrape", error).pipe(
-						Effect.as({ ok: false as const }),
-					),
-				),
-			);
+		const listingsResult = yield* fetchListingsOrAlert(
+			body,
+			scraper
+				.scrapeListings({ searchType, page: 1 })
+				.pipe(Effect.retry(config.networkSchedule)),
+		);
 
 		if (!listingsResult.ok) return { processed: 0, errors: 1 };
 
@@ -358,14 +388,9 @@ function runFinalsiteForBody(
 	return Effect.gen(function* () {
 		const scraper = yield* FinalsiteScraper;
 
-		const listingsResult = yield* scraper.scrapeListings().pipe(
-			Effect.retry(config.networkSchedule),
-			Effect.map((listings) => ({ ok: true as const, listings })),
-			Effect.catchAll((error) =>
-				alertAndRecover(body, "scrape", error).pipe(
-					Effect.as({ ok: false as const }),
-				),
-			),
+		const listingsResult = yield* fetchListingsOrAlert(
+			body,
+			scraper.scrapeListings().pipe(Effect.retry(config.networkSchedule)),
 		);
 
 		if (!listingsResult.ok) return { processed: 0, errors: 1 };
@@ -483,14 +508,11 @@ function runYouTubeForBody(
 
 		const scraper = yield* YouTubeScraper;
 
-		const videosResult = yield* scraper.listPlaylistVideos(playlistId).pipe(
-			Effect.retry(config.networkSchedule),
-			Effect.map((videos) => ({ ok: true as const, videos })),
-			Effect.catchAll((error) =>
-				alertAndRecover(body, "scrape", error).pipe(
-					Effect.as({ ok: false as const }),
-				),
-			),
+		const videosResult = yield* fetchListingsOrAlert(
+			body,
+			scraper
+				.listPlaylistVideos(playlistId)
+				.pipe(Effect.retry(config.networkSchedule)),
 		);
 
 		if (!videosResult.ok) return { processed: 0, errors: 1 };
@@ -498,7 +520,7 @@ function runYouTubeForBody(
 		let processed = 0;
 		let errors = 0;
 
-		for (const video of videosResult.videos) {
+		for (const video of videosResult.listings) {
 			const perVideo = yield* processYouTubeVideo(body, video, config).pipe(
 				Effect.catchAll((error) =>
 					alertAndRecover(body, listingFailureStage(error), error).pipe(
