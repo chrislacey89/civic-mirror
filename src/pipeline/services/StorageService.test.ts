@@ -202,6 +202,65 @@ describe("StorageService", () => {
 		});
 	});
 
+	describe("getMostRecentMeetingDate", () => {
+		it("returns the ISO date of the most recent meeting for a body", async () => {
+			const db = await createTestDb();
+			const layer = StorageServiceLive(db);
+
+			// Store two meetings for the same body, different dates
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeMeeting({
+						...testMeetingInput,
+						date: "2026-01-15",
+					});
+					yield* storage.storeMeeting({
+						...testMeetingInput,
+						date: "2026-03-23",
+					});
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.getMostRecentMeetingDate(
+						"ellettsville-town-council",
+					);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			expect(result).toBe("2026-03-23");
+		});
+
+		it("returns null when the body has no meetings yet", async () => {
+			const db = await createTestDb();
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.getMostRecentMeetingDate(
+						"ellettsville-town-council",
+					);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			expect(result).toBeNull();
+		});
+
+		it("returns null when the body slug does not exist", async () => {
+			const db = await createTestDb();
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.getMostRecentMeetingDate("nonexistent-body");
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			expect(result).toBeNull();
+		});
+	});
+
 	describe("storeTranscript", () => {
 		it("stores a transcript linked to a meeting", async () => {
 			const db = await createTestDb();

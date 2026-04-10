@@ -1,4 +1,6 @@
+import { Context, Effect, Layer } from "effect";
 import { JSDOM } from "jsdom";
+import { NetworkError, ParseError } from "#/pipeline/errors.ts";
 
 /**
  * A single document listing extracted from the eGov document center.
@@ -62,5 +64,112 @@ function parseEgovListingHtml(html: string): EgovDocumentListing[] {
 	return results;
 }
 
-export { parseEgovListingHtml };
-export type { EgovDocumentListing };
+/**
+ * Effect teaching note: This is the third implementation of a scraper service —
+ * completing the trio alongside FinalsiteScraper and YouTubeScraper. All three
+ * follow the same Context.Tag + Layer.succeed pattern with an injected fetchFn,
+ * but each has its own service tag so consumers can depend on them independently.
+ *
+ * EgovScraper is kept deliberately minimal: it fetches pages and downloads
+ * documents, nothing else. Crawl-delay enforcement (the eGov 300-second rule)
+ * lives in the orchestrator — that's where request ordering is known and where
+ * `Effect.sleep` + `Schedule` can space out the per-document downloads without
+ * this service having to track its own request state.
+ */
+
+type EgovScrapeListingsInput = {
+	/** eGov search type code: "11" = agendas, "12" = minutes, "19" = ordinances. */
+	searchType: string;
+	/** 1-indexed page number within the listing. */
+	page: number;
+};
+
+interface EgovScraperInterface {
+	/** Fetch one listing page from the eGov document center and return parsed rows. */
+	scrapeListings(
+		input: EgovScrapeListingsInput,
+	): Effect.Effect<EgovDocumentListing[], NetworkError | ParseError>;
+	/** Download a document's raw bytes from its full eGov URL. */
+	downloadDocument(url: string): Effect.Effect<ArrayBuffer, NetworkError>;
+}
+
+class EgovScraper extends Context.Tag("EgovScraper")<
+	EgovScraper,
+	EgovScraperInterface
+>() {}
+
+type EgovScraperConfig = {
+	/** Base URL for the eGov document center (e.g. https://ellettsville.in.us/egov/apps/document/center.egov). */
+	baseUrl: string;
+	/** Injectable fetch function for testability. */
+	fetchFn?: typeof globalThis.fetch;
+};
+
+/**
+ * Effect teaching note: `Layer.succeed` provides the service value directly.
+ * Each method wraps its fetch call in `Effect.tryPromise`, converting any
+ * thrown exceptions or non-OK responses into typed `NetworkError` values.
+ * Separating the scrape (fetch) from the parse (pure) lets the service return
+ * a `ParseError` distinct from a `NetworkError`, so the orchestrator can
+ * choose different recovery paths for each (e.g. retry network errors,
+ * skip+alert on parse errors).
+ */
+function EgovScraperLive(config: EgovScraperConfig): Layer.Layer<EgovScraper> {
+	const fetchFn = config.fetchFn ?? globalThis.fetch;
+
+	return Layer.succeed(EgovScraper, {
+		scrapeListings: ({ searchType, page }) =>
+			Effect.gen(function* () {
+				const url = new URL(config.baseUrl);
+				url.searchParams.set("app", "4");
+				url.searchParams.set("sect", "content");
+				url.searchParams.set("page", `4_${page}`);
+				url.searchParams.set("eGov_searchType", searchType);
+
+				const html = yield* Effect.tryPromise({
+					try: async () => {
+						const response = await fetchFn(url.toString());
+						if (!response.ok) {
+							throw new Error(
+								`HTTP ${response.status}: ${response.statusText}`,
+							);
+						}
+						return response.text();
+					},
+					catch: (error) =>
+						new NetworkError({
+							url: url.toString(),
+							message: error instanceof Error ? error.message : String(error),
+						}),
+				});
+
+				return yield* Effect.try({
+					try: () => parseEgovListingHtml(html),
+					catch: (error) =>
+						new ParseError({
+							source: "egov",
+							message: error instanceof Error ? error.message : String(error),
+						}),
+				});
+			}),
+
+		downloadDocument: (url) =>
+			Effect.tryPromise({
+				try: async () => {
+					const response = await fetchFn(url);
+					if (!response.ok) {
+						throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+					}
+					return response.arrayBuffer();
+				},
+				catch: (error) =>
+					new NetworkError({
+						url,
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+	});
+}
+
+export { parseEgovListingHtml, EgovScraper, EgovScraperLive };
+export type { EgovDocumentListing, EgovScraperConfig, EgovScrapeListingsInput };
