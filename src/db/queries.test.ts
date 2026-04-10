@@ -1,6 +1,6 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
+import { migrate } from "drizzle-orm/libsql/migrator";
 import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import {
@@ -12,18 +12,18 @@ import {
 	listRecentMeetingsQuery,
 } from "./queries.ts";
 
-function createTestDb() {
-	const sqlite = new Database(":memory:");
-	const db = drizzle(sqlite, { schema });
-	migrate(db, { migrationsFolder: "./drizzle" });
+async function createTestDb() {
+	const client = createClient({ url: ":memory:" });
+	const db = drizzle(client, { schema });
+	await migrate(db, { migrationsFolder: "./drizzle" });
 	return db;
 }
 
-function seedBody(
-	db: ReturnType<typeof createTestDb>,
+async function seedBody(
+	db: Awaited<ReturnType<typeof createTestDb>>,
 	overrides: Partial<typeof schema.governingBodies.$inferInsert> = {},
 ) {
-	return db
+	return await db
 		.insert(schema.governingBodies)
 		.values({
 			name: "Ellettsville Town Council",
@@ -35,8 +35,8 @@ function seedBody(
 		.get();
 }
 
-function seedMeetingWithSummary(
-	db: ReturnType<typeof createTestDb>,
+async function seedMeetingWithSummary(
+	db: Awaited<ReturnType<typeof createTestDb>>,
 	bodyId: number,
 	date: string,
 	opts: {
@@ -51,13 +51,14 @@ function seedMeetingWithSummary(
 		}>;
 	} = {},
 ) {
-	const meeting = db
+	const meeting = await db
 		.insert(schema.meetings)
 		.values({ bodyId, date, meetingType: "regular" })
 		.returning()
 		.get();
 
-	db.insert(schema.summaries)
+	await db
+		.insert(schema.summaries)
 		.values({
 			meetingId: meeting.id,
 			highlights: opts.highlights ?? ["Highlight one"],
@@ -67,7 +68,8 @@ function seedMeetingWithSummary(
 		.run();
 
 	for (const fd of opts.fiscalDecisions ?? []) {
-		db.insert(schema.fiscalDecisions)
+		await db
+			.insert(schema.fiscalDecisions)
 			.values({
 				meetingId: meeting.id,
 				title: fd.title,
@@ -86,14 +88,14 @@ function seedMeetingWithSummary(
 }
 
 describe("listRecentMeetingsQuery", () => {
-	it("returns meetings ordered by date descending", () => {
-		const db = createTestDb();
-		const body = seedBody(db);
-		seedMeetingWithSummary(db, body.id, "2026-01-15");
-		seedMeetingWithSummary(db, body.id, "2026-03-23");
-		seedMeetingWithSummary(db, body.id, "2026-02-10");
+	it("returns meetings ordered by date descending", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-01-15");
+		await seedMeetingWithSummary(db, body.id, "2026-03-23");
+		await seedMeetingWithSummary(db, body.id, "2026-02-10");
 
-		const result = listRecentMeetingsQuery(db);
+		const result = await listRecentMeetingsQuery(db);
 
 		expect(result).toHaveLength(3);
 		expect(result[0].date).toBe("2026-03-23");
@@ -101,52 +103,53 @@ describe("listRecentMeetingsQuery", () => {
 		expect(result[2].date).toBe("2026-01-15");
 	});
 
-	it("filters by body slug when provided", () => {
-		const db = createTestDb();
-		const council = seedBody(db);
-		const school = seedBody(db, {
+	it("filters by body slug when provided", async () => {
+		const db = await createTestDb();
+		const council = await seedBody(db);
+		const school = await seedBody(db, {
 			name: "RBBSC School Board",
 			slug: "rbbsc-school-board",
 			type: "school",
 		});
-		seedMeetingWithSummary(db, council.id, "2026-03-23");
-		seedMeetingWithSummary(db, school.id, "2026-03-20");
-		seedMeetingWithSummary(db, council.id, "2026-02-10");
+		await seedMeetingWithSummary(db, council.id, "2026-03-23");
+		await seedMeetingWithSummary(db, school.id, "2026-03-20");
+		await seedMeetingWithSummary(db, council.id, "2026-02-10");
 
-		const result = listRecentMeetingsQuery(db, "rbbsc-school-board");
+		const result = await listRecentMeetingsQuery(db, "rbbsc-school-board");
 
 		expect(result).toHaveLength(1);
 		expect(result[0].bodySlug).toBe("rbbsc-school-board");
 	});
 
-	it("returns empty array for unknown body slug", () => {
-		const db = createTestDb();
-		seedBody(db);
+	it("returns empty array for unknown body slug", async () => {
+		const db = await createTestDb();
+		await seedBody(db);
 
-		const result = listRecentMeetingsQuery(db, "nonexistent-body");
+		const result = await listRecentMeetingsQuery(db, "nonexistent-body");
 
 		expect(result).toHaveLength(0);
 	});
 
-	it("skips meetings without summaries", () => {
-		const db = createTestDb();
-		const body = seedBody(db);
-		seedMeetingWithSummary(db, body.id, "2026-03-23");
+	it("skips meetings without summaries", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-03-23");
 		// Insert a meeting with no summary
-		db.insert(schema.meetings)
+		await db
+			.insert(schema.meetings)
 			.values({ bodyId: body.id, date: "2026-04-01", meetingType: "regular" })
 			.run();
 
-		const result = listRecentMeetingsQuery(db);
+		const result = await listRecentMeetingsQuery(db);
 
 		expect(result).toHaveLength(1);
 		expect(result[0].date).toBe("2026-03-23");
 	});
 
-	it("includes fiscal decision count and total spending", () => {
-		const db = createTestDb();
-		const body = seedBody(db);
-		seedMeetingWithSummary(db, body.id, "2026-03-23", {
+	it("includes fiscal decision count and total spending", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-03-23", {
 			fiscalDecisions: [
 				{
 					title: "Road Repairs",
@@ -163,43 +166,43 @@ describe("listRecentMeetingsQuery", () => {
 			],
 		});
 
-		const result = listRecentMeetingsQuery(db);
+		const result = await listRecentMeetingsQuery(db);
 
 		expect(result[0].fiscalDecisionCount).toBe(2);
 		expect(result[0].totalSpending).toBe(75000);
 	});
 
-	it("returns empty array when no meetings exist", () => {
-		const db = createTestDb();
+	it("returns empty array when no meetings exist", async () => {
+		const db = await createTestDb();
 
-		const result = listRecentMeetingsQuery(db);
+		const result = await listRecentMeetingsQuery(db);
 
 		expect(result).toHaveLength(0);
 	});
 });
 
 describe("aggregateFiscalByBodyQuery", () => {
-	it("sums spending by governing body", () => {
-		const db = createTestDb();
-		const council = seedBody(db);
-		const school = seedBody(db, {
+	it("sums spending by governing body", async () => {
+		const db = await createTestDb();
+		const council = await seedBody(db);
+		const school = await seedBody(db, {
 			name: "RBBSC School Board",
 			slug: "rbbsc-school-board",
 			type: "school",
 		});
-		seedMeetingWithSummary(db, council.id, "2026-03-23", {
+		await seedMeetingWithSummary(db, council.id, "2026-03-23", {
 			fiscalDecisions: [
 				{ title: "Roads", amount: 50000, originalAmount: "$50,000" },
 			],
 		});
-		seedMeetingWithSummary(db, school.id, "2026-03-20", {
+		await seedMeetingWithSummary(db, school.id, "2026-03-20", {
 			fiscalDecisions: [
 				{ title: "Books", amount: 10000, originalAmount: "$10,000" },
 				{ title: "Computers", amount: 20000, originalAmount: "$20,000" },
 			],
 		});
 
-		const result = aggregateFiscalByBodyQuery(db);
+		const result = await aggregateFiscalByBodyQuery(db);
 
 		expect(result).toHaveLength(2);
 		const councilRow = result.find(
@@ -212,20 +215,20 @@ describe("aggregateFiscalByBodyQuery", () => {
 		expect(schoolRow?.decisionCount).toBe(2);
 	});
 
-	it("returns empty array when no fiscal decisions exist", () => {
-		const db = createTestDb();
+	it("returns empty array when no fiscal decisions exist", async () => {
+		const db = await createTestDb();
 
-		const result = aggregateFiscalByBodyQuery(db);
+		const result = await aggregateFiscalByBodyQuery(db);
 
 		expect(result).toHaveLength(0);
 	});
 });
 
 describe("aggregateFiscalByCategoryQuery", () => {
-	it("sums spending by budget category", () => {
-		const db = createTestDb();
-		const body = seedBody(db);
-		seedMeetingWithSummary(db, body.id, "2026-03-23", {
+	it("sums spending by budget category", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-03-23", {
 			fiscalDecisions: [
 				{
 					title: "Road Repairs",
@@ -248,7 +251,7 @@ describe("aggregateFiscalByCategoryQuery", () => {
 			],
 		});
 
-		const result = aggregateFiscalByCategoryQuery(db);
+		const result = await aggregateFiscalByCategoryQuery(db);
 
 		const infra = result.find((r) => r.budgetCategory === "infrastructure");
 		const parks = result.find((r) => r.budgetCategory === "parks");
@@ -258,38 +261,38 @@ describe("aggregateFiscalByCategoryQuery", () => {
 		expect(parks?.decisionCount).toBe(1);
 	});
 
-	it("labels null categories as Uncategorized", () => {
-		const db = createTestDb();
-		const body = seedBody(db);
-		seedMeetingWithSummary(db, body.id, "2026-03-23", {
+	it("labels null categories as Uncategorized", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-03-23", {
 			fiscalDecisions: [
 				{ title: "Misc", amount: 5000, originalAmount: "$5,000" },
 			],
 		});
 
-		const result = aggregateFiscalByCategoryQuery(db);
+		const result = await aggregateFiscalByCategoryQuery(db);
 
 		expect(result[0].budgetCategory).toBe("Uncategorized");
 	});
 });
 
 describe("aggregateFiscalByTimePeriodQuery", () => {
-	it("sums spending by month ordered newest first", () => {
-		const db = createTestDb();
-		const body = seedBody(db);
-		seedMeetingWithSummary(db, body.id, "2026-01-15", {
+	it("sums spending by month ordered newest first", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-01-15", {
 			fiscalDecisions: [
 				{ title: "Jan item", amount: 10000, originalAmount: "$10,000" },
 			],
 		});
-		seedMeetingWithSummary(db, body.id, "2026-03-23", {
+		await seedMeetingWithSummary(db, body.id, "2026-03-23", {
 			fiscalDecisions: [
 				{ title: "Mar item 1", amount: 50000, originalAmount: "$50,000" },
 				{ title: "Mar item 2", amount: 20000, originalAmount: "$20,000" },
 			],
 		});
 
-		const result = aggregateFiscalByTimePeriodQuery(db);
+		const result = await aggregateFiscalByTimePeriodQuery(db);
 
 		expect(result).toHaveLength(2);
 		expect(result[0].period).toBe("2026-03");
@@ -300,10 +303,10 @@ describe("aggregateFiscalByTimePeriodQuery", () => {
 });
 
 describe("listNotableFiscalDecisionsQuery", () => {
-	it("returns decisions ordered by amount descending", () => {
-		const db = createTestDb();
-		const body = seedBody(db);
-		seedMeetingWithSummary(db, body.id, "2026-03-23", {
+	it("returns decisions ordered by amount descending", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-03-23", {
 			fiscalDecisions: [
 				{ title: "Small", amount: 5000, originalAmount: "$5,000" },
 				{ title: "Big", amount: 100000, originalAmount: "$100,000" },
@@ -311,7 +314,7 @@ describe("listNotableFiscalDecisionsQuery", () => {
 			],
 		});
 
-		const result = listNotableFiscalDecisionsQuery(db);
+		const result = await listNotableFiscalDecisionsQuery(db);
 
 		expect(result[0].title).toBe("Big");
 		expect(result[0].amount).toBe(100000);
@@ -319,25 +322,25 @@ describe("listNotableFiscalDecisionsQuery", () => {
 		expect(result[2].title).toBe("Small");
 	});
 
-	it("includes body name and meeting date", () => {
-		const db = createTestDb();
-		const body = seedBody(db);
-		seedMeetingWithSummary(db, body.id, "2026-03-23", {
+	it("includes body name and meeting date", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-03-23", {
 			fiscalDecisions: [
 				{ title: "Item", amount: 50000, originalAmount: "$50,000" },
 			],
 		});
 
-		const result = listNotableFiscalDecisionsQuery(db);
+		const result = await listNotableFiscalDecisionsQuery(db);
 
 		expect(result[0].bodyName).toBe("Ellettsville Town Council");
 		expect(result[0].date).toBe("2026-03-23");
 	});
 
-	it("respects limit parameter", () => {
-		const db = createTestDb();
-		const body = seedBody(db);
-		seedMeetingWithSummary(db, body.id, "2026-03-23", {
+	it("respects limit parameter", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-03-23", {
 			fiscalDecisions: [
 				{ title: "A", amount: 1000, originalAmount: "$1,000" },
 				{ title: "B", amount: 2000, originalAmount: "$2,000" },
@@ -345,23 +348,27 @@ describe("listNotableFiscalDecisionsQuery", () => {
 			],
 		});
 
-		const result = listNotableFiscalDecisionsQuery(db, 2);
+		const result = await listNotableFiscalDecisionsQuery(db, 2);
 
 		expect(result).toHaveLength(2);
 	});
 });
 
 describe("listGoverningBodiesQuery", () => {
-	it("returns all bodies ordered by name", () => {
-		const db = createTestDb();
-		seedBody(db, { name: "Zebra Board", slug: "zebra-board", type: "county" });
-		seedBody(db, {
+	it("returns all bodies ordered by name", async () => {
+		const db = await createTestDb();
+		await seedBody(db, {
+			name: "Zebra Board",
+			slug: "zebra-board",
+			type: "county",
+		});
+		await seedBody(db, {
 			name: "Alpha Council",
 			slug: "alpha-council",
 			type: "town",
 		});
 
-		const result = listGoverningBodiesQuery(db);
+		const result = await listGoverningBodiesQuery(db);
 
 		expect(result).toHaveLength(2);
 		expect(result[0].name).toBe("Alpha Council");

@@ -1,5 +1,5 @@
 import { and, desc, eq, sql, sum } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
+import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "#/db/schema.ts";
 
 export type MeetingType = "regular" | "special" | "workshop";
@@ -69,14 +69,14 @@ export type GoverningBodySummary = {
  * Lists recent meetings with summary data for the landing page feed.
  * Optionally filtered by body slug. Returns newest first.
  */
-export function listRecentMeetingsQuery(
-	db: BetterSQLite3Database<typeof schema>,
+export async function listRecentMeetingsQuery(
+	db: LibSQLDatabase<typeof schema>,
 	bodySlug?: string,
 	limit = 20,
-): MeetingCardData[] {
+): Promise<MeetingCardData[]> {
 	let bodyFilter: number | undefined;
 	if (bodySlug) {
-		const body = db
+		const body = await db
 			.select()
 			.from(schema.governingBodies)
 			.where(eq(schema.governingBodies.slug, bodySlug))
@@ -85,7 +85,7 @@ export function listRecentMeetingsQuery(
 		bodyFilter = body.id;
 	}
 
-	const meetingRows = db
+	const meetingRows = await db
 		.select()
 		.from(schema.meetings)
 		.where(bodyFilter ? eq(schema.meetings.bodyId, bodyFilter) : undefined)
@@ -95,21 +95,21 @@ export function listRecentMeetingsQuery(
 
 	const result: MeetingCardData[] = [];
 	for (const m of meetingRows) {
-		const body = db
+		const body = await db
 			.select()
 			.from(schema.governingBodies)
 			.where(eq(schema.governingBodies.id, m.bodyId))
 			.get();
 		if (!body) continue;
 
-		const summary = db
+		const summary = await db
 			.select()
 			.from(schema.summaries)
 			.where(eq(schema.summaries.meetingId, m.id))
 			.get();
 		if (!summary) continue;
 
-		const fiscals = db
+		const fiscals = await db
 			.select()
 			.from(schema.fiscalDecisions)
 			.where(eq(schema.fiscalDecisions.meetingId, m.id))
@@ -124,7 +124,10 @@ export function listRecentMeetingsQuery(
 			highlights: summary.highlights as string[],
 			prose: summary.prose,
 			fiscalDecisionCount: fiscals.length,
-			totalSpending: fiscals.reduce((sum, f) => sum + f.amount, 0),
+			totalSpending: fiscals.reduce(
+				(total: number, f: { amount: number }) => total + f.amount,
+				0,
+			),
 		});
 	}
 
@@ -134,10 +137,10 @@ export function listRecentMeetingsQuery(
 /**
  * Aggregates fiscal decision totals by governing body.
  */
-export function aggregateFiscalByBodyQuery(
-	db: BetterSQLite3Database<typeof schema>,
-): FiscalByBody[] {
-	const rows = db
+export async function aggregateFiscalByBodyQuery(
+	db: LibSQLDatabase<typeof schema>,
+): Promise<FiscalByBody[]> {
+	const rows = await db
 		.select({
 			bodyName: schema.governingBodies.name,
 			bodySlug: schema.governingBodies.slug,
@@ -167,10 +170,10 @@ export function aggregateFiscalByBodyQuery(
 /**
  * Aggregates fiscal decision totals by budget category.
  */
-export function aggregateFiscalByCategoryQuery(
-	db: BetterSQLite3Database<typeof schema>,
-): FiscalByCategory[] {
-	const rows = db
+export async function aggregateFiscalByCategoryQuery(
+	db: LibSQLDatabase<typeof schema>,
+): Promise<FiscalByCategory[]> {
+	const rows = await db
 		.select({
 			budgetCategory: schema.fiscalDecisions.budgetCategory,
 			totalAmount: sum(schema.fiscalDecisions.amount),
@@ -190,10 +193,10 @@ export function aggregateFiscalByCategoryQuery(
 /**
  * Aggregates fiscal decision totals by month (YYYY-MM).
  */
-export function aggregateFiscalByTimePeriodQuery(
-	db: BetterSQLite3Database<typeof schema>,
-): FiscalByTimePeriod[] {
-	const rows = db
+export async function aggregateFiscalByTimePeriodQuery(
+	db: LibSQLDatabase<typeof schema>,
+): Promise<FiscalByTimePeriod[]> {
+	const rows = await db
 		.select({
 			period: sql<string>`substr(${schema.meetings.date}, 1, 7)`,
 			totalAmount: sum(schema.fiscalDecisions.amount),
@@ -218,11 +221,11 @@ export function aggregateFiscalByTimePeriodQuery(
 /**
  * Returns the most notable recent fiscal decisions (highest amounts).
  */
-export function listNotableFiscalDecisionsQuery(
-	db: BetterSQLite3Database<typeof schema>,
+export async function listNotableFiscalDecisionsQuery(
+	db: LibSQLDatabase<typeof schema>,
 	limit = 5,
-): NotableFiscalDecision[] {
-	const rows = db
+): Promise<NotableFiscalDecision[]> {
+	const rows = await db
 		.select({
 			title: schema.fiscalDecisions.title,
 			amount: schema.fiscalDecisions.amount,
@@ -257,10 +260,10 @@ export function listNotableFiscalDecisionsQuery(
 /**
  * Lists all governing bodies (for the filter dropdown).
  */
-export function listGoverningBodiesQuery(
-	db: BetterSQLite3Database<typeof schema>,
-): GoverningBodySummary[] {
-	return db
+export async function listGoverningBodiesQuery(
+	db: LibSQLDatabase<typeof schema>,
+): Promise<GoverningBodySummary[]> {
+	const rows = await db
 		.select({
 			name: schema.governingBodies.name,
 			slug: schema.governingBodies.slug,
@@ -268,8 +271,9 @@ export function listGoverningBodiesQuery(
 		})
 		.from(schema.governingBodies)
 		.orderBy(schema.governingBodies.name)
-		.all()
-		.map((r) => ({ ...r, type: r.type as BodyType }));
+		.all();
+
+	return rows.map((r) => ({ ...r, type: r.type as BodyType }));
 }
 
 export type FiscalDecisionDetail = {
@@ -319,12 +323,12 @@ export type MeetingDetail = {
  * Returns `null` at the first missing piece (no body, no meeting, no summary)
  * rather than returning partial data.
  */
-export function getMeetingByBodyAndDateQuery(
-	db: BetterSQLite3Database<typeof schema>,
+export async function getMeetingByBodyAndDateQuery(
+	db: LibSQLDatabase<typeof schema>,
 	slug: string,
 	date: string,
-): MeetingDetail | null {
-	const body = db
+): Promise<MeetingDetail | null> {
+	const body = await db
 		.select()
 		.from(schema.governingBodies)
 		.where(eq(schema.governingBodies.slug, slug))
@@ -332,7 +336,7 @@ export function getMeetingByBodyAndDateQuery(
 
 	if (!body) return null;
 
-	const meeting = db
+	const meeting = await db
 		.select()
 		.from(schema.meetings)
 		.where(
@@ -342,13 +346,13 @@ export function getMeetingByBodyAndDateQuery(
 
 	if (!meeting) return null;
 
-	const docs = db
+	const docs = await db
 		.select()
 		.from(schema.documents)
 		.where(eq(schema.documents.meetingId, meeting.id))
 		.all();
 
-	const summary = db
+	const summary = await db
 		.select()
 		.from(schema.summaries)
 		.where(eq(schema.summaries.meetingId, meeting.id))
@@ -356,13 +360,13 @@ export function getMeetingByBodyAndDateQuery(
 
 	if (!summary) return null;
 
-	const fiscals = db
+	const fiscals = await db
 		.select()
 		.from(schema.fiscalDecisions)
 		.where(eq(schema.fiscalDecisions.meetingId, meeting.id))
 		.all();
 
-	const discussions = db
+	const discussions = await db
 		.select()
 		.from(schema.budgetDiscussions)
 		.where(eq(schema.budgetDiscussions.meetingId, meeting.id))

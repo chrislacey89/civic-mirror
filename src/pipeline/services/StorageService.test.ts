@@ -1,18 +1,39 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
+import { migrate } from "drizzle-orm/libsql/migrator";
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import { StorageService, StorageServiceLive } from "./StorageService.ts";
 
-function createTestDb() {
-	const sqlite = new Database(":memory:");
-	const db = drizzle(sqlite, { schema });
-	migrate(db, { migrationsFolder: "./drizzle" });
+const tmpFiles: string[] = [];
+
+afterAll(() => {
+	for (const f of tmpFiles) {
+		try {
+			fs.unlinkSync(f);
+		} catch {}
+	}
+});
+
+let dbCounter = 0;
+
+async function createTestDb() {
+	const tmpFile = path.join(
+		os.tmpdir(),
+		`civic-mirror-test-${process.pid}-${dbCounter++}.db`,
+	);
+	tmpFiles.push(tmpFile);
+	const client = createClient({ url: `file:${tmpFile}` });
+	const db = drizzle(client, { schema });
+	await migrate(db, { migrationsFolder: "./drizzle" });
 
 	// Seed one governing body for tests
-	db.insert(schema.governingBodies)
+	await db
+		.insert(schema.governingBodies)
 		.values({
 			name: "Ellettsville Town Council",
 			slug: "ellettsville-town-council",
@@ -69,7 +90,7 @@ const testMeetingInput = {
 describe("StorageService", () => {
 	describe("storeMeeting", () => {
 		it("rolls back all records when any part of the transaction fails", async () => {
-			const db = createTestDb();
+			const db = await createTestDb();
 			const badInput = {
 				...testMeetingInput,
 				bodySlug: "nonexistent-body", // will fail lookup
@@ -83,16 +104,16 @@ describe("StorageService", () => {
 			await expect(Effect.runPromise(program)).rejects.toThrow();
 
 			// Nothing should have been written
-			const meetings = db.select().from(schema.meetings).all();
+			const meetings = await db.select().from(schema.meetings).all();
 			expect(meetings).toHaveLength(0);
-			const docs = db.select().from(schema.documents).all();
+			const docs = await db.select().from(schema.documents).all();
 			expect(docs).toHaveLength(0);
-			const summaries = db.select().from(schema.summaries).all();
+			const summaries = await db.select().from(schema.summaries).all();
 			expect(summaries).toHaveLength(0);
 		});
 
 		it("writes meeting, document, summary, fiscal decisions, and budget discussions atomically", async () => {
-			const db = createTestDb();
+			const db = await createTestDb();
 			const program = Effect.gen(function* () {
 				const storage = yield* StorageService;
 				return yield* storage.storeMeeting(testMeetingInput);
@@ -105,23 +126,26 @@ describe("StorageService", () => {
 			expect(meeting.date).toBe("2026-03-23");
 
 			// Verify document was stored
-			const docs = db.select().from(schema.documents).all();
+			const docs = await db.select().from(schema.documents).all();
 			expect(docs).toHaveLength(1);
 			expect(docs[0].rawText).toContain("$50,000");
 
 			// Verify summary was stored
-			const summaries = db.select().from(schema.summaries).all();
+			const summaries = await db.select().from(schema.summaries).all();
 			expect(summaries).toHaveLength(1);
 			expect(summaries[0].prose).toContain("Sale Street");
 
 			// Verify fiscal decision was stored
-			const fiscals = db.select().from(schema.fiscalDecisions).all();
+			const fiscals = await db.select().from(schema.fiscalDecisions).all();
 			expect(fiscals).toHaveLength(1);
 			expect(fiscals[0].amount).toBe(50000);
 			expect(fiscals[0].title).toBe("Sale Street Road Repairs");
 
 			// Verify budget discussion was stored
-			const discussions = db.select().from(schema.budgetDiscussions).all();
+			const discussions = await db
+				.select()
+				.from(schema.budgetDiscussions)
+				.all();
 			expect(discussions).toHaveLength(1);
 			expect(discussions[0].topic).toBe("Park pavilion renovation");
 		});
@@ -129,7 +153,7 @@ describe("StorageService", () => {
 
 	describe("getMeetingByBodyAndDate", () => {
 		it("retrieves a full meeting with documents, summary, fiscal decisions, and discussions", async () => {
-			const db = createTestDb();
+			const db = await createTestDb();
 			const layer = StorageServiceLive(db);
 
 			// First store a meeting
@@ -163,7 +187,7 @@ describe("StorageService", () => {
 		});
 
 		it("returns null when no meeting exists", async () => {
-			const db = createTestDb();
+			const db = await createTestDb();
 			const result = await Effect.runPromise(
 				Effect.gen(function* () {
 					const storage = yield* StorageService;
@@ -180,7 +204,7 @@ describe("StorageService", () => {
 
 	describe("storeTranscript", () => {
 		it("stores a transcript linked to a meeting", async () => {
-			const db = createTestDb();
+			const db = await createTestDb();
 			const layer = StorageServiceLive(db);
 
 			// First store a meeting
@@ -213,7 +237,7 @@ describe("StorageService", () => {
 			);
 
 			// Verify transcript was stored
-			const transcripts = db.select().from(schema.transcripts).all();
+			const transcripts = await db.select().from(schema.transcripts).all();
 			expect(transcripts).toHaveLength(1);
 			expect(transcripts[0].source).toBe("captions");
 			expect(transcripts[0].rawText).toContain("Motion to approve");
@@ -224,7 +248,7 @@ describe("StorageService", () => {
 		});
 
 		it("stores a whisper transcript with segments", async () => {
-			const db = createTestDb();
+			const db = await createTestDb();
 			const layer = StorageServiceLive(db);
 
 			const meeting = await Effect.runPromise(
@@ -252,7 +276,7 @@ describe("StorageService", () => {
 				}).pipe(Effect.provide(layer)),
 			);
 
-			const transcripts = db.select().from(schema.transcripts).all();
+			const transcripts = await db.select().from(schema.transcripts).all();
 			expect(transcripts).toHaveLength(1);
 			expect(transcripts[0].source).toBe("whisper");
 			expect(transcripts[0].segments).toEqual([

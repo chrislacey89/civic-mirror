@@ -1,6 +1,6 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import { migrate } from "drizzle-orm/better-sqlite3/migrator";
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
+import { migrate } from "drizzle-orm/libsql/migrator";
 import { describe, expect, it } from "vitest";
 import {
 	aggregateFiscalByBodyQuery,
@@ -19,15 +19,15 @@ import * as schema from "#/db/schema.ts";
  * tested via TanStack Start's integration layer.
  */
 
-function createTestDb() {
-	const sqlite = new Database(":memory:");
-	const db = drizzle(sqlite, { schema });
-	migrate(db, { migrationsFolder: "./drizzle" });
+async function createTestDb() {
+	const client = createClient({ url: ":memory:" });
+	const db = drizzle(client, { schema });
+	await migrate(db, { migrationsFolder: "./drizzle" });
 	return db;
 }
 
-function seedFullScenario(db: ReturnType<typeof createTestDb>) {
-	const council = db
+async function seedFullScenario(db: Awaited<ReturnType<typeof createTestDb>>) {
+	const council = await db
 		.insert(schema.governingBodies)
 		.values({
 			name: "Ellettsville Town Council",
@@ -37,7 +37,7 @@ function seedFullScenario(db: ReturnType<typeof createTestDb>) {
 		.returning()
 		.get();
 
-	const school = db
+	const school = await db
 		.insert(schema.governingBodies)
 		.values({
 			name: "RBBSC School Board",
@@ -48,13 +48,14 @@ function seedFullScenario(db: ReturnType<typeof createTestDb>) {
 		.get();
 
 	// Council meeting with fiscal decisions
-	const m1 = db
+	const m1 = await db
 		.insert(schema.meetings)
 		.values({ bodyId: council.id, date: "2026-03-23", meetingType: "regular" })
 		.returning()
 		.get();
 
-	db.insert(schema.summaries)
+	await db
+		.insert(schema.summaries)
 		.values({
 			meetingId: m1.id,
 			highlights: ["Approved road repairs", "Discussed park budget"],
@@ -63,7 +64,8 @@ function seedFullScenario(db: ReturnType<typeof createTestDb>) {
 		})
 		.run();
 
-	db.insert(schema.fiscalDecisions)
+	await db
+		.insert(schema.fiscalDecisions)
 		.values({
 			meetingId: m1.id,
 			title: "Sale Street Road Repairs",
@@ -78,13 +80,14 @@ function seedFullScenario(db: ReturnType<typeof createTestDb>) {
 		.run();
 
 	// School board meeting
-	const m2 = db
+	const m2 = await db
 		.insert(schema.meetings)
 		.values({ bodyId: school.id, date: "2026-03-20", meetingType: "regular" })
 		.returning()
 		.get();
 
-	db.insert(schema.summaries)
+	await db
+		.insert(schema.summaries)
 		.values({
 			meetingId: m2.id,
 			highlights: ["New textbook budget approved"],
@@ -93,7 +96,8 @@ function seedFullScenario(db: ReturnType<typeof createTestDb>) {
 		})
 		.run();
 
-	db.insert(schema.fiscalDecisions)
+	await db
+		.insert(schema.fiscalDecisions)
 		.values({
 			meetingId: m2.id,
 			title: "Textbook Purchase",
@@ -111,11 +115,11 @@ function seedFullScenario(db: ReturnType<typeof createTestDb>) {
 }
 
 describe("server function integration", () => {
-	it("listRecentMeetings returns all meetings with fiscal rollups", () => {
-		const db = createTestDb();
-		seedFullScenario(db);
+	it("listRecentMeetings returns all meetings with fiscal rollups", async () => {
+		const db = await createTestDb();
+		await seedFullScenario(db);
 
-		const result = listRecentMeetingsQuery(db);
+		const result = await listRecentMeetingsQuery(db);
 
 		expect(result).toHaveLength(2);
 		expect(result[0].date).toBe("2026-03-23");
@@ -124,21 +128,21 @@ describe("server function integration", () => {
 		expect(result[1].totalSpending).toBe(15000);
 	});
 
-	it("listRecentMeetings filters by body slug", () => {
-		const db = createTestDb();
-		seedFullScenario(db);
+	it("listRecentMeetings filters by body slug", async () => {
+		const db = await createTestDb();
+		await seedFullScenario(db);
 
-		const result = listRecentMeetingsQuery(db, "rbbsc-school-board");
+		const result = await listRecentMeetingsQuery(db, "rbbsc-school-board");
 
 		expect(result).toHaveLength(1);
 		expect(result[0].bodyName).toBe("RBBSC School Board");
 	});
 
-	it("aggregateFiscalByBody returns correct totals per body", () => {
-		const db = createTestDb();
-		seedFullScenario(db);
+	it("aggregateFiscalByBody returns correct totals per body", async () => {
+		const db = await createTestDb();
+		await seedFullScenario(db);
 
-		const result = aggregateFiscalByBodyQuery(db);
+		const result = await aggregateFiscalByBodyQuery(db);
 
 		expect(result).toHaveLength(2);
 		const council = result.find(
@@ -147,11 +151,11 @@ describe("server function integration", () => {
 		expect(council?.totalAmount).toBe(50000);
 	});
 
-	it("aggregateFiscalByCategory returns correct totals per category", () => {
-		const db = createTestDb();
-		seedFullScenario(db);
+	it("aggregateFiscalByCategory returns correct totals per category", async () => {
+		const db = await createTestDb();
+		await seedFullScenario(db);
 
-		const result = aggregateFiscalByCategoryQuery(db);
+		const result = await aggregateFiscalByCategoryQuery(db);
 
 		const infra = result.find((r) => r.budgetCategory === "infrastructure");
 		const edu = result.find((r) => r.budgetCategory === "education");
@@ -159,33 +163,33 @@ describe("server function integration", () => {
 		expect(edu?.totalAmount).toBe(15000);
 	});
 
-	it("aggregateFiscalByTimePeriod groups by month", () => {
-		const db = createTestDb();
-		seedFullScenario(db);
+	it("aggregateFiscalByTimePeriod groups by month", async () => {
+		const db = await createTestDb();
+		await seedFullScenario(db);
 
-		const result = aggregateFiscalByTimePeriodQuery(db);
+		const result = await aggregateFiscalByTimePeriodQuery(db);
 
 		expect(result).toHaveLength(1); // both in 2026-03
 		expect(result[0].period).toBe("2026-03");
 		expect(result[0].totalAmount).toBe(65000);
 	});
 
-	it("listNotableFiscalDecisions returns highest amounts first", () => {
-		const db = createTestDb();
-		seedFullScenario(db);
+	it("listNotableFiscalDecisions returns highest amounts first", async () => {
+		const db = await createTestDb();
+		await seedFullScenario(db);
 
-		const result = listNotableFiscalDecisionsQuery(db);
+		const result = await listNotableFiscalDecisionsQuery(db);
 
 		expect(result[0].title).toBe("Sale Street Road Repairs");
 		expect(result[0].amount).toBe(50000);
 		expect(result[1].title).toBe("Textbook Purchase");
 	});
 
-	it("listGoverningBodies returns all bodies alphabetically", () => {
-		const db = createTestDb();
-		seedFullScenario(db);
+	it("listGoverningBodies returns all bodies alphabetically", async () => {
+		const db = await createTestDb();
+		await seedFullScenario(db);
 
-		const result = listGoverningBodiesQuery(db);
+		const result = await listGoverningBodiesQuery(db);
 
 		expect(result).toHaveLength(2);
 		expect(result[0].name).toBe("Ellettsville Town Council");

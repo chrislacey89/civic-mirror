@@ -15,7 +15,7 @@ export const getMeetingByBodyAndDate = createServerFn({
 })
 	.inputValidator((input: { bodySlug: string; date: string }) => input)
 	.handler(async ({ data }) => {
-		return getMeetingByBodyAndDateQuery(db, data.bodySlug, data.date);
+		return await getMeetingByBodyAndDateQuery(db, data.bodySlug, data.date);
 	});
 
 export const listRecentMeetings = createServerFn({
@@ -23,25 +23,25 @@ export const listRecentMeetings = createServerFn({
 })
 	.inputValidator((input: { bodySlug?: string; limit?: number }) => input)
 	.handler(async ({ data }) => {
-		return listRecentMeetingsQuery(db, data.bodySlug, data.limit);
+		return await listRecentMeetingsQuery(db, data.bodySlug, data.limit);
 	});
 
 export const aggregateFiscalByBody = createServerFn({
 	method: "GET",
 }).handler(async () => {
-	return aggregateFiscalByBodyQuery(db);
+	return await aggregateFiscalByBodyQuery(db);
 });
 
 export const aggregateFiscalByCategory = createServerFn({
 	method: "GET",
 }).handler(async () => {
-	return aggregateFiscalByCategoryQuery(db);
+	return await aggregateFiscalByCategoryQuery(db);
 });
 
 export const aggregateFiscalByTimePeriod = createServerFn({
 	method: "GET",
 }).handler(async () => {
-	return aggregateFiscalByTimePeriodQuery(db);
+	return await aggregateFiscalByTimePeriodQuery(db);
 });
 
 export const listNotableFiscalDecisions = createServerFn({
@@ -49,11 +49,11 @@ export const listNotableFiscalDecisions = createServerFn({
 })
 	.inputValidator((input: { limit?: number }) => input)
 	.handler(async ({ data }) => {
-		return listNotableFiscalDecisionsQuery(db, data.limit);
+		return await listNotableFiscalDecisionsQuery(db, data.limit);
 	});
 
 export const listGoverningBodies = createServerFn({
 	method: "GET",
 }).handler(async () => {
-	return listGoverningBodiesQuery(db);
+	return await listGoverningBodiesQuery(db);
 });
