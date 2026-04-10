@@ -261,6 +261,60 @@ function fetchListingsOrAlert<T, E extends TaggedPipelineError>(
 	);
 }
 
+/**
+ * Effect teaching note: The second shared shape across every source path is
+ * the per-item loop — iterate items, run processItem with its own catchAll
+ * to alertAndRecover so one broken item doesn't stop the body, accumulate a
+ * PipelineResult, and optionally sleep between items for rate-limit
+ * compliance. Pulling this into one place means a change to the per-item
+ * error path (or the delay strategy, or the filter semantics) edits one
+ * function instead of three.
+ *
+ * The `R` type parameter carries the requirements of `processItem` straight
+ * through to the caller, so each source keeps its own precise
+ * `Effect.Effect<..., ..., EgovScraper | ...>` requirements in the return
+ * type without any cast.
+ */
+function iterateWithAlertRecovery<TItem, R>(
+	body: BodyConfig,
+	items: readonly TItem[],
+	options: {
+		processItem: (
+			item: TItem,
+		) => Effect.Effect<PipelineResult, TaggedPipelineError, R>;
+		delayBetweenItemsMs: number;
+		shouldProcess?: (item: TItem) => boolean;
+	},
+): Effect.Effect<PipelineResult, never, R | AlertService> {
+	return Effect.gen(function* () {
+		let processed = 0;
+		let errors = 0;
+
+		for (const item of items) {
+			if (options.shouldProcess && !options.shouldProcess(item)) continue;
+
+			const result = yield* options
+				.processItem(item)
+				.pipe(
+					Effect.catchAll((error) =>
+						alertAndRecover(body, listingFailureStage(error), error).pipe(
+							Effect.as({ processed: 0, errors: 1 }),
+						),
+					),
+				);
+
+			processed += result.processed;
+			errors += result.errors;
+
+			if (options.delayBetweenItemsMs > 0) {
+				yield* Effect.sleep(Duration.millis(options.delayBetweenItemsMs));
+			}
+		}
+
+		return { processed, errors };
+	});
+}
+
 // ---------------------------------------------------------------------------
 // eGov path
 // ---------------------------------------------------------------------------
@@ -288,27 +342,10 @@ function runEgovForBody(
 
 		if (!listingsResult.ok) return { processed: 0, errors: 1 };
 
-		let processed = 0;
-		let errors = 0;
-
-		for (const listing of listingsResult.listings) {
-			const perListing = yield* processEgovListing(body, listing, config).pipe(
-				Effect.catchAll((error) =>
-					alertAndRecover(body, listingFailureStage(error), error).pipe(
-						Effect.as({ processed: 0, errors: 1 }),
-					),
-				),
-			);
-
-			processed += perListing.processed;
-			errors += perListing.errors;
-
-			if (config.crawlDelayMs > 0) {
-				yield* Effect.sleep(Duration.millis(config.crawlDelayMs));
-			}
-		}
-
-		return { processed, errors };
+		return yield* iterateWithAlertRecovery(body, listingsResult.listings, {
+			processItem: (listing) => processEgovListing(body, listing, config),
+			delayBetweenItemsMs: config.crawlDelayMs,
+		});
 	});
 }
 
@@ -395,29 +432,11 @@ function runFinalsiteForBody(
 
 		if (!listingsResult.ok) return { processed: 0, errors: 1 };
 
-		let processed = 0;
-		let errors = 0;
-
-		for (const listing of listingsResult.listings) {
-			if (listing.documents.length === 0) continue;
-
-			const perListing = yield* processFinalsiteListing(
-				body,
-				listing,
-				config,
-			).pipe(
-				Effect.catchAll((error) =>
-					alertAndRecover(body, listingFailureStage(error), error).pipe(
-						Effect.as({ processed: 0, errors: 1 }),
-					),
-				),
-			);
-
-			processed += perListing.processed;
-			errors += perListing.errors;
-		}
-
-		return { processed, errors };
+		return yield* iterateWithAlertRecovery(body, listingsResult.listings, {
+			processItem: (listing) => processFinalsiteListing(body, listing, config),
+			delayBetweenItemsMs: 0,
+			shouldProcess: (listing) => listing.documents.length > 0,
+		});
 	});
 }
 
@@ -517,27 +536,10 @@ function runYouTubeForBody(
 
 		if (!videosResult.ok) return { processed: 0, errors: 1 };
 
-		let processed = 0;
-		let errors = 0;
-
-		for (const video of videosResult.listings) {
-			const perVideo = yield* processYouTubeVideo(body, video, config).pipe(
-				Effect.catchAll((error) =>
-					alertAndRecover(body, listingFailureStage(error), error).pipe(
-						Effect.as({ processed: 0, errors: 1 }),
-					),
-				),
-			);
-
-			processed += perVideo.processed;
-			errors += perVideo.errors;
-
-			if (config.youtubeDelayMs > 0) {
-				yield* Effect.sleep(Duration.millis(config.youtubeDelayMs));
-			}
-		}
-
-		return { processed, errors };
+		return yield* iterateWithAlertRecovery(body, videosResult.listings, {
+			processItem: (video) => processYouTubeVideo(body, video, config),
+			delayBetweenItemsMs: config.youtubeDelayMs,
+		});
 	});
 }
 
