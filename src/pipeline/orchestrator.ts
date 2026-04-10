@@ -1,4 +1,4 @@
-import { Duration, Effect } from "effect";
+import { Duration, Effect, Schedule } from "effect";
 import {
 	AlertService,
 	formatPipelineErrorAlert,
@@ -30,6 +30,37 @@ import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
  * operator sees a stack-level error in the CLI output.
  */
 
+/**
+ * Effect teaching note: Schedule is Effect's policy type for deciding when to
+ * retry. Schedule.exponential starts at the given base delay and doubles on
+ * each retry; Schedule.compose with Schedule.recurs(n) bounds the total number
+ * of attempts. Effect.retry(effect, schedule) wraps transient-failure-prone
+ * operations (network fetches, LLM calls) so that flaky upstreams don't kill
+ * the whole pipeline on the first hiccup.
+ *
+ * Retry policy values come from RunPipelineInput so tests can disable retries
+ * (attempts: 0) and production can tune them without touching this file.
+ *
+ * Retries only help for *transient* failures. A 401 from Gemini won't get
+ * better on retry — it'll just cost more money. The right answer is to tune
+ * these policies based on observed failure modes rather than max them out.
+ */
+type RetryPolicy = {
+	/** Number of additional attempts beyond the first. 0 disables retry. */
+	attempts: number;
+	/** Base delay for the exponential backoff, in milliseconds. */
+	baseDelayMs: number;
+};
+
+const DEFAULT_NETWORK_RETRY: RetryPolicy = { attempts: 3, baseDelayMs: 500 };
+const DEFAULT_LLM_RETRY: RetryPolicy = { attempts: 2, baseDelayMs: 1000 };
+
+function scheduleFromPolicy(policy: RetryPolicy) {
+	return Schedule.exponential(Duration.millis(policy.baseDelayMs)).pipe(
+		Schedule.compose(Schedule.recurs(policy.attempts)),
+	);
+}
+
 type BodyConfig = {
 	slug: string;
 	name: string;
@@ -45,10 +76,27 @@ type RunPipelineInput = {
 	bodies: BodyConfig[];
 	/** Milliseconds to sleep between eGov document downloads. Production: 300_000. */
 	crawlDelayMs: number;
+	/** Milliseconds to sleep between YouTube transcription calls. Production: 2000-5000. */
+	youtubeDelayMs?: number;
 	/** Converts a downloaded PDF (ArrayBuffer) into plain text. */
 	extractPdfText: (bytes: ArrayBuffer) => Promise<string>;
 	/** When true, run all stages except storage and alerts — for smoke-testing. */
 	dryRun: boolean;
+	/** Retry policy for network operations (scrape, download). Defaults to {3, 500ms}. */
+	networkRetry?: RetryPolicy;
+	/** Retry policy for LLM calls (summarize). Defaults to {2, 1000ms}. */
+	llmRetry?: RetryPolicy;
+};
+
+/**
+ * Resolved form of the pipeline input — built once in runPipeline and passed
+ * through to every child so each call site can read the pre-computed schedules
+ * without recomputing them per listing.
+ */
+type ResolvedConfig = RunPipelineInput & {
+	networkSchedule: ReturnType<typeof scheduleFromPolicy>;
+	llmSchedule: ReturnType<typeof scheduleFromPolicy>;
+	youtubeDelayMs: number;
 };
 
 type PipelineResult = {
@@ -73,12 +121,21 @@ function runPipeline(
 	| StorageService
 	| AlertService
 > {
+	const config: ResolvedConfig = {
+		...input,
+		networkSchedule: scheduleFromPolicy(
+			input.networkRetry ?? DEFAULT_NETWORK_RETRY,
+		),
+		llmSchedule: scheduleFromPolicy(input.llmRetry ?? DEFAULT_LLM_RETRY),
+		youtubeDelayMs: input.youtubeDelayMs ?? 2000,
+	};
+
 	return Effect.gen(function* () {
 		let processed = 0;
 		let errors = 0;
 
 		for (const body of input.bodies) {
-			const bodyResult = yield* runPipelineForBody(body, input);
+			const bodyResult = yield* runPipelineForBody(body, config);
 			processed += bodyResult.processed;
 			errors += bodyResult.errors;
 		}
@@ -89,7 +146,7 @@ function runPipeline(
 
 function runPipelineForBody(
 	body: BodyConfig,
-	config: RunPipelineInput,
+	config: ResolvedConfig,
 ): Effect.Effect<
 	PipelineResult,
 	never,
@@ -133,7 +190,7 @@ function runPipelineForBody(
 
 function runEgovForBody(
 	body: BodyConfig & { egovSearchType?: string },
-	config: RunPipelineInput,
+	config: ResolvedConfig,
 ): Effect.Effect<
 	PipelineResult,
 	never,
@@ -148,6 +205,7 @@ function runEgovForBody(
 		const listingsResult = yield* scraper
 			.scrapeListings({ searchType, page: 1 })
 			.pipe(
+				Effect.retry(config.networkSchedule),
 				Effect.map((listings) => ({ ok: true as const, listings })),
 				Effect.catchAll((error) =>
 					alertAndRecover(body, "scrape", error).pipe(
@@ -185,7 +243,7 @@ function runEgovForBody(
 function processEgovListing(
 	body: BodyConfig,
 	listing: EgovDocumentListing,
-	config: RunPipelineInput,
+	config: ResolvedConfig,
 ): Effect.Effect<
 	PipelineResult,
 	TaggedPipelineError,
@@ -196,7 +254,10 @@ function processEgovListing(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
-		const bytes = yield* scraper.downloadDocument(listing.downloadUrl);
+		const bytes = yield* scraper
+			.downloadDocument(listing.downloadUrl)
+			.pipe(Effect.retry(config.networkSchedule));
+
 		const text = yield* Effect.tryPromise({
 			try: () => config.extractPdfText(bytes),
 			catch: (error) =>
@@ -205,10 +266,12 @@ function processEgovListing(
 				}),
 		});
 
-		const summary = yield* summarizer.summarize({
-			sourceText: text,
-			meetingContext: `${body.name}, ${listing.date}`,
-		});
+		const summary = yield* summarizer
+			.summarize({
+				sourceText: text,
+				meetingContext: `${body.name}, ${listing.date}`,
+			})
+			.pipe(Effect.retry(config.llmSchedule));
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -244,7 +307,7 @@ function processEgovListing(
 
 function runFinalsiteForBody(
 	body: BodyConfig,
-	config: RunPipelineInput,
+	config: ResolvedConfig,
 ): Effect.Effect<
 	PipelineResult,
 	never,
@@ -254,6 +317,7 @@ function runFinalsiteForBody(
 		const scraper = yield* FinalsiteScraper;
 
 		const listingsResult = yield* scraper.scrapeListings().pipe(
+			Effect.retry(config.networkSchedule),
 			Effect.map((listings) => ({ ok: true as const, listings })),
 			Effect.catchAll((error) =>
 				alertAndRecover(body, "scrape", error).pipe(
@@ -293,7 +357,7 @@ function runFinalsiteForBody(
 function processFinalsiteListing(
 	body: BodyConfig,
 	listing: FinalsiteMeetingListing,
-	config: RunPipelineInput,
+	config: ResolvedConfig,
 ): Effect.Effect<
 	PipelineResult,
 	TaggedPipelineError,
@@ -308,7 +372,10 @@ function processFinalsiteListing(
 		let combinedText = "";
 
 		for (const doc of listing.documents) {
-			const bytes = yield* scraper.downloadDocument(doc.uuid);
+			const bytes = yield* scraper
+				.downloadDocument(doc.uuid)
+				.pipe(Effect.retry(config.networkSchedule));
+
 			const text = yield* Effect.tryPromise({
 				try: () => config.extractPdfText(bytes),
 				catch: (error) =>
@@ -325,10 +392,12 @@ function processFinalsiteListing(
 			combinedText += `\n${text}`;
 		}
 
-		const summary = yield* summarizer.summarize({
-			sourceText: combinedText,
-			meetingContext: `${body.name}, ${listing.date}`,
-		});
+		const summary = yield* summarizer
+			.summarize({
+				sourceText: combinedText,
+				meetingContext: `${body.name}, ${listing.date}`,
+			})
+			.pipe(Effect.retry(config.llmSchedule));
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -356,7 +425,7 @@ function processFinalsiteListing(
 
 function runYouTubeForBody(
 	body: BodyConfig,
-	config: RunPipelineInput,
+	config: ResolvedConfig,
 ): Effect.Effect<
 	PipelineResult,
 	never,
@@ -373,6 +442,7 @@ function runYouTubeForBody(
 		const scraper = yield* YouTubeScraper;
 
 		const videosResult = yield* scraper.listPlaylistVideos(playlistId).pipe(
+			Effect.retry(config.networkSchedule),
 			Effect.map((videos) => ({ ok: true as const, videos })),
 			Effect.catchAll((error) =>
 				alertAndRecover(body, "scrape", error).pipe(
@@ -397,6 +467,10 @@ function runYouTubeForBody(
 
 			processed += perVideo.processed;
 			errors += perVideo.errors;
+
+			if (config.youtubeDelayMs > 0) {
+				yield* Effect.sleep(Duration.millis(config.youtubeDelayMs));
+			}
 		}
 
 		return { processed, errors };
@@ -406,7 +480,7 @@ function runYouTubeForBody(
 function processYouTubeVideo(
 	body: BodyConfig,
 	video: YouTubeVideo,
-	config: RunPipelineInput,
+	config: ResolvedConfig,
 ): Effect.Effect<
 	PipelineResult,
 	TaggedPipelineError,
@@ -417,11 +491,16 @@ function processYouTubeVideo(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
-		const transcript = yield* transcription.transcribe(video.videoId);
-		const summary = yield* summarizer.summarize({
-			sourceText: transcript.rawText,
-			meetingContext: `${body.name}, ${video.title}`,
-		});
+		const transcript = yield* transcription
+			.transcribe(video.videoId)
+			.pipe(Effect.retry(config.networkSchedule));
+
+		const summary = yield* summarizer
+			.summarize({
+				sourceText: transcript.rawText,
+				meetingContext: `${body.name}, ${video.title}`,
+			})
+			.pipe(Effect.retry(config.llmSchedule));
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -561,4 +640,4 @@ function meetingTypeFromFinalsiteLabel(
 }
 
 export { runPipeline };
-export type { BodyConfig, RunPipelineInput, PipelineResult };
+export type { BodyConfig, RunPipelineInput, PipelineResult, RetryPolicy };

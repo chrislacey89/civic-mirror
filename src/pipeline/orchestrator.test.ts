@@ -191,6 +191,9 @@ describe("runPipeline", () => {
 				},
 			],
 			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
 			extractPdfText: async () =>
 				"Meeting minutes body text with $50,000 decision",
 			dryRun: false,
@@ -226,6 +229,9 @@ describe("runPipeline", () => {
 		const program = runPipeline({
 			bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
 			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
 			extractPdfText: async () => "text",
 			dryRun: true,
 		}).pipe(Effect.provide(layers));
@@ -262,6 +268,9 @@ describe("runPipeline", () => {
 		const program = runPipeline({
 			bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
 			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
 			extractPdfText: async () => "text",
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
@@ -311,6 +320,9 @@ describe("runPipeline", () => {
 				},
 			],
 			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
 			extractPdfText: async () => "school board text",
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
@@ -346,6 +358,9 @@ describe("runPipeline", () => {
 				},
 			],
 			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
 			extractPdfText: async () => "unused",
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
