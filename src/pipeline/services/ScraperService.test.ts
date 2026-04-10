@@ -1,5 +1,10 @@
+import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
-import { parseEgovListingHtml } from "./ScraperService.ts";
+import {
+	EgovScraper,
+	EgovScraperLive,
+	parseEgovListingHtml,
+} from "./ScraperService.ts";
 
 // Real HTML structure from ellettsville.in.us eGov document center
 const EGOV_HTML_FIXTURE = `
@@ -84,6 +89,98 @@ describe("EgovScraper", () => {
 		it("returns empty array for HTML with no document rows", () => {
 			const results = parseEgovListingHtml("<table></table>");
 			expect(results).toEqual([]);
+		});
+	});
+
+	describe("EgovScraperLive", () => {
+		const baseUrl = "https://ellettsville.in.us/egov/apps/document/center.egov";
+
+		it("fetches a listing page and returns parsed documents", async () => {
+			const mockFetch: typeof globalThis.fetch = async (url) => {
+				const s = String(url);
+				if (s.includes("eGov_searchType=12") && s.includes("page=4_1")) {
+					return new Response(EGOV_HTML_FIXTURE, { status: 200 });
+				}
+				return new Response("Not Found", { status: 404 });
+			};
+
+			const program = Effect.gen(function* () {
+				const scraper = yield* EgovScraper;
+				return yield* scraper.scrapeListings({
+					searchType: "12",
+					page: 1,
+				});
+			}).pipe(Effect.provide(EgovScraperLive({ baseUrl, fetchFn: mockFetch })));
+
+			const results = await Effect.runPromise(program);
+			expect(results).toHaveLength(3);
+			expect(results[0].id).toBe(1653);
+			expect(results[0].title).toBe(
+				"Reorganization Board Meeting February 4, 2026 Minutes Approved",
+			);
+		});
+
+		it("returns NetworkError when listing fetch fails with non-OK status", async () => {
+			const mockFetch: typeof globalThis.fetch = async () =>
+				new Response("Server Error", { status: 500 });
+
+			const program = Effect.gen(function* () {
+				const scraper = yield* EgovScraper;
+				return yield* scraper.scrapeListings({ searchType: "12", page: 1 });
+			}).pipe(Effect.provide(EgovScraperLive({ baseUrl, fetchFn: mockFetch })));
+
+			const error = await Effect.runPromise(program.pipe(Effect.flip));
+			expect(error._tag).toBe("NetworkError");
+		});
+
+		it("returns NetworkError when listing fetch throws", async () => {
+			const mockFetch: typeof globalThis.fetch = async () => {
+				throw new Error("Connection refused");
+			};
+
+			const program = Effect.gen(function* () {
+				const scraper = yield* EgovScraper;
+				return yield* scraper.scrapeListings({ searchType: "12", page: 1 });
+			}).pipe(Effect.provide(EgovScraperLive({ baseUrl, fetchFn: mockFetch })));
+
+			const error = await Effect.runPromise(program.pipe(Effect.flip));
+			expect(error._tag).toBe("NetworkError");
+			expect(error.message).toContain("Connection refused");
+		});
+
+		it("downloads a document by URL", async () => {
+			const pdfBytes = new Uint8Array([0x25, 0x50, 0x44, 0x46]); // %PDF
+			const mockFetch: typeof globalThis.fetch = async (url) => {
+				if (String(url).includes("view=item&id=1653")) {
+					return new Response(pdfBytes, { status: 200 });
+				}
+				return new Response("Not Found", { status: 404 });
+			};
+
+			const program = Effect.gen(function* () {
+				const scraper = yield* EgovScraper;
+				return yield* scraper.downloadDocument(
+					"https://ellettsville.in.us/egov/apps/document/center.egov?view=item&id=1653",
+				);
+			}).pipe(Effect.provide(EgovScraperLive({ baseUrl, fetchFn: mockFetch })));
+
+			const result = await Effect.runPromise(program);
+			expect(new Uint8Array(result)).toEqual(pdfBytes);
+		});
+
+		it("returns NetworkError when document download fails", async () => {
+			const mockFetch: typeof globalThis.fetch = async () =>
+				new Response("Not Found", { status: 404 });
+
+			const program = Effect.gen(function* () {
+				const scraper = yield* EgovScraper;
+				return yield* scraper.downloadDocument(
+					"https://ellettsville.in.us/egov/apps/document/center.egov?view=item&id=9999",
+				);
+			}).pipe(Effect.provide(EgovScraperLive({ baseUrl, fetchFn: mockFetch })));
+
+			const error = await Effect.runPromise(program.pipe(Effect.flip));
+			expect(error._tag).toBe("NetworkError");
 		});
 	});
 });
