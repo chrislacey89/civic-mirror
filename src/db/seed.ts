@@ -1,6 +1,9 @@
 import { createClient } from "@libsql/client";
+import { config } from "dotenv";
 import { drizzle } from "drizzle-orm/libsql";
 import { governingBodies } from "./schema.ts";
+
+config({ path: [".env.local", ".env"] });
 
 /**
  * Seed script for all governing bodies that Civic Mirror tracks.
