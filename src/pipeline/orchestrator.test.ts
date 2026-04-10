@@ -56,6 +56,7 @@ type StubConfig = {
 	summarizationError?: Error;
 	storedMeeting?: Meeting;
 	lastMeetingLookup?: MeetingDetail | null;
+	mostRecentMeetingDate?: string | null;
 };
 
 function buildStubLayers(config: StubConfig) {
@@ -141,6 +142,8 @@ function buildStubLayers(config: StubConfig) {
 		getMeetingByBodyAndDate: () =>
 			Effect.sync(() => config.lastMeetingLookup ?? null),
 		storeTranscript: () => Effect.void,
+		getMostRecentMeetingDate: () =>
+			Effect.sync(() => config.mostRecentMeetingDate ?? null),
 	});
 
 	const alert = Layer.succeed(AlertService, {

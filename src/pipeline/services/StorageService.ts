@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { Context, Effect, Layer } from "effect";
 import type { MeetingDetail } from "#/db/queries.ts";
@@ -83,6 +83,14 @@ interface StorageServiceInterface {
 		date: string,
 	): Effect.Effect<MeetingDetail | null, DatabaseError>;
 	storeTranscript(input: TranscriptInput): Effect.Effect<void, DatabaseError>;
+	/**
+	 * Returns the ISO date of the most recent meeting for the body, or null if
+	 * the body has no meetings yet (or doesn't exist). Used by the orchestrator
+	 * to detect the 30-day zero-results anomaly.
+	 */
+	getMostRecentMeetingDate(
+		slug: string,
+	): Effect.Effect<string | null, DatabaseError>;
 }
 
 class StorageService extends Context.Tag("StorageService")<
@@ -149,6 +157,28 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				catch: (error) =>
 					new DatabaseError({
 						operation: "storeTranscript",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		getMostRecentMeetingDate: (slug) =>
+			Effect.tryPromise({
+				try: async () => {
+					const row = await db
+						.select({ date: schema.meetings.date })
+						.from(schema.meetings)
+						.innerJoin(
+							schema.governingBodies,
+							eq(schema.meetings.bodyId, schema.governingBodies.id),
+						)
+						.where(eq(schema.governingBodies.slug, slug))
+						.orderBy(desc(schema.meetings.date))
+						.limit(1)
+						.get();
+					return row?.date ?? null;
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "getMostRecentMeetingDate",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
