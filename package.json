@@ -19,7 +19,6 @@
     "db:push": "drizzle-kit push",
     "db:pull": "drizzle-kit pull",
     "db:studio": "drizzle-kit studio",
-    "pipeline:ingest": "tsx src/pipeline/ingest.ts",
     "ralph:once": "./ralph-once.sh",
     "ralph": "./ralph.sh 5"
   },
