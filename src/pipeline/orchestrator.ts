@@ -2,6 +2,7 @@ import { Duration, Effect, Schedule } from "effect";
 import {
 	AlertService,
 	formatPipelineErrorAlert,
+	formatZeroResultsAlert,
 } from "#/pipeline/services/AlertService.ts";
 import type { FinalsiteMeetingListing } from "#/pipeline/services/FinalsiteScraper.ts";
 import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
@@ -13,6 +14,30 @@ import { SummarizationService } from "#/pipeline/services/SummarizationService.t
 import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
+
+/** Threshold (in days) beyond which the zero-results anomaly alert fires. */
+const ZERO_RESULTS_THRESHOLD_DAYS = 30;
+const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+function detectZeroResultsAnomaly(input: {
+	body: BodyConfig;
+	lastMeetingDate: string | null;
+	now: Date;
+}): Effect.Effect<void, never, AlertService> {
+	if (!input.lastMeetingDate) return Effect.void;
+	const lastMs = new Date(input.lastMeetingDate).getTime();
+	const daysSince = Math.floor((input.now.getTime() - lastMs) / MS_PER_DAY);
+	if (daysSince <= ZERO_RESULTS_THRESHOLD_DAYS) return Effect.void;
+
+	const formatted = formatZeroResultsAlert({
+		bodyName: input.body.name,
+		daysSinceLastContent: daysSince,
+	});
+	return Effect.gen(function* () {
+		const alert = yield* AlertService;
+		yield* alert.sendAlert(formatted).pipe(Effect.catchAll(() => Effect.void));
+	});
+}
 
 /**
  * Effect teaching note: The orchestrator is deliberately a plain function
@@ -86,6 +111,8 @@ type RunPipelineInput = {
 	networkRetry?: RetryPolicy;
 	/** Retry policy for LLM calls (summarize). Defaults to {2, 1000ms}. */
 	llmRetry?: RetryPolicy;
+	/** Current time used for zero-results anomaly detection. Defaults to new Date(). */
+	now?: Date;
 };
 
 /**
@@ -97,6 +124,7 @@ type ResolvedConfig = RunPipelineInput & {
 	networkSchedule: ReturnType<typeof scheduleFromPolicy>;
 	llmSchedule: ReturnType<typeof scheduleFromPolicy>;
 	youtubeDelayMs: number;
+	now: Date;
 };
 
 type PipelineResult = {
@@ -128,6 +156,7 @@ function runPipeline(
 		),
 		llmSchedule: scheduleFromPolicy(input.llmRetry ?? DEFAULT_LLM_RETRY),
 		youtubeDelayMs: input.youtubeDelayMs ?? 2000,
+		now: input.now ?? new Date(),
 	};
 
 	return Effect.gen(function* () {
@@ -159,6 +188,19 @@ function runPipelineForBody(
 	| AlertService
 > {
 	return Effect.gen(function* () {
+		// Zero-results anomaly check: alert if this body hasn't had fresh content
+		// in more than 30 days, *before* we run the pipeline that might confirm
+		// the gap. Silently skips on DatabaseError so the run continues regardless.
+		const storage = yield* StorageService;
+		const lastMeetingDate = yield* storage
+			.getMostRecentMeetingDate(body.slug)
+			.pipe(Effect.catchAll(() => Effect.succeed(null)));
+		yield* detectZeroResultsAnomaly({
+			body,
+			lastMeetingDate,
+			now: config.now,
+		});
+
 		let processed = 0;
 		let errors = 0;
 

@@ -338,6 +338,72 @@ describe("runPipeline", () => {
 		expect(result.processed).toBe(1);
 	});
 
+	it("sends a zero-results alert when the body's last meeting is more than 30 days old", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			mostRecentMeetingDate: "2026-01-01", // ~99 days before 2026-04-10
+			egovListings: [],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "sleepy-body",
+					name: "Sleepy Body",
+					egovSearchType: "12",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => "text",
+			dryRun: true,
+			now: new Date("2026-04-10T00:00:00Z"),
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		const zeroAlert = log.alert.find((a) =>
+			a.subject.includes("No new content"),
+		);
+		expect(zeroAlert).toBeDefined();
+		expect(zeroAlert?.body).toContain("Sleepy Body");
+		// 2026-04-10 minus 2026-01-01 = 99 days
+		expect(zeroAlert?.body).toMatch(/9\d days/);
+	});
+
+	it("does not send a zero-results alert when the most recent meeting is within 30 days", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			mostRecentMeetingDate: "2026-04-01", // 9 days before 2026-04-10
+			egovListings: [],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "fresh-body",
+					name: "Fresh Body",
+					egovSearchType: "12",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => "text",
+			dryRun: true,
+			now: new Date("2026-04-10T00:00:00Z"),
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		expect(log.alert).toHaveLength(0);
+	});
+
 	it("processes a YouTube body by transcribing each video and storing as a meeting", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
