@@ -30,6 +30,18 @@
 			}
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["**/src/components/ui/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noArrayIndexKey": "off"
+					}
+				}
+			}
+		}
+	],
 	"javascript": {
 		"formatter": {
 			"quoteStyle": "double"

@@ -59,6 +59,16 @@ export type NotableFiscalDecision = {
 	date: string;
 };
 
+export type FiscalDecisionRow = {
+	title: string;
+	amount: number;
+	budgetCategory: string;
+	status: FiscalStatus;
+	bodyName: string;
+	bodySlug: string;
+	date: string;
+};
+
 export type GoverningBodySummary = {
 	name: string;
 	slug: string;
@@ -250,6 +260,65 @@ export async function listNotableFiscalDecisionsQuery(
 	return rows.map((r) => ({
 		title: r.title,
 		amount: r.amount,
+		status: parseFiscalStatus(r.status),
+		bodyName: r.bodyName,
+		bodySlug: r.bodySlug,
+		date: r.date,
+	}));
+}
+
+/**
+ * Lists all fiscal decisions with meeting context for the spending dashboard.
+ * Optionally filtered by body slug, budget category, or time period (YYYY-MM).
+ * Each row includes bodySlug and date for deep linking to meeting detail pages.
+ */
+export async function listFiscalDecisionsQuery(
+	db: LibSQLDatabase<typeof schema>,
+	filters?: { bodySlug?: string; category?: string; period?: string },
+): Promise<FiscalDecisionRow[]> {
+	const conditions = [];
+
+	if (filters?.bodySlug) {
+		conditions.push(eq(schema.governingBodies.slug, filters.bodySlug));
+	}
+	if (filters?.category) {
+		conditions.push(
+			eq(schema.fiscalDecisions.budgetCategory, filters.category),
+		);
+	}
+	if (filters?.period) {
+		conditions.push(
+			sql`substr(${schema.meetings.date}, 1, 7) = ${filters.period}`,
+		);
+	}
+
+	const rows = await db
+		.select({
+			title: schema.fiscalDecisions.title,
+			amount: schema.fiscalDecisions.amount,
+			budgetCategory: schema.fiscalDecisions.budgetCategory,
+			status: schema.fiscalDecisions.status,
+			bodyName: schema.governingBodies.name,
+			bodySlug: schema.governingBodies.slug,
+			date: schema.meetings.date,
+		})
+		.from(schema.fiscalDecisions)
+		.innerJoin(
+			schema.meetings,
+			eq(schema.fiscalDecisions.meetingId, schema.meetings.id),
+		)
+		.innerJoin(
+			schema.governingBodies,
+			eq(schema.meetings.bodyId, schema.governingBodies.id),
+		)
+		.where(conditions.length > 0 ? and(...conditions) : undefined)
+		.orderBy(desc(schema.fiscalDecisions.amount))
+		.all();
+
+	return rows.map((r) => ({
+		title: r.title,
+		amount: r.amount,
+		budgetCategory: r.budgetCategory ?? "Uncategorized",
 		status: parseFiscalStatus(r.status),
 		bodyName: r.bodyName,
 		bodySlug: r.bodySlug,
