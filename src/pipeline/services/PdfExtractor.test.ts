@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { extractPdfText } from "./PdfExtractor.ts";
 
 const FIXTURE_URL = new URL(
@@ -8,8 +8,13 @@ const FIXTURE_URL = new URL(
 	import.meta.url,
 );
 
-async function loadFixtureBytes(): Promise<ArrayBuffer> {
-	const buffer = await readFile(fileURLToPath(FIXTURE_URL));
+const EMPTY_FIXTURE_URL = new URL(
+	"./__fixtures__/empty-text-sample.pdf",
+	import.meta.url,
+);
+
+async function loadFixtureBytes(url: URL = FIXTURE_URL): Promise<ArrayBuffer> {
+	const buffer = await readFile(fileURLToPath(url));
 	return buffer.buffer.slice(
 		buffer.byteOffset,
 		buffer.byteOffset + buffer.byteLength,
@@ -70,5 +75,38 @@ describe("extractPdfText", () => {
 		const truncated = fixture.slice(0, 8);
 
 		await expect(extractPdfText(truncated)).rejects.toThrow();
+	});
+
+	describe("empty-text guard", () => {
+		const originalAllowEmpty = process.env.ALLOW_EMPTY_PDF_TEXT;
+
+		beforeEach(() => {
+			delete process.env.ALLOW_EMPTY_PDF_TEXT;
+		});
+
+		afterEach(() => {
+			if (originalAllowEmpty === undefined) {
+				delete process.env.ALLOW_EMPTY_PDF_TEXT;
+			} else {
+				process.env.ALLOW_EMPTY_PDF_TEXT = originalAllowEmpty;
+			}
+		});
+
+		it("throws a clear error when a valid PDF has no extractable text (likely scanned/image-only)", async () => {
+			const bytes = await loadFixtureBytes(EMPTY_FIXTURE_URL);
+
+			await expect(extractPdfText(bytes)).rejects.toThrow(
+				/no text|scanned|OCR/i,
+			);
+		});
+
+		it("returns empty text when ALLOW_EMPTY_PDF_TEXT=1 is set (smoke-test opt-in)", async () => {
+			process.env.ALLOW_EMPTY_PDF_TEXT = "1";
+			const bytes = await loadFixtureBytes(EMPTY_FIXTURE_URL);
+
+			const text = await extractPdfText(bytes);
+
+			expect(text.trim().length).toBe(0);
+		});
 	});
 });

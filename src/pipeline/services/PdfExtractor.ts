@@ -20,12 +20,29 @@ import { extractText, getDocumentProxy } from "unpdf";
  * function reference.
  */
 export async function extractPdfText(bytes: ArrayBuffer): Promise<string> {
+	let text: string;
 	try {
 		const pdf = await getDocumentProxy(new Uint8Array(bytes));
-		const { text } = await extractText(pdf, { mergePages: true });
-		return text;
+		const result = await extractText(pdf, { mergePages: true });
+		text = result.text;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`PDF text extraction failed: ${message}`);
 	}
+
+	// Silent-degradation guard: an image-based/scanned PDF parses without errors
+	// but produces no text layer, which would flow through the pipeline as an
+	// empty summary and zero fiscal decisions — exactly the failure class the
+	// compound doc at docs/solutions/patterns/placeholder-stubs-in-production-paths-2026-04-10.md
+	// warned about. Fail loudly so the orchestrator alerts and the row is not
+	// stored. Opt-out via ALLOW_EMPTY_PDF_TEXT=1 for smoke-test scenarios where
+	// a deliberately blank PDF is expected.
+	if (text.trim().length === 0 && !process.env.ALLOW_EMPTY_PDF_TEXT) {
+		throw new Error(
+			"PDF text extraction returned no text — likely an image-based/scanned " +
+				"PDF that needs OCR. Set ALLOW_EMPTY_PDF_TEXT=1 to accept empty extractions.",
+		);
+	}
+
+	return text;
 }
