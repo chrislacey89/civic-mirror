@@ -6,6 +6,7 @@ import * as schema from "#/db/schema.ts";
 import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
 import { createGeminiSummarizer } from "#/pipeline/services/GeminiSummarizer.ts";
+import { extractPdfText } from "#/pipeline/services/PdfExtractor.ts";
 import { EgovScraperLive } from "#/pipeline/services/ScraperService.ts";
 import { StorageServiceLive } from "#/pipeline/services/StorageService.ts";
 import { SummarizationServiceLive } from "#/pipeline/services/SummarizationService.ts";
@@ -68,16 +69,6 @@ const DEFAULT_BODIES: BodyConfigEntry[] = [
 		finalsiteUrl: "https://www.rbbschools.net/school-board",
 	},
 ];
-
-/**
- * Placeholder PDF extractor. Production wiring should swap this for a real
- * extractor (pdf-parse, unpdf, pdfjs-dist). Kept inline here so the CLI
- * runs end-to-end in dry-run mode without adding a new dependency as part
- * of this slice — the follow-up PDF-extraction slice will replace it.
- */
-async function placeholderPdfExtract(bytes: ArrayBuffer): Promise<string> {
-	return `[PDF placeholder — ${bytes.byteLength} bytes; install a PDF extractor to see real text]`;
-}
 
 function readEnv(name: string): string | undefined {
 	const value = process.env[name];
@@ -169,7 +160,7 @@ function buildProductionLayers(input: BuildLayersInput) {
 
 export {
 	DEFAULT_BODIES,
-	placeholderPdfExtract,
+	extractPdfText,
 	readEnv,
 	requireEnv,
 	buildProductionLayers,
