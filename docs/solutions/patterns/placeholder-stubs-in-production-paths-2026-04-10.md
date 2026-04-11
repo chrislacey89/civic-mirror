@@ -132,8 +132,9 @@ For issue #8 the pragmatic choice is option 1, because the follow-up slice is ge
 ## Related
 
 - PR #23 — https://github.com/chrislacey89/civic-mirror/pull/23 (pre-merge review flagged as Dimension 7 Suggestion)
-- Follow-up: real PDF extractor (pdf-parse or unpdf)
+- PR #28 — https://github.com/chrislacey89/civic-mirror/pull/28 (the follow-up that landed the real `unpdf` extractor and deleted the placeholder)
+- `docs/solutions/patterns/empty-output-silent-degradation-2026-04-11.md` — PR #28's verification surfaced the same silent-degradation class one layer deeper: a real library (not a stub) can still return structurally-valid empty output for real-but-off-distribution input. The guard pattern generalizes from "deliberate stub" to "any non-throwing content-extraction stage."
 
 ## Shelf Life
 
-Evergreen — applies to any slice that defers production-critical code to a follow-up while shipping a stub. The specific PDF-extractor case ends when the follow-up slice lands.
+The specific PDF-extractor placeholder case is resolved (PR #28 deleted the placeholder). The broader principle — fail-fast on stubs, don't default production paths to deferred code — remains evergreen. For the generalized version covering real-library empty output, see the `empty-output-silent-degradation-2026-04-11.md` sibling doc.
