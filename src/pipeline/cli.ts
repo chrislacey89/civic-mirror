@@ -8,7 +8,7 @@ loadDotenv({ path: [".env.local", ".env"] });
 import {
 	buildProductionLayers,
 	DEFAULT_BODIES,
-	placeholderPdfExtract,
+	extractPdfText,
 } from "#/pipeline/composition.ts";
 import { runPipeline } from "#/pipeline/orchestrator.ts";
 
@@ -16,7 +16,7 @@ import { runPipeline } from "#/pipeline/orchestrator.ts";
  * Effect teaching note: This file owns the CLI surface — `@effect/cli` Command
  * and Options definitions plus the `NodeRuntime.runMain` entrypoint — and
  * nothing else. The production layer graph, the hardcoded body list, the env
- * binding, and the placeholder PDF extractor all live in composition.ts, so
+ * binding, and the real PDF extractor all live in composition.ts, so
  * changing how services are wired for production doesn't force edits past
  * a wall of Option / Command boilerplate.
  */
@@ -78,7 +78,7 @@ const runCommand = Command.make(
 			const result = yield* runPipeline({
 				bodies,
 				crawlDelayMs: skipCrawlDelay ? 0 : 300_000,
-				extractPdfText: placeholderPdfExtract,
+				extractPdfText,
 				dryRun,
 			}).pipe(Effect.provide(layers));
 
