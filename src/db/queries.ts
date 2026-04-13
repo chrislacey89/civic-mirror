@@ -47,6 +47,7 @@ export type MeetingCardData = {
 	meetingType: MeetingType;
 	bodyName: string;
 	bodySlug: string;
+	extractionMethod: ExtractionMethod;
 	highlights: string[];
 	prose: string;
 	fiscalDecisionCount: number;
@@ -134,12 +135,26 @@ export async function listRecentMeetingsQuery(
 			.get();
 		if (!body) continue;
 
+		const docs = await db
+			.select()
+			.from(schema.documents)
+			.where(eq(schema.documents.meetingId, m.id))
+			.all();
+
+		const extractionMethod = deriveMeetingExtractionMethod(
+			docs.map((d) => parseExtractionMethod(d.extractionMethod)),
+		);
+
 		const summary = await db
 			.select()
 			.from(schema.summaries)
 			.where(eq(schema.summaries.meetingId, m.id))
 			.get();
-		if (!summary) continue;
+
+		// Readable meetings without a summary are a broken mid-pipeline state —
+		// skip them. Unreadable meetings legitimately have no summary and must
+		// surface so citizens can reach the detail page + source PDF link.
+		if (!summary && extractionMethod !== "unreadable") continue;
 
 		const fiscals = await db
 			.select()
@@ -153,8 +168,9 @@ export async function listRecentMeetingsQuery(
 			meetingType: parseMeetingType(m.meetingType),
 			bodyName: body.name,
 			bodySlug: body.slug,
-			highlights: summary.highlights as string[],
-			prose: summary.prose,
+			extractionMethod,
+			highlights: (summary?.highlights as string[] | undefined) ?? [],
+			prose: summary?.prose ?? "",
 			fiscalDecisionCount: fiscals.length,
 			totalSpending: fiscals.reduce(
 				(total: number, f: { amount: number }) => total + f.amount,

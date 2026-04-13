@@ -22,6 +22,7 @@ const populatedData = {
 			meetingType: "regular" as const,
 			bodyName: "Ellettsville Town Council",
 			bodySlug: "ellettsville-town-council",
+			extractionMethod: "text-layer" as const,
 			highlights: ["Approved road repairs"],
 			prose: "Council met to discuss infrastructure.",
 			fiscalDecisionCount: 1,

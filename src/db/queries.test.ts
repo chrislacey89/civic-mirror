@@ -58,6 +58,20 @@ async function seedMeetingWithSummary(
 		.returning()
 		.get();
 
+	// A real pipeline always stores at least one document per meeting;
+	// including a text-layer default here keeps derived extractionMethod
+	// consistent with production state.
+	await db
+		.insert(schema.documents)
+		.values({
+			meetingId: meeting.id,
+			sourceUrl: `https://example.gov/${date}.pdf`,
+			rawText: "Document text.",
+			documentType: "minutes",
+			extractionMethod: "text-layer",
+		})
+		.run();
+
 	await db
 		.insert(schema.summaries)
 		.values({
@@ -131,20 +145,36 @@ describe("listRecentMeetingsQuery", () => {
 		expect(result).toHaveLength(0);
 	});
 
-	it("skips meetings without summaries", async () => {
+	it("includes unreadable meetings without a summary, tagged by extractionMethod", async () => {
 		const db = await createTestDb();
 		const body = await seedBody(db);
 		await seedMeetingWithSummary(db, body.id, "2026-03-23");
-		// Insert a meeting with no summary
-		await db
+		// Insert an unreadable meeting: one document, no summary
+		const unreadable = await db
 			.insert(schema.meetings)
 			.values({ bodyId: body.id, date: "2026-04-01", meetingType: "regular" })
+			.returning()
+			.get();
+		await db
+			.insert(schema.documents)
+			.values({
+				meetingId: unreadable.id,
+				sourceUrl: "https://example.gov/scan.pdf",
+				rawText: "",
+				documentType: "minutes",
+				extractionMethod: "unreadable",
+			})
 			.run();
 
 		const result = await listRecentMeetingsQuery(db);
 
-		expect(result).toHaveLength(1);
-		expect(result[0].date).toBe("2026-03-23");
+		expect(result).toHaveLength(2);
+		const unreadableRow = result.find((r) => r.date === "2026-04-01");
+		expect(unreadableRow?.extractionMethod).toBe("unreadable");
+		expect(unreadableRow?.highlights).toEqual([]);
+		expect(unreadableRow?.fiscalDecisionCount).toBe(0);
+		const readableRow = result.find((r) => r.date === "2026-03-23");
+		expect(readableRow?.extractionMethod).toBe("text-layer");
 	});
 
 	it("includes fiscal decision count and total spending", async () => {
