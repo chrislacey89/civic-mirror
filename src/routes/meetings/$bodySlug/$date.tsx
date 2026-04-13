@@ -81,26 +81,30 @@ function MeetingDetailPage() {
 			</header>
 
 			{/* Highlights */}
-			<section className="island-shell rise-in mb-6 rounded-2xl p-6">
-				<h2 className="mb-4 text-lg font-semibold text-[var(--sea-ink)]">
-					Key Highlights
-				</h2>
-				<ul className="m-0 list-disc space-y-2 pl-5 text-sm text-[var(--sea-ink-soft)]">
-					{meeting.summary.highlights.map((h) => (
-						<li key={h}>{h}</li>
-					))}
-				</ul>
-			</section>
+			{meeting.summary && (
+				<section className="island-shell rise-in mb-6 rounded-2xl p-6">
+					<h2 className="mb-4 text-lg font-semibold text-[var(--sea-ink)]">
+						Key Highlights
+					</h2>
+					<ul className="m-0 list-disc space-y-2 pl-5 text-sm text-[var(--sea-ink-soft)]">
+						{meeting.summary.highlights.map((h) => (
+							<li key={h}>{h}</li>
+						))}
+					</ul>
+				</section>
+			)}
 
 			{/* Prose Summary */}
-			<section className="island-shell rise-in mb-6 rounded-2xl p-6">
-				<h2 className="mb-4 text-lg font-semibold text-[var(--sea-ink)]">
-					Summary
-				</h2>
-				<p className="text-sm leading-relaxed text-[var(--sea-ink-soft)]">
-					{meeting.summary.prose}
-				</p>
-			</section>
+			{meeting.summary && (
+				<section className="island-shell rise-in mb-6 rounded-2xl p-6">
+					<h2 className="mb-4 text-lg font-semibold text-[var(--sea-ink)]">
+						Summary
+					</h2>
+					<p className="text-sm leading-relaxed text-[var(--sea-ink-soft)]">
+						{meeting.summary.prose}
+					</p>
+				</section>
+			)}
 
 			{/* Fiscal Decisions */}
 			{meeting.fiscalDecisions.length > 0 && (

@@ -5,6 +5,28 @@ import * as schema from "#/db/schema.ts";
 export type MeetingType = "regular" | "special" | "workshop";
 export type FiscalStatus = "approved" | "denied" | "tabled";
 export type BodyType = "town" | "county" | "school";
+export type ExtractionMethod = "text-layer" | "ocr" | "unreadable";
+
+const EXTRACTION_METHODS = new Set<string>(["text-layer", "ocr", "unreadable"]);
+
+function parseExtractionMethod(raw: string): ExtractionMethod {
+	if (EXTRACTION_METHODS.has(raw)) return raw as ExtractionMethod;
+	throw new Error(`Invalid extraction method: ${raw}`);
+}
+
+/**
+ * Derive meeting-level extraction method from per-document methods.
+ * "unreadable" only if every document is unreadable (or there are none);
+ * "ocr" if any readable doc came through OCR; "text-layer" otherwise.
+ */
+function deriveMeetingExtractionMethod(
+	methods: ExtractionMethod[],
+): ExtractionMethod {
+	if (methods.length === 0) return "unreadable";
+	if (methods.every((m) => m === "unreadable")) return "unreadable";
+	if (methods.some((m) => m === "ocr")) return "ocr";
+	return "text-layer";
+}
 
 const MEETING_TYPES = new Set<string>(["regular", "special", "workshop"]);
 const FISCAL_STATUSES = new Set<string>(["approved", "denied", "tabled"]);
@@ -370,12 +392,14 @@ export type MeetingDetail = {
 	meetingType: MeetingType;
 	bodyName: string;
 	bodySlug: string;
+	extractionMethod: ExtractionMethod;
 	documents: Array<{
 		sourceUrl: string;
 		rawText: string;
 		documentType: "agenda" | "minutes" | "ordinance";
+		extractionMethod: ExtractionMethod;
 	}>;
-	summary: { highlights: string[]; prose: string; model: string };
+	summary: { highlights: string[]; prose: string; model: string } | null;
 	fiscalDecisions: Array<FiscalDecisionDetail>;
 	budgetDiscussions: Array<{
 		topic: string;
@@ -421,13 +445,16 @@ export async function getMeetingByBodyAndDateQuery(
 		.where(eq(schema.documents.meetingId, meeting.id))
 		.all();
 
+	const docMethods = docs.map((d) => parseExtractionMethod(d.extractionMethod));
+	const extractionMethod = deriveMeetingExtractionMethod(docMethods);
+
 	const summary = await db
 		.select()
 		.from(schema.summaries)
 		.where(eq(schema.summaries.meetingId, meeting.id))
 		.get();
 
-	if (!summary) return null;
+	if (!summary && extractionMethod !== "unreadable") return null;
 
 	const fiscals = await db
 		.select()
@@ -447,17 +474,21 @@ export async function getMeetingByBodyAndDateQuery(
 		meetingType: parseMeetingType(meeting.meetingType),
 		bodyName: body.name,
 		bodySlug: body.slug,
-		documents: docs.map((d) => ({
+		extractionMethod,
+		documents: docs.map((d, i) => ({
 			sourceUrl: d.sourceUrl,
 			rawText: d.rawText,
 			documentType:
 				d.documentType as MeetingDetail["documents"][number]["documentType"],
+			extractionMethod: docMethods[i],
 		})),
-		summary: {
-			highlights: summary.highlights as string[],
-			prose: summary.prose,
-			model: summary.model,
-		},
+		summary: summary
+			? {
+					highlights: summary.highlights as string[],
+					prose: summary.prose,
+					model: summary.model,
+				}
+			: null,
 		fiscalDecisions: fiscals.map((f) => ({
 			title: f.title,
 			description: f.description,

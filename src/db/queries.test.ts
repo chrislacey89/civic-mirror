@@ -7,6 +7,7 @@ import {
 	aggregateFiscalByBodyQuery,
 	aggregateFiscalByCategoryQuery,
 	aggregateFiscalByTimePeriodQuery,
+	getMeetingByBodyAndDateQuery,
 	listGoverningBodiesQuery,
 	listNotableFiscalDecisionsQuery,
 	listRecentMeetingsQuery,
@@ -351,6 +352,155 @@ describe("listNotableFiscalDecisionsQuery", () => {
 		const result = await listNotableFiscalDecisionsQuery(db, 2);
 
 		expect(result).toHaveLength(2);
+	});
+});
+
+describe("getMeetingByBodyAndDateQuery — extractionMethod", () => {
+	async function seedMeetingWithDocs(
+		db: Awaited<ReturnType<typeof createTestDb>>,
+		bodyId: number,
+		date: string,
+		docs: Array<{
+			sourceUrl: string;
+			rawText: string;
+			documentType: "agenda" | "minutes" | "ordinance";
+			extractionMethod: "text-layer" | "ocr" | "unreadable";
+		}>,
+		summary?: { highlights: string[]; prose: string },
+	) {
+		const meeting = await db
+			.insert(schema.meetings)
+			.values({ bodyId, date, meetingType: "regular" })
+			.returning()
+			.get();
+
+		for (const d of docs) {
+			await db
+				.insert(schema.documents)
+				.values({
+					meetingId: meeting.id,
+					sourceUrl: d.sourceUrl,
+					rawText: d.rawText,
+					documentType: d.documentType,
+					extractionMethod: d.extractionMethod,
+				})
+				.run();
+		}
+
+		if (summary) {
+			await db
+				.insert(schema.summaries)
+				.values({
+					meetingId: meeting.id,
+					highlights: summary.highlights,
+					prose: summary.prose,
+					model: "gemini-2.5-flash",
+				})
+				.run();
+		}
+
+		return meeting;
+	}
+
+	it("returns extractionMethod='text-layer' when all docs use text layer", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithDocs(
+			db,
+			body.id,
+			"2026-03-23",
+			[
+				{
+					sourceUrl: "https://example.gov/a.pdf",
+					rawText: "Agenda text.",
+					documentType: "agenda",
+					extractionMethod: "text-layer",
+				},
+			],
+			{ highlights: ["h1"], prose: "prose" },
+		);
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-03-23",
+		);
+
+		expect(result).not.toBeNull();
+		expect(result?.extractionMethod).toBe("text-layer");
+		expect(result?.summary).not.toBeNull();
+	});
+
+	it("returns extractionMethod='ocr' when any doc was extracted via OCR", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithDocs(
+			db,
+			body.id,
+			"2026-03-23",
+			[
+				{
+					sourceUrl: "https://example.gov/a.pdf",
+					rawText: "Agenda text.",
+					documentType: "agenda",
+					extractionMethod: "text-layer",
+				},
+				{
+					sourceUrl: "https://example.gov/m.pdf",
+					rawText: "Scanned minutes text.",
+					documentType: "minutes",
+					extractionMethod: "ocr",
+				},
+			],
+			{ highlights: ["h1"], prose: "prose" },
+		);
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-03-23",
+		);
+
+		expect(result?.extractionMethod).toBe("ocr");
+	});
+
+	it("returns extractionMethod='unreadable' with no summary when all docs are unreadable", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithDocs(db, body.id, "2026-03-23", [
+			{
+				sourceUrl: "https://example.gov/scan.pdf",
+				rawText: "",
+				documentType: "minutes",
+				extractionMethod: "unreadable",
+			},
+		]);
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-03-23",
+		);
+
+		expect(result).not.toBeNull();
+		expect(result?.extractionMethod).toBe("unreadable");
+		expect(result?.summary).toBeNull();
+		expect(result?.fiscalDecisions).toHaveLength(0);
+		expect(result?.budgetDiscussions).toHaveLength(0);
+		expect(result?.documents).toHaveLength(1);
+	});
+
+	it("returns null when the meeting does not exist", async () => {
+		const db = await createTestDb();
+		await seedBody(db);
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"1999-01-01",
+		);
+
+		expect(result).toBeNull();
 	});
 });
 

@@ -289,8 +289,8 @@ describe("StorageService", () => {
 			expect(result?.date).toBe("2026-03-23");
 			expect(result?.bodyName).toBe("Ellettsville Town Council");
 			expect(result?.documents).toHaveLength(1);
-			expect(result?.summary.prose).toContain("Sale Street");
-			expect(result?.summary.highlights).toHaveLength(2);
+			expect(result?.summary?.prose).toContain("Sale Street");
+			expect(result?.summary?.highlights).toHaveLength(2);
 			expect(result?.fiscalDecisions).toHaveLength(1);
 			expect(result?.fiscalDecisions[0].amount).toBe(50000);
 			expect(result?.budgetDiscussions).toHaveLength(1);
