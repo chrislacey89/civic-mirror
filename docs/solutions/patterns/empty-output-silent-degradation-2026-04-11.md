@@ -151,10 +151,13 @@ The `errors=0 → errors=21` transition on the exact same input set is the signa
 
 **Revisable:** Yes, when OCR lands (tracked in #26). The guard's error message already points the operator at OCR as the fix.
 
+**Evolution (2026-04-13, PR #33):** OCR landed via #26 and exposed a follow-on need — some meetings are unreadable even with OCR, and the UI still needs to surface them as records with a link to the source PDF. At that point the two-outcome throw+env-var interface no longer fits: the caller needs a third outcome ("persist the meeting as unreadable"). The guard graduated to a discriminated return (`{ text, method: 'text-layer' | 'ocr' | 'unreadable' }`) with the silent-degradation assertion moved to the storage boundary. The `ALLOW_EMPTY_PDF_TEXT` env var was retired because the tri-state return makes it redundant. See `tri-state-return-for-pipeline-outcomes-2026-04-13.md` for the full pattern. The two-outcome throw+env-var prescription in *this* doc is still correct when the caller only needs ok-or-fail.
+
 ## Related
 
 - `docs/solutions/patterns/placeholder-stubs-in-production-paths-2026-04-10.md` — the direct predecessor; tonight's case is the "real library returns empty" version of the same pattern. Together these two form the backbone of a silent-failure principle for content-producing pipeline stages.
 - `docs/solutions/patterns/boundary-map-drift-between-slices-2026-04-10.md` — same sibling directory; the three patterns together cluster around "silent failures in pipeline stages that exit-code-based verification misses."
+- `docs/solutions/patterns/tri-state-return-for-pipeline-outcomes-2026-04-13.md` — the successor. When the caller needs to branch on *why* the output is empty, graduate the throw+env-var guard to a discriminated return with a storage-boundary invariant.
 - PR #28 — https://github.com/chrislacey89/civic-mirror/pull/28 (the slice that triggered this lesson)
 - Issue #24 — the slice issue, closed by PR #28
 - Issue #26 — OCR fallback for image-based eGov PDFs; will resolve the `errors=21` state the guard produces
