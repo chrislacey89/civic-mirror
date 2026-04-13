@@ -1,3 +1,4 @@
+import "./promise-try-polyfill.ts";
 import { extractText, getDocumentProxy } from "unpdf";
 
 /**
