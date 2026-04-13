@@ -9,10 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SpendingRouteImport } from './routes/spending'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MeetingsBodySlugDateRouteImport } from './routes/meetings/$bodySlug/$date'
 
+const SpendingRoute = SpendingRouteImport.update({
+  id: '/spending',
+  path: '/spending',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -32,35 +38,46 @@ const MeetingsBodySlugDateRoute = MeetingsBodySlugDateRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/spending': typeof SpendingRoute
   '/meetings/$bodySlug/$date': typeof MeetingsBodySlugDateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/spending': typeof SpendingRoute
   '/meetings/$bodySlug/$date': typeof MeetingsBodySlugDateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/spending': typeof SpendingRoute
   '/meetings/$bodySlug/$date': typeof MeetingsBodySlugDateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/meetings/$bodySlug/$date'
+  fullPaths: '/' | '/about' | '/spending' | '/meetings/$bodySlug/$date'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/meetings/$bodySlug/$date'
-  id: '__root__' | '/' | '/about' | '/meetings/$bodySlug/$date'
+  to: '/' | '/about' | '/spending' | '/meetings/$bodySlug/$date'
+  id: '__root__' | '/' | '/about' | '/spending' | '/meetings/$bodySlug/$date'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  SpendingRoute: typeof SpendingRoute
   MeetingsBodySlugDateRoute: typeof MeetingsBodySlugDateRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/spending': {
+      id: '/spending'
+      path: '/spending'
+      fullPath: '/spending'
+      preLoaderRoute: typeof SpendingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  SpendingRoute: SpendingRoute,
   MeetingsBodySlugDateRoute: MeetingsBodySlugDateRoute,
 }
 export const routeTree = rootRouteImport
