@@ -623,8 +623,8 @@ describe("runPipeline", () => {
 		const byMethod = Object.fromEntries(
 			stored.documents.map((d) => [d.extractionMethod, d]),
 		);
-		expect(byMethod["unreadable"]?.rawText).toBe("");
-		expect(byMethod["unreadable"]?.sourceUrl).toContain("uuid-agenda-scanned");
+		expect(byMethod.unreadable?.rawText).toBe("");
+		expect(byMethod.unreadable?.sourceUrl).toContain("uuid-agenda-scanned");
 		expect(byMethod["text-layer"]?.rawText).toContain("$10,000");
 		expect(byMethod["text-layer"]?.sourceUrl).toContain(
 			"uuid-minutes-readable",
