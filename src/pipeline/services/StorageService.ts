@@ -19,6 +19,8 @@ import { DatabaseError } from "#/pipeline/errors.ts";
  * This is the "write shape" — what the pipeline produces after scraping
  * and summarizing, ready to be stored atomically in a single transaction.
  */
+type ExtractionMethod = "text-layer" | "ocr" | "unreadable";
+
 type MeetingInput = {
 	bodySlug: string;
 	date: string;
@@ -27,13 +29,20 @@ type MeetingInput = {
 		sourceUrl: string;
 		rawText: string;
 		documentType: "agenda" | "minutes" | "ordinance";
+		extractionMethod: ExtractionMethod;
 	}>;
-	summary: {
+	/**
+	 * Optional — omitted when every document for this meeting is `unreadable`.
+	 * In that case the meeting row + document rows are still persisted so the
+	 * meeting appears in listings with a link to the source PDF, but nothing
+	 * is written to `summaries`, `fiscal_decisions`, or `budget_discussions`.
+	 */
+	summary?: {
 		highlights: string[];
 		prose: string;
 		model: string;
 	};
-	fiscalDecisions: Array<{
+	fiscalDecisions?: Array<{
 		title: string;
 		description: string;
 		amount: number;
@@ -53,6 +62,16 @@ type MeetingInput = {
 		notes?: string;
 	}>;
 };
+
+/**
+ * Multiplier applied to `confidence` on fiscal decisions whose source meeting
+ * has at least one OCR-extracted document. OCR typically sits at 3–8% WER on
+ * clean printed scans and 10–20% on degraded ones, which can subtly corrupt
+ * dollar figures in ways the LLM can't detect. Lowering the default confidence
+ * lets the existing confidence-aware UI surface that uncertainty without
+ * adding OCR-specific rendering paths downstream of the fiscal-decision row.
+ */
+const OCR_CONFIDENCE_MULTIPLIER = 0.75;
 
 type TranscriptInput = {
 	meetingId: number;
@@ -197,6 +216,26 @@ async function storeMeetingTransaction(
 	db: LibSQLDatabase<typeof schema>,
 	input: MeetingInput,
 ): Promise<Meeting> {
+	// Silent-degradation guard, enforced at the storage boundary. The composite
+	// extractor returns `method: 'unreadable'` for empty outcomes; anything
+	// claiming `text-layer` or `ocr` must carry non-empty text. This assertion
+	// catches upstream drift (a new path that forgets to map its empty case to
+	// 'unreadable') before the row hits the database and turns into invisible
+	// bad data. See docs/solutions/patterns/empty-output-silent-degradation-2026-04-11.md.
+	for (const doc of input.documents) {
+		if (doc.extractionMethod !== "unreadable" && doc.rawText.trim() === "") {
+			throw new Error(
+				`StorageService invariant violated: document sourceUrl=${doc.sourceUrl} ` +
+					`has extractionMethod='${doc.extractionMethod}' but empty rawText. ` +
+					`Empty text must be tagged as 'unreadable'.`,
+			);
+		}
+	}
+
+	const hasOcrSource = input.documents.some(
+		(d) => d.extractionMethod === "ocr",
+	);
+
 	return await db.transaction(async (tx) => {
 		// Resolve governing body by slug
 		const body = await tx
@@ -229,41 +268,51 @@ async function storeMeetingTransaction(
 					sourceUrl: doc.sourceUrl,
 					rawText: doc.rawText,
 					documentType: doc.documentType,
+					extractionMethod: doc.extractionMethod,
 				})
 				.run();
 		}
 
-		// Insert summary
-		await tx
-			.insert(schema.summaries)
-			.values({
-				meetingId: meeting.id,
-				highlights: input.summary.highlights,
-				prose: input.summary.prose,
-				model: input.summary.model,
-			})
-			.run();
-
-		// Insert fiscal decisions
-		for (const fd of input.fiscalDecisions) {
+		// Insert summary — skipped when all documents were unreadable.
+		if (input.summary) {
 			await tx
-				.insert(schema.fiscalDecisions)
+				.insert(schema.summaries)
 				.values({
 					meetingId: meeting.id,
-					title: fd.title,
-					description: fd.description,
-					amount: fd.amount,
-					originalAmount: fd.originalAmount,
-					budgetCategory: fd.budgetCategory,
-					status: fd.status,
-					voteRecord: fd.voteRecord,
-					vendor: fd.vendor,
-					fundingSource: fd.fundingSource,
-					ordinanceNumber: fd.ordinanceNumber,
-					confidence: fd.confidence,
-					isRecurring: fd.isRecurring,
+					highlights: input.summary.highlights,
+					prose: input.summary.prose,
+					model: input.summary.model,
 				})
 				.run();
+		}
+
+		// Insert fiscal decisions. When any source document was OCR, we lower
+		// the default confidence so the existing confidence-aware UI conveys
+		// the extra uncertainty without needing an OCR-aware branch of its own.
+		if (input.fiscalDecisions) {
+			for (const fd of input.fiscalDecisions) {
+				const confidence = hasOcrSource
+					? fd.confidence * OCR_CONFIDENCE_MULTIPLIER
+					: fd.confidence;
+				await tx
+					.insert(schema.fiscalDecisions)
+					.values({
+						meetingId: meeting.id,
+						title: fd.title,
+						description: fd.description,
+						amount: fd.amount,
+						originalAmount: fd.originalAmount,
+						budgetCategory: fd.budgetCategory,
+						status: fd.status,
+						voteRecord: fd.voteRecord,
+						vendor: fd.vendor,
+						fundingSource: fd.fundingSource,
+						ordinanceNumber: fd.ordinanceNumber,
+						confidence,
+						isRecurring: fd.isRecurring,
+					})
+					.run();
+			}
 		}
 
 		// Insert budget discussions
@@ -285,5 +334,5 @@ async function storeMeetingTransaction(
 	});
 }
 
-export { StorageService, StorageServiceLive };
-export type { MeetingInput, Meeting };
+export { StorageService, StorageServiceLive, OCR_CONFIDENCE_MULTIPLIER };
+export type { MeetingInput, Meeting, ExtractionMethod };

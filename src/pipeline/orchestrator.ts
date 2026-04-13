@@ -6,6 +6,7 @@ import {
 } from "#/pipeline/services/AlertService.ts";
 import type { FinalsiteMeetingListing } from "#/pipeline/services/FinalsiteScraper.ts";
 import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
+import type { ExtractResult } from "#/pipeline/services/PdfExtractor.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
 import type { MeetingInput } from "#/pipeline/services/StorageService.ts";
@@ -103,8 +104,16 @@ type RunPipelineInput = {
 	crawlDelayMs: number;
 	/** Milliseconds to sleep between YouTube transcription calls. Production: 2000-5000. */
 	youtubeDelayMs?: number;
-	/** Converts a downloaded PDF (ArrayBuffer) into plain text. */
-	extractPdfText: (bytes: ArrayBuffer) => Promise<string>;
+	/**
+	 * Converts a downloaded PDF (ArrayBuffer) into a tri-state extraction
+	 * result. The `method` field tells the orchestrator whether the text came
+	 * from the PDF's native text layer, an OCR fallback, or — when both paths
+	 * yield nothing — that the PDF is `unreadable`. The orchestrator persists
+	 * the `unreadable` case as a document row with empty text and skips
+	 * summarization + fiscal extraction for that meeting instead of treating
+	 * it as a pipeline failure.
+	 */
+	extractPdfText: (bytes: ArrayBuffer) => Promise<ExtractResult>;
 	/** When true, run all stages except storage and alerts — for smoke-testing. */
 	dryRun: boolean;
 	/** Retry policy for network operations (scrape, download). Defaults to {3, 500ms}. */
@@ -367,7 +376,7 @@ function processEgovListing(
 			.downloadDocument(listing.downloadUrl)
 			.pipe(Effect.retry(config.networkSchedule));
 
-		const text = yield* Effect.tryPromise({
+		const extraction = yield* Effect.tryPromise({
 			try: () => config.extractPdfText(bytes),
 			catch: (error) =>
 				new PipelineExtractError({
@@ -375,9 +384,34 @@ function processEgovListing(
 				}),
 		});
 
+		// Unreadable branch: persist the document row so the meeting appears in
+		// listings with a link to the PDF, but skip summarization + fiscal
+		// extraction entirely. This is the "silent hole" the PRD is eliminating
+		// — previously, a scanned PDF would fail extraction and the whole row
+		// would be dropped, making the meeting invisible on the public site.
+		if (extraction.method === "unreadable") {
+			if (config.dryRun) return { processed: 1, errors: 0 };
+
+			yield* storage.storeMeeting({
+				bodySlug: body.slug,
+				date: normalizeEgovDate(listing.date),
+				meetingType: "regular",
+				documents: [
+					{
+						sourceUrl: listing.downloadUrl,
+						rawText: "",
+						documentType: "minutes",
+						extractionMethod: "unreadable",
+					},
+				],
+			});
+
+			return { processed: 1, errors: 0 };
+		}
+
 		const summary = yield* summarizer
 			.summarize({
-				sourceText: text,
+				sourceText: extraction.text,
 				meetingContext: `${body.name}, ${listing.date}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
@@ -391,8 +425,9 @@ function processEgovListing(
 			documents: [
 				{
 					sourceUrl: listing.downloadUrl,
-					rawText: text,
+					rawText: extraction.text,
 					documentType: "minutes",
+					extractionMethod: extraction.method,
 				},
 			],
 			summary: {
@@ -462,7 +497,7 @@ function processFinalsiteListing(
 				.downloadDocument(doc.uuid)
 				.pipe(Effect.retry(config.networkSchedule));
 
-			const text = yield* Effect.tryPromise({
+			const extraction = yield* Effect.tryPromise({
 				try: () => config.extractPdfText(bytes),
 				catch: (error) =>
 					new PipelineExtractError({
@@ -471,11 +506,35 @@ function processFinalsiteListing(
 			});
 			documents.push({
 				sourceUrl: doc.downloadUrl,
-				rawText: text,
+				rawText: extraction.text,
 				documentType:
 					doc.documentType === "notice" ? "agenda" : doc.documentType,
+				extractionMethod: extraction.method,
 			});
-			combinedText += `\n${text}`;
+			if (extraction.method !== "unreadable") {
+				combinedText += `\n${extraction.text}`;
+			}
+		}
+
+		// If every document for the meeting came back unreadable, skip
+		// summarization and persist the meeting + document rows so the meeting
+		// still appears in listings with a PDF link. Otherwise summarize the
+		// concatenated text of the readable documents and persist normally.
+		const allUnreadable = documents.every(
+			(d) => d.extractionMethod === "unreadable",
+		);
+
+		if (allUnreadable) {
+			if (config.dryRun) return { processed: 1, errors: 0 };
+
+			yield* storage.storeMeeting({
+				bodySlug: body.slug,
+				date: normalizeFinalsiteDate(listing.date, listing.year),
+				meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
+				documents,
+			});
+
+			return { processed: 1, errors: 0 };
 		}
 
 		const summary = yield* summarizer

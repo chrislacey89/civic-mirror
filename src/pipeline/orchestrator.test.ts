@@ -8,7 +8,10 @@ import type { FinalsiteMeetingListing } from "#/pipeline/services/FinalsiteScrap
 import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
-import type { Meeting } from "#/pipeline/services/StorageService.ts";
+import type {
+	Meeting,
+	MeetingInput,
+} from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import type { SummarizationResult } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
@@ -30,6 +33,7 @@ type CallLog = {
 	transcribe: Array<string>;
 	summarize: Array<{ sourceText: string; meetingContext: string }>;
 	store: Array<{ bodySlug: string; date: string }>;
+	storeInputs: Array<MeetingInput>;
 	alert: Array<{ subject: string; body: string }>;
 };
 
@@ -43,6 +47,7 @@ function emptyCallLog(): CallLog {
 		transcribe: [],
 		summarize: [],
 		store: [],
+		storeInputs: [],
 		alert: [],
 	};
 }
@@ -137,6 +142,7 @@ function buildStubLayers(config: StubConfig) {
 		storeMeeting: (input) =>
 			Effect.sync(() => {
 				config.log.store.push({ bodySlug: input.bodySlug, date: input.date });
+				config.log.storeInputs.push(input);
 				return config.storedMeeting ?? defaultMeeting;
 			}),
 		getMeetingByBodyAndDate: () =>
@@ -197,8 +203,10 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () =>
-				"Meeting minutes body text with $50,000 decision",
+			extractPdfText: async () => ({
+				text: "Meeting minutes body text with $50,000 decision",
+				method: "text-layer",
+			}),
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
 
@@ -235,7 +243,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "text",
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
 			dryRun: true,
 		}).pipe(Effect.provide(layers));
 
@@ -274,7 +282,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "text",
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
 
@@ -326,7 +334,10 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "school board text",
+			extractPdfText: async () => ({
+				text: "school board text",
+				method: "text-layer",
+			}),
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
 
@@ -358,7 +369,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "text",
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
 			dryRun: true,
 			now: new Date("2026-04-10T00:00:00Z"),
 		}).pipe(Effect.provide(layers));
@@ -394,7 +405,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "text",
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
 			dryRun: true,
 			now: new Date("2026-04-10T00:00:00Z"),
 		}).pipe(Effect.provide(layers));
@@ -430,7 +441,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "unused",
+			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
 
@@ -442,5 +453,253 @@ describe("runPipeline", () => {
 		expect(log.summarize[0].sourceText).toContain("transcript for abc123");
 		expect(log.store).toHaveLength(1);
 		expect(result.processed).toBe(1);
+	});
+
+	it("persists an unreadable eGov PDF as a document row without summarizing", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 42,
+					title: "Scanned 2024 Minutes",
+					date: "05/13/2024",
+					downloadUrl: "https://example.com/doc/scanned-42",
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "town-council",
+					name: "Town Council",
+					egovSearchType: "12",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			// Tri-state outcome: both the text-layer and OCR paths returned nothing.
+			extractPdfText: async () => ({ text: "", method: "unreadable" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// Summarizer was skipped — no LLM call for an unreadable document.
+		expect(log.summarize).toHaveLength(0);
+		// Meeting was still persisted so the scanned minutes show up in listings.
+		expect(log.store).toHaveLength(1);
+		const stored = log.storeInputs[0];
+		expect(stored.documents).toHaveLength(1);
+		expect(stored.documents[0].extractionMethod).toBe("unreadable");
+		expect(stored.documents[0].rawText).toBe("");
+		expect(stored.summary).toBeUndefined();
+		expect(stored.fiscalDecisions).toBeUndefined();
+		// An unreadable extraction is not a pipeline error — it's a first-class
+		// outcome now, so `processed` increments and `errors` stays at zero.
+		expect(result.processed).toBe(1);
+		expect(result.errors).toBe(0);
+		expect(log.alert).toHaveLength(0);
+	});
+
+	it("threads the OCR extraction method through to the stored document row", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 99,
+					title: "Scanned minutes that OCR could read",
+					date: "06/11/2024",
+					downloadUrl: "https://example.com/doc/ocr-99",
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "town-council",
+					name: "Town Council",
+					egovSearchType: "12",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: "OCR-extracted meeting minutes discussing $42,000",
+				method: "ocr",
+			}),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		expect(log.summarize).toHaveLength(1);
+		expect(log.store).toHaveLength(1);
+		expect(log.storeInputs[0].documents[0].extractionMethod).toBe("ocr");
+	});
+
+	it("summarizes readable Finalsite docs while persisting unreadable siblings on the same meeting", async () => {
+		// Mixed-outcome path: a Finalsite meeting posts one image-only PDF
+		// (e.g. a scanned agenda) and one machine-readable PDF (e.g. minutes).
+		// The orchestrator must summarize from the readable text only, but
+		// still persist both documents on the meeting so the unreadable one
+		// is reachable via its source-of-record link in the UI.
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "January 20, 2026",
+					meetingType: "Regular Meeting",
+					year: 2026,
+					documents: [
+						{
+							uuid: "uuid-agenda-scanned",
+							documentType: "agenda",
+							downloadUrl: "/fs/resource-manager/view/uuid-agenda-scanned",
+							fileName: "agenda-scanned.pdf",
+						},
+						{
+							uuid: "uuid-minutes-readable",
+							documentType: "minutes",
+							downloadUrl: "/fs/resource-manager/view/uuid-minutes-readable",
+							fileName: "minutes-readable.pdf",
+						},
+					],
+				},
+			],
+		});
+
+		// Sequential per-call mocking via a closure counter — this is the
+		// repo's idiom (see other orchestrator tests). First doc is a scanned
+		// agenda that neither the text-layer nor OCR could read; second is
+		// minutes with a real text layer.
+		let callIndex = 0;
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => {
+				const result =
+					callIndex === 0
+						? ({ text: "", method: "unreadable" } as const)
+						: ({
+								text: "Minutes body text mentioning $10,000 facilities decision",
+								method: "text-layer",
+							} as const);
+				callIndex += 1;
+				return result;
+			},
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// Summarizer ran exactly once — over the readable text only, not over
+		// the unreadable doc's empty string.
+		expect(log.summarize).toHaveLength(1);
+		expect(log.summarize[0].sourceText).toContain("$10,000");
+
+		// Single meeting persisted with both docs.
+		expect(log.store).toHaveLength(1);
+		const stored = log.storeInputs[0];
+		expect(stored.documents).toHaveLength(2);
+
+		const byMethod = Object.fromEntries(
+			stored.documents.map((d) => [d.extractionMethod, d]),
+		);
+		expect(byMethod.unreadable?.rawText).toBe("");
+		expect(byMethod.unreadable?.sourceUrl).toContain("uuid-agenda-scanned");
+		expect(byMethod["text-layer"]?.rawText).toContain("$10,000");
+		expect(byMethod["text-layer"]?.sourceUrl).toContain(
+			"uuid-minutes-readable",
+		);
+
+		// Mixed meetings get the summary (only the all-unreadable case skips it).
+		expect(stored.summary).toBeDefined();
+
+		expect(result.processed).toBe(1);
+		expect(result.errors).toBe(0);
+		expect(log.alert).toHaveLength(0);
+	});
+
+	it("persists an all-unreadable Finalsite meeting without summarizing", async () => {
+		// Symmetric to the eGov all-unreadable test, but exercises the
+		// distinct allUnreadable branch in processFinalsiteListing — multi-doc
+		// meetings (e.g., agenda + minutes) where every document came back as
+		// `unreadable` should still appear in listings via their PDF links,
+		// without the summarizer being called or any error surfacing.
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "March 17, 2024",
+					meetingType: "Regular Meeting",
+					year: 2024,
+					documents: [
+						{
+							uuid: "uuid-old-agenda",
+							documentType: "agenda",
+							downloadUrl: "/fs/resource-manager/view/uuid-old-agenda",
+							fileName: "old-agenda.pdf",
+						},
+						{
+							uuid: "uuid-old-minutes",
+							documentType: "minutes",
+							downloadUrl: "/fs/resource-manager/view/uuid-old-minutes",
+							fileName: "old-minutes.pdf",
+						},
+					],
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "", method: "unreadable" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		expect(log.summarize).toHaveLength(0);
+		expect(log.store).toHaveLength(1);
+		const stored = log.storeInputs[0];
+		expect(stored.documents).toHaveLength(2);
+		expect(
+			stored.documents.every((d) => d.extractionMethod === "unreadable"),
+		).toBe(true);
+		expect(stored.documents.every((d) => d.rawText === "")).toBe(true);
+		expect(stored.summary).toBeUndefined();
+		expect(stored.fiscalDecisions).toBeUndefined();
+		expect(result.processed).toBe(1);
+		expect(result.errors).toBe(0);
+		expect(log.alert).toHaveLength(0);
 	});
 });

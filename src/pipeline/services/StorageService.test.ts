@@ -7,7 +7,11 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import { Effect } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
-import { StorageService, StorageServiceLive } from "./StorageService.ts";
+import {
+	OCR_CONFIDENCE_MULTIPLIER,
+	StorageService,
+	StorageServiceLive,
+} from "./StorageService.ts";
 
 const tmpFiles: string[] = [];
 
@@ -54,6 +58,7 @@ const testMeetingInput = {
 			rawText:
 				"Meeting called to order. Motion to approve $50,000 for road repairs.",
 			documentType: "minutes" as const,
+			extractionMethod: "text-layer" as const,
 		},
 	],
 	summary: {
@@ -148,6 +153,111 @@ describe("StorageService", () => {
 				.all();
 			expect(discussions).toHaveLength(1);
 			expect(discussions[0].topic).toBe("Park pavilion renovation");
+
+			// Default extraction method is preserved on the document row
+			expect(docs[0].extractionMethod).toBe("text-layer");
+		});
+
+		it("persists an unreadable meeting with the document row but no summary or fiscal data", async () => {
+			const db = await createTestDb();
+			const unreadableInput = {
+				bodySlug: "ellettsville-town-council",
+				date: "2024-05-13",
+				meetingType: "regular" as const,
+				documents: [
+					{
+						sourceUrl:
+							"https://ellettsville.in.us/egov/docs/scanned-2024-05-13.pdf",
+						rawText: "",
+						documentType: "minutes" as const,
+						extractionMethod: "unreadable" as const,
+					},
+				],
+				// No summary, fiscalDecisions, or budgetDiscussions — the meeting
+				// is reachable via its PDF link but the upstream pipeline did not
+				// produce any LLM output.
+			};
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(unreadableInput);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			const meetings = await db.select().from(schema.meetings).all();
+			expect(meetings).toHaveLength(1);
+
+			const docs = await db.select().from(schema.documents).all();
+			expect(docs).toHaveLength(1);
+			expect(docs[0].extractionMethod).toBe("unreadable");
+			expect(docs[0].rawText).toBe("");
+
+			const summaries = await db.select().from(schema.summaries).all();
+			expect(summaries).toHaveLength(0);
+			const fiscals = await db.select().from(schema.fiscalDecisions).all();
+			expect(fiscals).toHaveLength(0);
+			const discussions = await db
+				.select()
+				.from(schema.budgetDiscussions)
+				.all();
+			expect(discussions).toHaveLength(0);
+		});
+
+		it("rejects a document that claims 'text-layer' or 'ocr' but has empty rawText", async () => {
+			const db = await createTestDb();
+			const brokenInput = {
+				...testMeetingInput,
+				documents: [
+					{
+						...testMeetingInput.documents[0],
+						rawText: "",
+						extractionMethod: "text-layer" as const,
+					},
+				],
+			};
+
+			const program = Effect.gen(function* () {
+				const storage = yield* StorageService;
+				return yield* storage.storeMeeting(brokenInput);
+			}).pipe(Effect.provide(StorageServiceLive(db)));
+
+			await expect(Effect.runPromise(program)).rejects.toThrow(
+				/invariant|unreadable/i,
+			);
+
+			// And nothing was written — the assertion fires before the transaction.
+			const meetings = await db.select().from(schema.meetings).all();
+			expect(meetings).toHaveLength(0);
+		});
+
+		it("applies the OCR confidence multiplier to fiscal decisions when any source doc is OCR", async () => {
+			const db = await createTestDb();
+			const ocrInput = {
+				...testMeetingInput,
+				date: "2025-09-09",
+				documents: [
+					{
+						...testMeetingInput.documents[0],
+						extractionMethod: "ocr" as const,
+					},
+				],
+			};
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(ocrInput);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			const fiscals = await db.select().from(schema.fiscalDecisions).all();
+			expect(fiscals).toHaveLength(1);
+			// testMeetingInput.fiscalDecisions[0].confidence === 0.95
+			expect(fiscals[0].confidence).toBeCloseTo(
+				0.95 * OCR_CONFIDENCE_MULTIPLIER,
+				5,
+			);
 		});
 	});
 

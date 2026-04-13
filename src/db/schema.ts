@@ -54,6 +54,16 @@ export const meetings = sqliteTable("meetings", {
  * Source documents (agendas, minutes, ordinances) scraped from the eGov portal.
  * `rawText` holds the extracted text content from the PDF, which becomes the
  * input for the LLM summarization step. `sourceUrl` links back to the original.
+ *
+ * `extractionMethod` records which path produced `rawText`:
+ *   - `text-layer`: PDF had a native text layer (fast path, high fidelity)
+ *   - `ocr`:        rasterize + tesseract fallback for scanned/image-only PDFs
+ *   - `unreadable`: neither path yielded text; `rawText` is empty and no
+ *                   summary or fiscal decisions are stored for the meeting,
+ *                   but the document row still exists so the meeting appears
+ *                   in listings with a link to the source PDF.
+ *
+ * Default `'text-layer'` keeps pre-OCR rows valid without a backfill.
  */
 export const documents = sqliteTable("documents", {
 	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
@@ -63,6 +73,7 @@ export const documents = sqliteTable("documents", {
 	sourceUrl: text("source_url").notNull(),
 	rawText: text("raw_text").notNull(),
 	documentType: text("document_type").notNull(), // "agenda" | "minutes" | "ordinance"
+	extractionMethod: text("extraction_method").notNull().default("text-layer"), // "text-layer" | "ocr" | "unreadable"
 	createdAt: integer("created_at", { mode: "timestamp" }).default(
 		sql`(unixepoch())`,
 	),

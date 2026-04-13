@@ -8,6 +8,13 @@
       "when": 1775669041303,
       "tag": "0000_jazzy_marvel_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1776100879514,
+      "tag": "0001_natural_tarot",
+      "breakpoints": true
     }
   ]
 }

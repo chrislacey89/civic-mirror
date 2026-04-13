@@ -1,0 +1,1 @@
+ALTER TABLE `documents` ADD `extraction_method` text DEFAULT 'text-layer' NOT NULL;
