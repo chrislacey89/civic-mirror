@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { extractPdfText } from "./PdfExtractor.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { extractPdfText, type PdfExtractorDeps } from "./PdfExtractor.ts";
 
 const FIXTURE_URL = new URL(
 	"./__fixtures__/egov-minutes-sample.pdf",
@@ -77,6 +77,94 @@ describe("extractPdfText", () => {
 		await expect(extractPdfText(truncated)).rejects.toThrow();
 	});
 
+	describe("OCR fallback", () => {
+		// These tests exercise the composite wiring in isolation by injecting
+		// fake deps. The real OCR path is covered end-to-end in
+		// OcrExtractor.test.ts; here we care only that the composite routes to
+		// OCR when (and only when) the text-layer path produces no text.
+		const BYTES = new Uint8Array([0]).buffer;
+
+		it("falls back to OCR when the text layer returns an empty string", async () => {
+			const deps: PdfExtractorDeps = {
+				extractTextLayer: vi.fn().mockResolvedValue(""),
+				ocrPdf: vi.fn().mockResolvedValue("hello from OCR"),
+			};
+
+			const text = await extractPdfText(BYTES, deps);
+
+			expect(text).toBe("hello from OCR");
+			expect(deps.ocrPdf).toHaveBeenCalledOnce();
+		});
+
+		it("falls back to OCR when the text layer returns only whitespace", async () => {
+			// Regression guard: some scanned PDFs return a literal single space
+			// from unpdf.extractText. A naive length check would skip OCR.
+			const deps: PdfExtractorDeps = {
+				extractTextLayer: vi.fn().mockResolvedValue(" "),
+				ocrPdf: vi.fn().mockResolvedValue("real text"),
+			};
+
+			const text = await extractPdfText(BYTES, deps);
+
+			expect(text).toBe("real text");
+			expect(deps.ocrPdf).toHaveBeenCalledOnce();
+		});
+
+		it("does not invoke OCR when the text layer has content", async () => {
+			const ocrPdf = vi
+				.fn<(bytes: ArrayBuffer) => Promise<string>>()
+				.mockRejectedValue(new Error("OCR should not run"));
+			const deps: PdfExtractorDeps = {
+				extractTextLayer: vi.fn().mockResolvedValue("text layer content"),
+				ocrPdf,
+			};
+
+			const text = await extractPdfText(BYTES, deps);
+
+			expect(text).toBe("text layer content");
+			expect(ocrPdf).not.toHaveBeenCalled();
+		});
+
+		describe("when both paths return no text", () => {
+			const originalAllowEmpty = process.env.ALLOW_EMPTY_PDF_TEXT;
+
+			beforeEach(() => {
+				delete process.env.ALLOW_EMPTY_PDF_TEXT;
+			});
+
+			afterEach(() => {
+				if (originalAllowEmpty === undefined) {
+					delete process.env.ALLOW_EMPTY_PDF_TEXT;
+				} else {
+					process.env.ALLOW_EMPTY_PDF_TEXT = originalAllowEmpty;
+				}
+			});
+
+			it("throws a clear error mentioning both paths failed", async () => {
+				const deps: PdfExtractorDeps = {
+					extractTextLayer: vi.fn().mockResolvedValue(""),
+					ocrPdf: vi.fn().mockResolvedValue(""),
+				};
+
+				await expect(extractPdfText(BYTES, deps)).rejects.toThrow(
+					/text-layer.*OCR|OCR.*text-layer/i,
+				);
+			});
+
+			it("returns empty text when ALLOW_EMPTY_PDF_TEXT=1 is set", async () => {
+				process.env.ALLOW_EMPTY_PDF_TEXT = "1";
+				const deps: PdfExtractorDeps = {
+					extractTextLayer: vi.fn().mockResolvedValue(""),
+					ocrPdf: vi.fn().mockResolvedValue(""),
+				};
+
+				const text = await extractPdfText(BYTES, deps);
+
+				expect(text).toBe("");
+			});
+		});
+	});
+
 	describe("empty-text guard", () => {
 		const originalAllowEmpty = process.env.ALLOW_EMPTY_PDF_TEXT;
 
@@ -92,7 +180,12 @@ describe("extractPdfText", () => {
 			}
 		});
 
-		it("throws a clear error when a valid PDF has no extractable text (likely scanned/image-only)", async () => {
+		// End-to-end: the composite now attempts OCR before failing, so a
+		// truly blank PDF flows through both paths before the guard throws.
+		// Tesseract worker startup + blank-page recognition adds a few seconds.
+		it("throws a clear error when a valid PDF has no extractable text (likely scanned/image-only)", {
+			timeout: 60_000,
+		}, async () => {
 			const bytes = await loadFixtureBytes(EMPTY_FIXTURE_URL);
 
 			await expect(extractPdfText(bytes)).rejects.toThrow(
@@ -100,7 +193,9 @@ describe("extractPdfText", () => {
 			);
 		});
 
-		it("returns empty text when ALLOW_EMPTY_PDF_TEXT=1 is set (smoke-test opt-in)", async () => {
+		it("returns empty text when ALLOW_EMPTY_PDF_TEXT=1 is set (smoke-test opt-in)", {
+			timeout: 60_000,
+		}, async () => {
 			process.env.ALLOW_EMPTY_PDF_TEXT = "1";
 			const bytes = await loadFixtureBytes(EMPTY_FIXTURE_URL);
 

@@ -1,48 +1,74 @@
+import "./promise-try-polyfill.ts";
 import { extractText, getDocumentProxy } from "unpdf";
+import { ocrPdf as defaultOcrPdf } from "./OcrExtractor.ts";
 
 /**
- * Extracts plain text from a PDF byte buffer.
+ * Composite PDF text extractor: tries the text-layer path first, falls back
+ * to OCR for scanned/image-only PDFs, then enforces the empty-text guard
+ * across both paths.
  *
- * Uses unpdf (a serverless build of PDF.js) so this works in Node, Bun, and
- * Edge runtimes without a native dependency. `extractText` with
- * `mergePages: true` returns the concatenated text of every page in order,
- * which is the shape the summarization stage expects.
+ * Used via `RunPipelineInput.extractPdfText` in the orchestrator, which wraps
+ * this call in `Effect.tryPromise` so any thrown error surfaces as a tagged
+ * `PipelineExtractError`. Keeping this as a plain async function (not an
+ * Effect.Tag service) matches the orchestrator's function-reference seam:
+ * tests and the dry-run path substitute a different implementation by passing
+ * a different reference, not by reshaping the dependency graph.
  *
- * Effect teaching note: This module exposes a plain async function rather
- * than an Effect Context.Tag service. The reason is shape-of-the-contract:
- * the orchestrator takes `extractPdfText` as a function parameter on
- * `RunPipelineInput`, not from the Effect context, and wraps the call in
- * `Effect.tryPromise` so any thrown error becomes a tagged
- * `PipelineExtractError`. Wrapping this in a Tag would add an extra indirection
- * without changing the dependency graph — the orchestrator would still need a
- * way to pass it in for tests. Keeping it a function keeps the swap-the-impl
- * pattern (placeholder for dry-run vs real for production) as a simple
- * function reference.
+ * The internal two-path structure is exposed through the optional `deps`
+ * argument so unit tests can drive the wiring without spinning up the real
+ * OCR worker. Production callers pass only `bytes` and get the default
+ * implementations.
  */
-export async function extractPdfText(bytes: ArrayBuffer): Promise<string> {
-	let text: string;
+export type PdfExtractorDeps = {
+	extractTextLayer: (bytes: ArrayBuffer) => Promise<string>;
+	ocrPdf: (bytes: ArrayBuffer) => Promise<string>;
+};
+
+async function extractTextLayer(bytes: ArrayBuffer): Promise<string> {
 	try {
-		const pdf = await getDocumentProxy(new Uint8Array(bytes));
+		// pdfjs (bundled in unpdf) transfers ownership of the underlying buffer,
+		// leaving the caller's ArrayBuffer detached. Copy so the OCR fallback can
+		// still read the same `bytes` when the text-layer path returns empty.
+		const pdf = await getDocumentProxy(new Uint8Array(bytes.slice(0)));
 		const result = await extractText(pdf, { mergePages: true });
-		text = result.text;
+		return result.text;
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		throw new Error(`PDF text extraction failed: ${message}`);
 	}
+}
 
-	// Silent-degradation guard: an image-based/scanned PDF parses without errors
-	// but produces no text layer, which would flow through the pipeline as an
-	// empty summary and zero fiscal decisions — exactly the failure class the
-	// compound doc at docs/solutions/patterns/placeholder-stubs-in-production-paths-2026-04-10.md
-	// warned about. Fail loudly so the orchestrator alerts and the row is not
-	// stored. Opt-out via ALLOW_EMPTY_PDF_TEXT=1 for smoke-test scenarios where
-	// a deliberately blank PDF is expected.
-	if (text.trim().length === 0 && !process.env.ALLOW_EMPTY_PDF_TEXT) {
+const defaultDeps: PdfExtractorDeps = {
+	extractTextLayer,
+	ocrPdf: defaultOcrPdf,
+};
+
+export async function extractPdfText(
+	bytes: ArrayBuffer,
+	deps: PdfExtractorDeps = defaultDeps,
+): Promise<string> {
+	const textLayer = await deps.extractTextLayer(bytes);
+	if (textLayer.trim().length > 0) {
+		return textLayer;
+	}
+
+	const ocrText = await deps.ocrPdf(bytes);
+
+	// Silent-degradation guard, promoted to the composite level. An image-only
+	// PDF that tesseract also can't read (too dark, skewed, handwritten) would
+	// otherwise flow through the pipeline as an empty summary and zero fiscal
+	// decisions — the failure class documented in
+	// docs/solutions/patterns/empty-output-silent-degradation-2026-04-11.md.
+	// Fail loudly so the orchestrator alerts and the row is not stored. Opt out
+	// via ALLOW_EMPTY_PDF_TEXT=1 for smoke-test scenarios with a deliberately
+	// blank PDF.
+	if (ocrText.trim().length === 0 && !process.env.ALLOW_EMPTY_PDF_TEXT) {
 		throw new Error(
-			"PDF text extraction returned no text — likely an image-based/scanned " +
-				"PDF that needs OCR. Set ALLOW_EMPTY_PDF_TEXT=1 to accept empty extractions.",
+			"Both text-layer extraction and OCR returned no text — the PDF may be " +
+				"unreadable (too dark, rotated, handwritten). " +
+				"Set ALLOW_EMPTY_PDF_TEXT=1 to accept empty extractions.",
 		);
 	}
 
-	return text;
+	return ocrText;
 }
