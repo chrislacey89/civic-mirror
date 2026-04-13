@@ -544,4 +544,97 @@ describe("runPipeline", () => {
 		expect(log.store).toHaveLength(1);
 		expect(log.storeInputs[0].documents[0].extractionMethod).toBe("ocr");
 	});
+
+	it("summarizes readable Finalsite docs while persisting unreadable siblings on the same meeting", async () => {
+		// Mixed-outcome path: a Finalsite meeting posts one image-only PDF
+		// (e.g. a scanned agenda) and one machine-readable PDF (e.g. minutes).
+		// The orchestrator must summarize from the readable text only, but
+		// still persist both documents on the meeting so the unreadable one
+		// is reachable via its source-of-record link in the UI.
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "January 20, 2026",
+					meetingType: "Regular Meeting",
+					year: 2026,
+					documents: [
+						{
+							uuid: "uuid-agenda-scanned",
+							documentType: "agenda",
+							downloadUrl: "/fs/resource-manager/view/uuid-agenda-scanned",
+							fileName: "agenda-scanned.pdf",
+						},
+						{
+							uuid: "uuid-minutes-readable",
+							documentType: "minutes",
+							downloadUrl: "/fs/resource-manager/view/uuid-minutes-readable",
+							fileName: "minutes-readable.pdf",
+						},
+					],
+				},
+			],
+		});
+
+		// Sequential per-call mocking via a closure counter — this is the
+		// repo's idiom (see other orchestrator tests). First doc is a scanned
+		// agenda that neither the text-layer nor OCR could read; second is
+		// minutes with a real text layer.
+		let callIndex = 0;
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => {
+				const result =
+					callIndex === 0
+						? ({ text: "", method: "unreadable" } as const)
+						: ({
+								text: "Minutes body text mentioning $10,000 facilities decision",
+								method: "text-layer",
+							} as const);
+				callIndex += 1;
+				return result;
+			},
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// Summarizer ran exactly once — over the readable text only, not over
+		// the unreadable doc's empty string.
+		expect(log.summarize).toHaveLength(1);
+		expect(log.summarize[0].sourceText).toContain("$10,000");
+
+		// Single meeting persisted with both docs.
+		expect(log.store).toHaveLength(1);
+		const stored = log.storeInputs[0];
+		expect(stored.documents).toHaveLength(2);
+
+		const byMethod = Object.fromEntries(
+			stored.documents.map((d) => [d.extractionMethod, d]),
+		);
+		expect(byMethod["unreadable"]?.rawText).toBe("");
+		expect(byMethod["unreadable"]?.sourceUrl).toContain("uuid-agenda-scanned");
+		expect(byMethod["text-layer"]?.rawText).toContain("$10,000");
+		expect(byMethod["text-layer"]?.sourceUrl).toContain(
+			"uuid-minutes-readable",
+		);
+
+		// Mixed meetings get the summary (only the all-unreadable case skips it).
+		expect(stored.summary).toBeDefined();
+
+		expect(result.processed).toBe(1);
+		expect(result.errors).toBe(0);
+		expect(log.alert).toHaveLength(0);
+	});
 });
