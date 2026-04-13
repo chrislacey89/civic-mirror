@@ -8,7 +8,10 @@ import type { FinalsiteMeetingListing } from "#/pipeline/services/FinalsiteScrap
 import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
-import type { Meeting } from "#/pipeline/services/StorageService.ts";
+import type {
+	Meeting,
+	MeetingInput,
+} from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import type { SummarizationResult } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
@@ -30,6 +33,7 @@ type CallLog = {
 	transcribe: Array<string>;
 	summarize: Array<{ sourceText: string; meetingContext: string }>;
 	store: Array<{ bodySlug: string; date: string }>;
+	storeInputs: Array<MeetingInput>;
 	alert: Array<{ subject: string; body: string }>;
 };
 
@@ -43,6 +47,7 @@ function emptyCallLog(): CallLog {
 		transcribe: [],
 		summarize: [],
 		store: [],
+		storeInputs: [],
 		alert: [],
 	};
 }
@@ -137,6 +142,7 @@ function buildStubLayers(config: StubConfig) {
 		storeMeeting: (input) =>
 			Effect.sync(() => {
 				config.log.store.push({ bodySlug: input.bodySlug, date: input.date });
+				config.log.storeInputs.push(input);
 				return config.storedMeeting ?? defaultMeeting;
 			}),
 		getMeetingByBodyAndDate: () =>
@@ -197,8 +203,10 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () =>
-				"Meeting minutes body text with $50,000 decision",
+			extractPdfText: async () => ({
+				text: "Meeting minutes body text with $50,000 decision",
+				method: "text-layer",
+			}),
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
 
@@ -235,7 +243,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "text",
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
 			dryRun: true,
 		}).pipe(Effect.provide(layers));
 
@@ -274,7 +282,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "text",
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
 
@@ -326,7 +334,10 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "school board text",
+			extractPdfText: async () => ({
+				text: "school board text",
+				method: "text-layer",
+			}),
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
 
@@ -358,7 +369,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "text",
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
 			dryRun: true,
 			now: new Date("2026-04-10T00:00:00Z"),
 		}).pipe(Effect.provide(layers));
@@ -394,7 +405,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "text",
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
 			dryRun: true,
 			now: new Date("2026-04-10T00:00:00Z"),
 		}).pipe(Effect.provide(layers));
@@ -430,7 +441,7 @@ describe("runPipeline", () => {
 			youtubeDelayMs: 0,
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
-			extractPdfText: async () => "unused",
+			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
 
@@ -442,5 +453,95 @@ describe("runPipeline", () => {
 		expect(log.summarize[0].sourceText).toContain("transcript for abc123");
 		expect(log.store).toHaveLength(1);
 		expect(result.processed).toBe(1);
+	});
+
+	it("persists an unreadable eGov PDF as a document row without summarizing", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 42,
+					title: "Scanned 2024 Minutes",
+					date: "05/13/2024",
+					downloadUrl: "https://example.com/doc/scanned-42",
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "town-council",
+					name: "Town Council",
+					egovSearchType: "12",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			// Tri-state outcome: both the text-layer and OCR paths returned nothing.
+			extractPdfText: async () => ({ text: "", method: "unreadable" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// Summarizer was skipped — no LLM call for an unreadable document.
+		expect(log.summarize).toHaveLength(0);
+		// Meeting was still persisted so the scanned minutes show up in listings.
+		expect(log.store).toHaveLength(1);
+		const stored = log.storeInputs[0];
+		expect(stored.documents).toHaveLength(1);
+		expect(stored.documents[0].extractionMethod).toBe("unreadable");
+		expect(stored.documents[0].rawText).toBe("");
+		expect(stored.summary).toBeUndefined();
+		expect(stored.fiscalDecisions).toBeUndefined();
+		// An unreadable extraction is not a pipeline error — it's a first-class
+		// outcome now, so `processed` increments and `errors` stays at zero.
+		expect(result.processed).toBe(1);
+		expect(result.errors).toBe(0);
+		expect(log.alert).toHaveLength(0);
+	});
+
+	it("threads the OCR extraction method through to the stored document row", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 99,
+					title: "Scanned minutes that OCR could read",
+					date: "06/11/2024",
+					downloadUrl: "https://example.com/doc/ocr-99",
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "town-council",
+					name: "Town Council",
+					egovSearchType: "12",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: "OCR-extracted meeting minutes discussing $42,000",
+				method: "ocr",
+			}),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		expect(log.summarize).toHaveLength(1);
+		expect(log.store).toHaveLength(1);
+		expect(log.storeInputs[0].documents[0].extractionMethod).toBe("ocr");
 	});
 });
