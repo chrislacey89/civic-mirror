@@ -637,4 +637,69 @@ describe("runPipeline", () => {
 		expect(result.errors).toBe(0);
 		expect(log.alert).toHaveLength(0);
 	});
+
+	it("persists an all-unreadable Finalsite meeting without summarizing", async () => {
+		// Symmetric to the eGov all-unreadable test, but exercises the
+		// distinct allUnreadable branch in processFinalsiteListing — multi-doc
+		// meetings (e.g., agenda + minutes) where every document came back as
+		// `unreadable` should still appear in listings via their PDF links,
+		// without the summarizer being called or any error surfacing.
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "March 17, 2024",
+					meetingType: "Regular Meeting",
+					year: 2024,
+					documents: [
+						{
+							uuid: "uuid-old-agenda",
+							documentType: "agenda",
+							downloadUrl: "/fs/resource-manager/view/uuid-old-agenda",
+							fileName: "old-agenda.pdf",
+						},
+						{
+							uuid: "uuid-old-minutes",
+							documentType: "minutes",
+							downloadUrl: "/fs/resource-manager/view/uuid-old-minutes",
+							fileName: "old-minutes.pdf",
+						},
+					],
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "", method: "unreadable" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		expect(log.summarize).toHaveLength(0);
+		expect(log.store).toHaveLength(1);
+		const stored = log.storeInputs[0];
+		expect(stored.documents).toHaveLength(2);
+		expect(
+			stored.documents.every((d) => d.extractionMethod === "unreadable"),
+		).toBe(true);
+		expect(stored.documents.every((d) => d.rawText === "")).toBe(true);
+		expect(stored.summary).toBeUndefined();
+		expect(stored.fiscalDecisions).toBeUndefined();
+		expect(result.processed).toBe(1);
+		expect(result.errors).toBe(0);
+		expect(log.alert).toHaveLength(0);
+	});
 });
