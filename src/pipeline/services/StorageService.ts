@@ -162,6 +162,22 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 		storeTranscript: (input) =>
 			Effect.tryPromise({
 				try: async () => {
+					// Idempotency guard mirroring storeMeeting — (meetingId, source) is
+					// the natural key enforced by the transcripts_meeting_id_source_unique
+					// index. Skip the insert when a transcript for this pair already
+					// exists so re-runs of the YouTube path don't stack duplicates.
+					const existing = await db
+						.select({ id: schema.transcripts.id })
+						.from(schema.transcripts)
+						.where(
+							and(
+								eq(schema.transcripts.meetingId, input.meetingId),
+								eq(schema.transcripts.source, input.source),
+							),
+						)
+						.get();
+					if (existing) return;
+
 					await db
 						.insert(schema.transcripts)
 						.values({

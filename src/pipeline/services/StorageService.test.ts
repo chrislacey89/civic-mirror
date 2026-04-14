@@ -497,5 +497,35 @@ describe("StorageService", () => {
 				},
 			]);
 		});
+
+		it("is idempotent on re-run — second call with same (meetingId, source) produces no duplicate", async () => {
+			const db = await createTestDb();
+			const layer = StorageServiceLive(db);
+
+			const meeting = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(testMeetingInput);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const transcriptInput = {
+				meetingId: meeting.id,
+				source: "captions" as const,
+				rawText: "Meeting called to order.",
+				sourceUrl: "https://youtube.com/watch?v=test123",
+			};
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeTranscript(transcriptInput);
+					yield* storage.storeTranscript(transcriptInput);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const transcripts = await db.select().from(schema.transcripts).all();
+			expect(transcripts).toHaveLength(1);
+		});
 	});
 });

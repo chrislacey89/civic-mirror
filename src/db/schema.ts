@@ -99,19 +99,31 @@ export const documents = sqliteTable("documents", {
  * `segments` stores timestamped chunks as JSON, enabling future features like
  * "jump to the moment they discussed this budget item."
  */
-export const transcripts = sqliteTable("transcripts", {
-	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-	meetingId: integer("meeting_id")
-		.notNull()
-		.references(() => meetings.id),
-	source: text().notNull(), // "captions" | "whisper"
-	rawText: text("raw_text").notNull(),
-	segments: text({ mode: "json" }), // timestamped segments array
-	sourceUrl: text("source_url"),
-	createdAt: integer("created_at", { mode: "timestamp" }).default(
-		sql`(unixepoch())`,
-	),
-});
+export const transcripts = sqliteTable(
+	"transcripts",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		meetingId: integer("meeting_id")
+			.notNull()
+			.references(() => meetings.id),
+		source: text().notNull(), // "captions" | "whisper"
+		rawText: text("raw_text").notNull(),
+		segments: text({ mode: "json" }), // timestamped segments array
+		sourceUrl: text("source_url"),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		// (meetingId, source) is the natural key — a meeting can have at most one
+		// captions transcript and one whisper transcript. Enforcing uniqueness at
+		// the DB level matches the pattern on meetings(body_id, date); see #37.
+		uniqueIndex("transcripts_meeting_id_source_unique").on(
+			table.meetingId,
+			table.source,
+		),
+	],
+);
 
 /**
  * LLM-generated meeting summaries. Each summary includes structured highlights
