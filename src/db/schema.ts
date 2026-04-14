@@ -1,5 +1,11 @@
 import { sql } from "drizzle-orm";
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+	integer,
+	real,
+	sqliteTable,
+	text,
+	uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 /**
  * Star schema with `meetings` at the center.
@@ -38,17 +44,26 @@ export const governingBodies = sqliteTable("governing_bodies", {
  * A single meeting session. The composite of (bodyId, date) is the natural key
  * used for lookups — e.g. "Ellettsville Town Council on 2026-03-23."
  */
-export const meetings = sqliteTable("meetings", {
-	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-	bodyId: integer("body_id")
-		.notNull()
-		.references(() => governingBodies.id),
-	date: text().notNull(), // ISO date string YYYY-MM-DD
-	meetingType: text("meeting_type").notNull().default("regular"), // "regular" | "special" | "workshop"
-	createdAt: integer("created_at", { mode: "timestamp" }).default(
-		sql`(unixepoch())`,
-	),
-});
+export const meetings = sqliteTable(
+	"meetings",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		bodyId: integer("body_id")
+			.notNull()
+			.references(() => governingBodies.id),
+		date: text().notNull(), // ISO date string YYYY-MM-DD
+		meetingType: text("meeting_type").notNull().default("regular"), // "regular" | "special" | "workshop"
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		// (bodyId, date) is the natural key — see block comment above. The unique
+		// index turns that into a DB-enforced invariant so the weekly ingestion
+		// cron can't silently produce duplicate meeting rows on re-run.
+		uniqueIndex("meetings_body_id_date_unique").on(table.bodyId, table.date),
+	],
+);
 
 /**
  * Source documents (agendas, minutes, ordinances) scraped from the eGov portal.
