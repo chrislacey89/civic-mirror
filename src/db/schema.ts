@@ -1,5 +1,11 @@
 import { sql } from "drizzle-orm";
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+	integer,
+	real,
+	sqliteTable,
+	text,
+	uniqueIndex,
+} from "drizzle-orm/sqlite-core";
 
 /**
  * Star schema with `meetings` at the center.
@@ -38,17 +44,26 @@ export const governingBodies = sqliteTable("governing_bodies", {
  * A single meeting session. The composite of (bodyId, date) is the natural key
  * used for lookups — e.g. "Ellettsville Town Council on 2026-03-23."
  */
-export const meetings = sqliteTable("meetings", {
-	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-	bodyId: integer("body_id")
-		.notNull()
-		.references(() => governingBodies.id),
-	date: text().notNull(), // ISO date string YYYY-MM-DD
-	meetingType: text("meeting_type").notNull().default("regular"), // "regular" | "special" | "workshop"
-	createdAt: integer("created_at", { mode: "timestamp" }).default(
-		sql`(unixepoch())`,
-	),
-});
+export const meetings = sqliteTable(
+	"meetings",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		bodyId: integer("body_id")
+			.notNull()
+			.references(() => governingBodies.id),
+		date: text().notNull(), // ISO date string YYYY-MM-DD
+		meetingType: text("meeting_type").notNull().default("regular"), // "regular" | "special" | "workshop"
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		// (bodyId, date) is the natural key — see block comment above. The unique
+		// index turns that into a DB-enforced invariant so the weekly ingestion
+		// cron can't silently produce duplicate meeting rows on re-run.
+		uniqueIndex("meetings_body_id_date_unique").on(table.bodyId, table.date),
+	],
+);
 
 /**
  * Source documents (agendas, minutes, ordinances) scraped from the eGov portal.
@@ -84,19 +99,31 @@ export const documents = sqliteTable("documents", {
  * `segments` stores timestamped chunks as JSON, enabling future features like
  * "jump to the moment they discussed this budget item."
  */
-export const transcripts = sqliteTable("transcripts", {
-	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-	meetingId: integer("meeting_id")
-		.notNull()
-		.references(() => meetings.id),
-	source: text().notNull(), // "captions" | "whisper"
-	rawText: text("raw_text").notNull(),
-	segments: text({ mode: "json" }), // timestamped segments array
-	sourceUrl: text("source_url"),
-	createdAt: integer("created_at", { mode: "timestamp" }).default(
-		sql`(unixepoch())`,
-	),
-});
+export const transcripts = sqliteTable(
+	"transcripts",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		meetingId: integer("meeting_id")
+			.notNull()
+			.references(() => meetings.id),
+		source: text().notNull(), // "captions" | "whisper"
+		rawText: text("raw_text").notNull(),
+		segments: text({ mode: "json" }), // timestamped segments array
+		sourceUrl: text("source_url"),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		// (meetingId, source) is the natural key — a meeting can have at most one
+		// captions transcript and one whisper transcript. Enforcing uniqueness at
+		// the DB level matches the pattern on meetings(body_id, date); see #37.
+		uniqueIndex("transcripts_meeting_id_source_unique").on(
+			table.meetingId,
+			table.source,
+		),
+	],
+);
 
 /**
  * LLM-generated meeting summaries. Each summary includes structured highlights

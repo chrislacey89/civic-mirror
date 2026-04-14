@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `transcripts_meeting_id_source_unique` ON `transcripts` (`meeting_id`,`source`);

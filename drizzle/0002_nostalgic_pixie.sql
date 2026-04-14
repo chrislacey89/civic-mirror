@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `meetings_body_id_date_unique` ON `meetings` (`body_id`,`date`);

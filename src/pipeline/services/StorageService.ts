@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { Context, Effect, Layer } from "effect";
 import type { MeetingDetail } from "#/db/queries.ts";
@@ -162,6 +162,22 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 		storeTranscript: (input) =>
 			Effect.tryPromise({
 				try: async () => {
+					// Idempotency guard mirroring storeMeeting — (meetingId, source) is
+					// the natural key enforced by the transcripts_meeting_id_source_unique
+					// index. Skip the insert when a transcript for this pair already
+					// exists so re-runs of the YouTube path don't stack duplicates.
+					const existing = await db
+						.select({ id: schema.transcripts.id })
+						.from(schema.transcripts)
+						.where(
+							and(
+								eq(schema.transcripts.meetingId, input.meetingId),
+								eq(schema.transcripts.source, input.source),
+							),
+						)
+						.get();
+					if (existing) return;
+
 					await db
 						.insert(schema.transcripts)
 						.values({
@@ -246,6 +262,29 @@ async function storeMeetingTransaction(
 
 		if (!body) {
 			throw new Error(`Governing body not found: ${input.bodySlug}`);
+		}
+
+		// Idempotency guard: (body_id, date) is the natural key. If this meeting
+		// already exists, skip the insert and return the existing handle without
+		// touching child rows. The weekly ingestion cron re-sees the same eGov /
+		// Finalsite listings every run; without this short-circuit every listing
+		// would accumulate duplicate meeting, document, summary, and fiscal rows.
+		// See issue #37. A follow-up can decide refresh semantics (pick up new
+		// documents posted after the first scrape) — this slice intentionally
+		// leaves existing rows untouched.
+		const existing = await tx
+			.select()
+			.from(schema.meetings)
+			.where(
+				and(
+					eq(schema.meetings.bodyId, body.id),
+					eq(schema.meetings.date, input.date),
+				),
+			)
+			.get();
+
+		if (existing) {
+			return { id: existing.id, date: existing.date, bodyId: existing.bodyId };
 		}
 
 		// Insert meeting

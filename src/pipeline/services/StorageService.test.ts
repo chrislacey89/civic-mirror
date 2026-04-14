@@ -259,6 +259,47 @@ describe("StorageService", () => {
 				5,
 			);
 		});
+
+		it("is idempotent on re-run — second call with same (bodySlug, date) produces no duplicates", async () => {
+			const db = await createTestDb();
+			const layer = StorageServiceLive(db);
+
+			const first = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(testMeetingInput);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const second = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(testMeetingInput);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			// Second call returns the same meeting handle as the first
+			expect(second.id).toBe(first.id);
+
+			// Exactly one meeting row survives — not two
+			const meetings = await db.select().from(schema.meetings).all();
+			expect(meetings).toHaveLength(1);
+
+			// Child rows are not duplicated either
+			const docs = await db.select().from(schema.documents).all();
+			expect(docs).toHaveLength(testMeetingInput.documents.length);
+			const summaries = await db.select().from(schema.summaries).all();
+			expect(summaries).toHaveLength(1);
+			const fiscals = await db.select().from(schema.fiscalDecisions).all();
+			expect(fiscals).toHaveLength(testMeetingInput.fiscalDecisions.length);
+			const discussions = await db
+				.select()
+				.from(schema.budgetDiscussions)
+				.all();
+			expect(discussions).toHaveLength(
+				testMeetingInput.budgetDiscussions.length,
+			);
+		});
 	});
 
 	describe("getMeetingByBodyAndDate", () => {
@@ -455,6 +496,36 @@ describe("StorageService", () => {
 					durationMs: 5000,
 				},
 			]);
+		});
+
+		it("is idempotent on re-run — second call with same (meetingId, source) produces no duplicate", async () => {
+			const db = await createTestDb();
+			const layer = StorageServiceLive(db);
+
+			const meeting = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(testMeetingInput);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const transcriptInput = {
+				meetingId: meeting.id,
+				source: "captions" as const,
+				rawText: "Meeting called to order.",
+				sourceUrl: "https://youtube.com/watch?v=test123",
+			};
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeTranscript(transcriptInput);
+					yield* storage.storeTranscript(transcriptInput);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const transcripts = await db.select().from(schema.transcripts).all();
+			expect(transcripts).toHaveLength(1);
 		});
 	});
 });
