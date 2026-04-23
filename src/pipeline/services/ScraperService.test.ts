@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	EgovScraper,
 	EgovScraperLive,
+	extractMeetingDateFromTitle,
 	parseEgovListingHtml,
 } from "./ScraperService.ts";
 
@@ -61,6 +62,44 @@ const EGOV_HTML_FIXTURE = `
 `;
 
 describe("EgovScraper", () => {
+	describe("extractMeetingDateFromTitle", () => {
+		it("extracts 'Month Day, Year' from a minutes title", () => {
+			expect(
+				extractMeetingDateFromTitle(
+					"Town Council Meeting Minutes December 22, 2025",
+				),
+			).toBe("2025-12-22");
+		});
+
+		it("extracts 'Month Day, Year' with extra trailing words", () => {
+			expect(
+				extractMeetingDateFromTitle(
+					"Reorganization Board Meeting February 4, 2026 Minutes Approved",
+				),
+			).toBe("2026-02-04");
+		});
+
+		it("extracts the date regardless of preceding body-name prefix", () => {
+			expect(
+				extractMeetingDateFromTitle(
+					"Plan Commission Meeting Agenda October 10, 2025",
+				),
+			).toBe("2025-10-10");
+		});
+
+		it("returns null when no recognizable date is present", () => {
+			expect(
+				extractMeetingDateFromTitle("Town Council Annual Report"),
+			).toBeNull();
+		});
+
+		it("handles lowercase and mixed-case month names", () => {
+			expect(
+				extractMeetingDateFromTitle("Town Council Meeting january 6, 2026"),
+			).toBe("2026-01-06");
+		});
+	});
+
 	describe("parseEgovListingHtml", () => {
 		it("extracts document metadata from eGov HTML table rows", () => {
 			const results = parseEgovListingHtml(EGOV_HTML_FIXTURE);
