@@ -106,7 +106,7 @@ describe("EgovScraper", () => {
 
 			expect(results).toHaveLength(3);
 
-			expect(results[0]).toEqual({
+			expect(results[0]).toMatchObject({
 				id: 1653,
 				title: "Reorganization Board Meeting February 4, 2026 Minutes Approved",
 				date: "02/04/2026",
@@ -114,7 +114,7 @@ describe("EgovScraper", () => {
 					"https://ellettsville.in.us/egov/apps/document/center.egov?view=item&id=1653",
 			});
 
-			expect(results[1]).toEqual({
+			expect(results[1]).toMatchObject({
 				id: 1628,
 				title: "Town Council Meeting Minutes December 22, 2025",
 				date: "01/14/2026",
@@ -128,6 +128,74 @@ describe("EgovScraper", () => {
 		it("returns empty array for HTML with no document rows", () => {
 			const results = parseEgovListingHtml("<table></table>");
 			expect(results).toEqual([]);
+		});
+
+		it("emits meetingDate (ISO) extracted from the title, not the publish-date cell", () => {
+			const results = parseEgovListingHtml(EGOV_HTML_FIXTURE);
+			// The December 22, 2025 meeting was published on 01/14/2026 in the
+			// listing cell, but the real meeting date from the title must win.
+			const dec22 = results.find((r) => r.id === 1628);
+			expect(dec22?.meetingDate).toBe("2025-12-22");
+			const dec8 = results.find((r) => r.id === 1627);
+			expect(dec8?.meetingDate).toBe("2025-12-08");
+		});
+
+		it("emits documentType inferred from the title", () => {
+			const results = parseEgovListingHtml(EGOV_HTML_FIXTURE);
+			// All three fixture rows are minutes; verify we infer "minutes" from
+			// the title text rather than relying on the scraper's searchType.
+			for (const row of results) {
+				expect(row.documentType).toBe("minutes");
+			}
+		});
+
+		it("infers agenda documentType from titles containing 'Agenda'", () => {
+			const html = `
+<table>
+	<tr class="eGov_rowOdd">
+		<td class="eGov_listSortDesc">01/14/2026</td>
+		<td class="eGov_DataCell3">
+			<a class="eGov_listItemLink" href="?view=item&id=2000">
+				Town Council Meeting Agenda January 6, 2026
+			</a>
+		</td>
+	</tr>
+</table>`;
+			const results = parseEgovListingHtml(html);
+			expect(results[0].documentType).toBe("agenda");
+			expect(results[0].meetingDate).toBe("2026-01-06");
+		});
+
+		it("infers ordinance documentType from titles containing 'Ordinance'", () => {
+			const html = `
+<table>
+	<tr class="eGov_rowOdd">
+		<td class="eGov_listSortDesc">01/14/2026</td>
+		<td class="eGov_DataCell3">
+			<a class="eGov_listItemLink" href="?view=item&id=3000">
+				Ordinance 2025-14 Adopted December 22, 2025
+			</a>
+		</td>
+	</tr>
+</table>`;
+			const results = parseEgovListingHtml(html);
+			expect(results[0].documentType).toBe("ordinance");
+		});
+
+		it("leaves meetingDate null when the title has no extractable date", () => {
+			const html = `
+<table>
+	<tr class="eGov_rowOdd">
+		<td class="eGov_listSortDesc">01/14/2026</td>
+		<td class="eGov_DataCell3">
+			<a class="eGov_listItemLink" href="?view=item&id=4000">
+				Town Council Annual Report
+			</a>
+		</td>
+	</tr>
+</table>`;
+			const results = parseEgovListingHtml(html);
+			expect(results[0].meetingDate).toBeNull();
 		});
 	});
 
