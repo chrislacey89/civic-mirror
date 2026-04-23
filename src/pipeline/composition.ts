@@ -37,6 +37,13 @@ type BodyConfigEntry = {
 	slug: string;
 	name: string;
 	egovSearchType?: string;
+	/**
+	 * Required for any body sharing an `egovSearchType` with another body. The
+	 * eGov document-center page at searchType=12 returns every "minutes" row
+	 * from the portal regardless of which body produced it, so the orchestrator
+	 * uses this pattern to drop rows that belong to a sibling. See #35.
+	 */
+	egovTitlePattern?: RegExp;
 	finalsiteUrl?: string;
 	youtubePlaylistId?: string;
 };
@@ -52,16 +59,24 @@ const DEFAULT_BODIES: BodyConfigEntry[] = [
 		slug: "ellettsville-town-council",
 		name: "Ellettsville Town Council",
 		egovSearchType: "12",
+		egovTitlePattern: /^Town Council/i,
 	},
 	{
 		slug: "ellettsville-plan-commission",
 		name: "Ellettsville Plan Commission",
 		egovSearchType: "12",
+		egovTitlePattern: /^Plan Commission/i,
 	},
 	{
+		// Monroe County lives on its own eGov portal, not Ellettsville's — a
+		// per-body base URL is a separate concern tracked outside #35. Until
+		// that lands, this pattern guarantees zero cross-pollination: no row
+		// on the Ellettsville portal starts with "Monroe County", so the
+		// filter drops them all instead of misattributing them.
 		slug: "monroe-county-commissioners",
 		name: "Monroe County Commissioners",
 		egovSearchType: "12",
+		egovTitlePattern: /^Monroe County/i,
 	},
 	{
 		slug: "richland-bean-blossom-school-board",

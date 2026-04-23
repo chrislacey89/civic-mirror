@@ -92,6 +92,13 @@ type BodyConfig = {
 	name: string;
 	/** eGov document-center search type id (e.g. "12" for minutes). */
 	egovSearchType?: string;
+	/**
+	 * Required when `egovSearchType` is shared across multiple bodies — the
+	 * portal's searchType=12 returns every "minutes" row regardless of body, so
+	 * listings whose title doesn't match this pattern belong to a sibling and
+	 * must be skipped before storage. See #35.
+	 */
+	egovTitlePattern?: RegExp;
 	/** Full Finalsite page URL (e.g. https://www.rbbschools.net/school-board). */
 	finalsiteUrl?: string;
 	/** YouTube playlist ID for the body's meeting recordings. */
@@ -351,9 +358,14 @@ function runEgovForBody(
 
 		if (!listingsResult.ok) return { processed: 0, errors: 1 };
 
+		const titlePattern = body.egovTitlePattern;
+
 		return yield* iterateWithAlertRecovery(body, listingsResult.listings, {
 			processItem: (listing) => processEgovListing(body, listing, config),
 			delayBetweenItemsMs: config.crawlDelayMs,
+			shouldProcess: titlePattern
+				? (listing) => titlePattern.test(listing.title)
+				: undefined,
 		});
 	});
 }

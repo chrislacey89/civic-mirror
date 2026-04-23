@@ -255,6 +255,65 @@ describe("runPipeline", () => {
 		expect(result.processed).toBe(1);
 	});
 
+	it("filters eGov listings by egovTitlePattern so bodies sharing a searchType only ingest their own rows", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 1628,
+					title: "Town Council Meeting Minutes December 22, 2025",
+					date: "12/22/2025",
+					downloadUrl: "https://example.com/doc/1628",
+				},
+				{
+					id: 1653,
+					title:
+						"Reorganization Board Meeting February 4, 2026 Minutes Approved",
+					date: "02/04/2026",
+					downloadUrl: "https://example.com/doc/1653",
+				},
+				{
+					id: 1627,
+					title: "Town Council Meeting Minutes December 8, 2025",
+					date: "12/08/2025",
+					downloadUrl: "https://example.com/doc/1627",
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "ellettsville-town-council",
+					name: "Ellettsville Town Council",
+					egovSearchType: "12",
+					egovTitlePattern: /^Town Council/i,
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		expect(log.egovDownload).toEqual([
+			"https://example.com/doc/1628",
+			"https://example.com/doc/1627",
+		]);
+		expect(log.store).toHaveLength(2);
+		expect(
+			log.store.every((s) => s.bodySlug === "ellettsville-town-council"),
+		).toBe(true);
+		expect(log.alert).toHaveLength(0);
+		expect(result.processed).toBe(2);
+		expect(result.errors).toBe(0);
+	});
+
 	it("catches a per-listing error, sends an alert, and continues with the next listing", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
