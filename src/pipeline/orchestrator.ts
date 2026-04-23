@@ -396,6 +396,13 @@ function processEgovListing(
 				}),
 		});
 
+		// Meeting date comes from the title when present — the eGov listing cell
+		// is the publish/upload date, which collapses to the day staff posted a
+		// batch and would cause distinct meetings to merge. Fall back to the
+		// publish date only when the title has no extractable long-form date
+		// (rare; annual reports and similar). See #27.
+		const meetingDate = listing.meetingDate ?? normalizeEgovDate(listing.date);
+
 		// Unreadable branch: persist the document row so the meeting appears in
 		// listings with a link to the PDF, but skip summarization + fiscal
 		// extraction entirely. This is the "silent hole" the PRD is eliminating
@@ -406,13 +413,13 @@ function processEgovListing(
 
 			yield* storage.storeMeeting({
 				bodySlug: body.slug,
-				date: normalizeEgovDate(listing.date),
+				date: meetingDate,
 				meetingType: "regular",
 				documents: [
 					{
 						sourceUrl: listing.downloadUrl,
 						rawText: "",
-						documentType: "minutes",
+						documentType: listing.documentType,
 						extractionMethod: "unreadable",
 					},
 				],
@@ -432,13 +439,13 @@ function processEgovListing(
 
 		const meetingInput: MeetingInput = {
 			bodySlug: body.slug,
-			date: normalizeEgovDate(listing.date),
+			date: meetingDate,
 			meetingType: "regular",
 			documents: [
 				{
 					sourceUrl: listing.downloadUrl,
 					rawText: extraction.text,
-					documentType: "minutes",
+					documentType: listing.documentType,
 					extractionMethod: extraction.method,
 				},
 			],
