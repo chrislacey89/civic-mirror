@@ -1,4 +1,5 @@
 import { Duration, Effect, Schedule } from "effect";
+import { normalizeEgovDate, normalizeFinalsiteDate } from "#/pipeline/dates.ts";
 import {
 	AlertService,
 	formatPipelineErrorAlert,
@@ -737,46 +738,12 @@ function alertAndRecover(
 }
 
 // ---------------------------------------------------------------------------
-// Date normalization
+// Per-source helpers
 // ---------------------------------------------------------------------------
-
-/** Converts eGov "MM/DD/YYYY" to ISO "YYYY-MM-DD". */
-function normalizeEgovDate(mmddyyyy: string): string {
-	const parts = mmddyyyy.split("/");
-	if (parts.length !== 3) return mmddyyyy;
-	const [month, day, year] = parts;
-	return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
-
-const MONTHS: Record<string, string> = {
-	january: "01",
-	february: "02",
-	march: "03",
-	april: "04",
-	may: "05",
-	june: "06",
-	july: "07",
-	august: "08",
-	september: "09",
-	october: "10",
-	november: "11",
-	december: "12",
-};
-
-/** Converts Finalsite "Month Day, Year" (e.g. "January 6, 2026") to ISO. */
-function normalizeFinalsiteDate(label: string, year: number): string {
-	const match = label.match(/^(\w+)\s+(\d+),?\s*(\d+)?$/);
-	if (!match) return `${year}-01-01`;
-	const monthName = match[1].toLowerCase();
-	const day = match[2].padStart(2, "0");
-	const parsedYear = match[3] ? Number(match[3]) : year;
-	const month = MONTHS[monthName] ?? "01";
-	return `${parsedYear}-${month}-${day}`;
-}
 
 function meetingTypeFromFinalsiteLabel(
 	label: string,
-): "regular" | "special" | "workshop" {
+): MeetingInput["meetingType"] {
 	const lower = label.toLowerCase();
 	if (lower.includes("special")) return "special";
 	if (lower.includes("workshop")) return "workshop";

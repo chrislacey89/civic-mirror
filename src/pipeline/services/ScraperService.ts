@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import { JSDOM } from "jsdom";
+import { extractMeetingDateFromTitle } from "#/pipeline/dates.ts";
 import { NetworkError, ParseError } from "#/pipeline/errors.ts";
 
 /**
@@ -44,46 +45,6 @@ function inferDocumentTypeFromTitle(title: string): EgovDocumentType {
 	if (/\bordinance\b/i.test(title)) return "ordinance";
 	if (/\bagenda\b/i.test(title)) return "agenda";
 	return "minutes";
-}
-
-const MONTH_BY_NAME: Record<string, string> = {
-	january: "01",
-	february: "02",
-	march: "03",
-	april: "04",
-	may: "05",
-	june: "06",
-	july: "07",
-	august: "08",
-	september: "09",
-	october: "10",
-	november: "11",
-	december: "12",
-};
-
-/**
- * Extracts the real meeting date from a document title in the eGov portal.
- *
- * Background: the eGov listing table's date column is the *publish* date
- * (when the document was uploaded to the portal), which tends to collapse
- * to the day staff posted a batch — not the meeting date itself. The
- * authoritative meeting date is embedded in the title, e.g.
- * "Town Council Meeting Minutes December 22, 2025".
- *
- * Returns ISO YYYY-MM-DD on success, or null when the title has no
- * recognizable long-form date. Callers decide whether a null means "skip
- * the row" or "fall back to publish date." See issue #27.
- */
-function extractMeetingDateFromTitle(title: string): string | null {
-	const match = title.match(
-		/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),?\s+(\d{4})\b/i,
-	);
-	if (!match) return null;
-	const month = MONTH_BY_NAME[match[1].toLowerCase()];
-	if (!month) return null;
-	const day = match[2].padStart(2, "0");
-	const year = match[3];
-	return `${year}-${month}-${day}`;
 }
 
 /**
@@ -242,10 +203,5 @@ function EgovScraperLive(config: EgovScraperConfig): Layer.Layer<EgovScraper> {
 	});
 }
 
-export {
-	parseEgovListingHtml,
-	extractMeetingDateFromTitle,
-	EgovScraper,
-	EgovScraperLive,
-};
+export { parseEgovListingHtml, EgovScraper, EgovScraperLive };
 export type { EgovDocumentListing, EgovScraperConfig, EgovScrapeListingsInput };

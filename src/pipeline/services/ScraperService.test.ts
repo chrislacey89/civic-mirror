@@ -1,9 +1,9 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+import { extractMeetingDateFromTitle } from "#/pipeline/dates.ts";
 import {
 	EgovScraper,
 	EgovScraperLive,
-	extractMeetingDateFromTitle,
 	parseEgovListingHtml,
 } from "./ScraperService.ts";
 
