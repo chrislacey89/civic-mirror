@@ -80,19 +80,33 @@ export const meetings = sqliteTable(
  *
  * Default `'text-layer'` keeps pre-OCR rows valid without a backfill.
  */
-export const documents = sqliteTable("documents", {
-	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-	meetingId: integer("meeting_id")
-		.notNull()
-		.references(() => meetings.id),
-	sourceUrl: text("source_url").notNull(),
-	rawText: text("raw_text").notNull(),
-	documentType: text("document_type").notNull(), // "agenda" | "minutes" | "ordinance"
-	extractionMethod: text("extraction_method").notNull().default("text-layer"), // "text-layer" | "ocr" | "unreadable"
-	createdAt: integer("created_at", { mode: "timestamp" }).default(
-		sql`(unixepoch())`,
-	),
-});
+export const documents = sqliteTable(
+	"documents",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		meetingId: integer("meeting_id")
+			.notNull()
+			.references(() => meetings.id),
+		sourceUrl: text("source_url").notNull(),
+		rawText: text("raw_text").notNull(),
+		documentType: text("document_type").notNull(), // "agenda" | "minutes" | "ordinance"
+		extractionMethod: text("extraction_method").notNull().default("text-layer"), // "text-layer" | "ocr" | "unreadable"
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		// (meetingId, sourceUrl) is the natural key — one document row per
+		// (meeting, source PDF) pair. The storage layer attaches documents to
+		// an existing meeting when a sibling listing (agenda + minutes +
+		// ordinance for the same meeting date) comes through on a later run;
+		// this index guarantees those inserts are idempotent. See #27.
+		uniqueIndex("documents_meeting_id_source_url_unique").on(
+			table.meetingId,
+			table.sourceUrl,
+		),
+	],
+);
 
 /**
  * Meeting transcripts sourced from YouTube captions or Whisper speech-to-text.
