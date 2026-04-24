@@ -1,5 +1,4 @@
 import { Link } from "@tanstack/react-router";
-import ThemeToggle from "./ThemeToggle";
 
 const NAV = [
 	{ to: "/", label: "Front Page", search: { body: undefined } as const },
@@ -42,13 +41,10 @@ export default function Header() {
 						Ellettsville · Monroe County, IN
 					</span>
 				</Link>
-				<div className="flex items-center gap-4">
-					<div className="mono hidden text-right text-[11px] uppercase leading-[1.55] tracking-[0.14em] text-[var(--ink-soft)] sm:block">
-						Vol. II — No. 16
-						<br />
-						{dateline()}
-					</div>
-					<ThemeToggle />
+				<div className="mono hidden text-right text-[11px] uppercase leading-[1.55] tracking-[0.14em] text-[var(--ink-soft)] sm:block">
+					Vol. II — No. 16
+					<br />
+					{dateline()}
 				</div>
 			</div>
 

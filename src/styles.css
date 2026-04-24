@@ -3,8 +3,6 @@
 @plugin '@tailwindcss/typography';
 @import 'tw-animate-css';
 
-@custom-variant dark (&:is(.dark *));
-
 :root {
   /* The Ledger palette — cream paper, ink black, brick accent, saffron highlight */
   --paper: #f7f3ea;
@@ -56,44 +54,6 @@
   --chart-5: oklch(0.65 0.08 60);
 
   --radius: 0;
-}
-
-.dark {
-  /* Night edition — ink becomes paper, paper becomes midnight */
-  --paper: #14110c;
-  --paper-alt: #1c1912;
-  --ink: #f4ecd8;
-  --ink-mid: #e5dcc5;
-  --ink-soft: #bdb5a0;
-  --ink-faint: #8a8273;
-  --rule: #f4ecd8;
-  --rule-soft: #3d372b;
-  --rule-dot: #5a5349;
-  --accent: #dc6a58;
-  --accent-soft: #e8836e;
-  --highlight: #f2b94b;
-
-  --status-approved-bg: #14110c;
-  --status-denied-bg: #dc6a58;
-  --status-denied-fg: #14110c;
-  --status-tabled-bg: #f4ecd8;
-  --status-tabled-fg: #14110c;
-
-  --background: oklch(0.14 0.01 70);
-  --foreground: oklch(0.93 0.02 85);
-  --card: oklch(0.17 0.012 70);
-  --card-foreground: oklch(0.93 0.02 85);
-  --popover: oklch(0.17 0.012 70);
-  --popover-foreground: oklch(0.93 0.02 85);
-  --primary: oklch(0.93 0.02 85);
-  --primary-foreground: oklch(0.14 0.01 70);
-  --secondary: oklch(0.25 0.015 70);
-  --secondary-foreground: oklch(0.93 0.02 85);
-  --muted: oklch(0.25 0.015 70);
-  --muted-foreground: oklch(0.7 0.02 75);
-  --accent-foreground: oklch(0.14 0.01 70);
-  --border: oklch(0.3 0.02 70);
-  --input: oklch(0.3 0.02 70);
 }
 
 @theme inline {
