@@ -21,38 +21,57 @@ function formatCurrency(amount: number): string {
 
 export function MeetingCard({ meeting }: { meeting: MeetingCardData }) {
 	const isUnreadable = meeting.extractionMethod === "unreadable";
+	const isOcr = meeting.extractionMethod === "ocr";
 
 	return (
-		<article className="island-shell feature-card rounded-2xl p-5">
+		<article className="paper-card flex h-full flex-col p-5">
 			<a
 				href={`/meetings/${meeting.bodySlug}/${meeting.date}`}
-				className="block no-underline"
+				className="flex h-full flex-col no-underline"
 			>
-				<p className="island-kicker mb-1">{meeting.bodyName}</p>
-				<h3 className="mb-2 text-lg font-semibold text-[var(--sea-ink)]">
-					{formatDate(meeting.date)}
-				</h3>
+				<div className="mono mb-3 flex flex-wrap justify-between gap-2 text-[10px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+					<span>{meeting.bodyName}</span>
+					<span>{formatDate(meeting.date)}</span>
+				</div>
+
 				{isUnreadable ? (
-					<p className="text-sm italic text-[var(--sea-ink-soft)]">
+					<p className="text-[14px] italic leading-[1.55] text-[var(--ink-soft)]">
 						Source document couldn't be extracted — open to view the original
 						PDF.
 					</p>
 				) : (
 					<>
-						<ul className="m-0 mb-3 list-disc space-y-1 pl-5 text-sm text-[var(--sea-ink-soft)]">
-							{meeting.highlights.slice(0, 3).map((h) => (
-								<li key={h}>{h}</li>
+						<ul className="m-0 mb-4 list-none space-y-2 p-0">
+							{meeting.highlights.slice(0, 3).map((h, i) => (
+								<li
+									key={h}
+									className="mono grid grid-cols-[22px_1fr] gap-2 text-[14px] leading-[1.5] text-[var(--ink-mid)]"
+								>
+									<span className="font-bold text-[var(--accent)]">
+										{String(i + 1).padStart(2, "0")}
+									</span>
+									<span className="font-serif text-[15px] text-[var(--ink)]">
+										{h}
+									</span>
+								</li>
 							))}
 						</ul>
 						{meeting.fiscalDecisionCount > 0 && (
-							<div className="flex items-center gap-3 text-sm text-[var(--sea-ink-soft)]">
-								<span className="font-semibold text-[var(--sea-ink)]">
-									{formatCurrency(meeting.totalSpending)}
-								</span>
+							<div className="mono mt-auto flex flex-wrap items-center gap-2 text-[11px] text-[var(--ink-soft)]">
+								{meeting.totalSpending > 0 && (
+									<span className="money-pill">
+										{formatCurrency(meeting.totalSpending)}
+									</span>
+								)}
 								<span>
 									{meeting.fiscalDecisionCount} decision
 									{meeting.fiscalDecisionCount !== 1 ? "s" : ""}
 								</span>
+								{isOcr && (
+									<span className="text-[var(--accent)]">
+										OCR<sup>?</sup>
+									</span>
+								)}
 							</div>
 						)}
 					</>

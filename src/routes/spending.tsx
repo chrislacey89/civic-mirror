@@ -1,24 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import {
-	Area,
-	AreaChart,
-	Bar,
-	BarChart,
-	CartesianGrid,
-	XAxis,
-	YAxis,
-} from "recharts";
-import {
-	type ChartConfig,
-	ChartContainer,
-	ChartTooltip,
-	ChartTooltipContent,
-} from "#/components/ui/chart.tsx";
 import type {
 	FiscalByBody,
 	FiscalByCategory,
 	FiscalByTimePeriod,
 	FiscalDecisionRow,
+	FiscalStatus,
 } from "#/db/queries.ts";
 import {
 	aggregateFiscalByBody,
@@ -74,6 +60,12 @@ export const Route = createFileRoute("/spending")({
 });
 
 function formatCurrency(amount: number): string {
+	if (amount >= 1_000_000) return `$${(amount / 1_000_000).toFixed(2)}M`;
+	if (amount >= 1_000) return `$${Math.round(amount / 1_000)}K`;
+	return `$${amount.toLocaleString()}`;
+}
+
+function formatCurrencyFull(amount: number): string {
 	return new Intl.NumberFormat("en-US", {
 		style: "currency",
 		currency: "USD",
@@ -88,26 +80,16 @@ function formatMonth(period: string): string {
 	return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 }
 
-const bodyChartConfig = {
-	totalAmount: {
-		label: "Total Spending",
-		color: "var(--chart-1)",
-	},
-} satisfies ChartConfig;
-
-const categoryChartConfig = {
-	totalAmount: {
-		label: "Total Spending",
-		color: "var(--chart-2)",
-	},
-} satisfies ChartConfig;
-
-const trendChartConfig = {
-	totalAmount: {
-		label: "Monthly Spending",
-		color: "var(--chart-3)",
-	},
-} satisfies ChartConfig;
+function tagClass(status: FiscalStatus): string {
+	switch (status) {
+		case "approved":
+			return "tag tag--approved";
+		case "denied":
+			return "tag tag--denied";
+		case "tabled":
+			return "tag tag--tabled";
+	}
+}
 
 function SpendingRoute() {
 	const data = Route.useLoaderData();
@@ -120,37 +102,60 @@ function SpendingRoute() {
 		data.byTimePeriod.length > 0;
 
 	const activeFilters = [
-		search.body && `Body: ${search.body}`,
-		search.category && `Category: ${search.category}`,
-		search.period && `Period: ${search.period}`,
-	].filter(Boolean);
+		search.body && { key: "body", label: `Body: ${search.body}` },
+		search.category && {
+			key: "category",
+			label: `Category: ${search.category}`,
+		},
+		search.period && { key: "period", label: `Period: ${search.period}` },
+	].filter(Boolean) as { key: string; label: string }[];
+
+	const totalTracked = data.byBody.reduce((sum, b) => sum + b.totalAmount, 0);
+	const totalDecisions = data.byBody.reduce(
+		(sum, b) => sum + b.decisionCount,
+		0,
+	);
+	const maxByBody = Math.max(...data.byBody.map((b) => b.totalAmount), 1);
+	const maxByCategory = Math.max(
+		...data.byCategory.map((b) => b.totalAmount),
+		1,
+	);
+	const timeOrdered = [...data.byTimePeriod].reverse();
+	const maxTimePeriod = Math.max(...timeOrdered.map((t) => t.totalAmount), 1);
 
 	return (
-		<main className="page-wrap px-4 pb-8 pt-14">
-			<section className="island-shell rise-in rounded-[2rem] px-6 py-10 sm:px-10 sm:py-14">
-				<p className="island-kicker mb-3">Fiscal Transparency</p>
-				<h1 className="display-title mb-3 text-3xl font-bold tracking-tight text-[var(--sea-ink)] sm:text-5xl">
-					Spending Dashboard
+		<main className="page-wrap px-4 pb-8 pt-6">
+			<div className="mono flex flex-wrap justify-between gap-2 border-y border-[var(--rule)] bg-[var(--paper-alt)] px-2 py-2 text-[11px] uppercase tracking-[0.16em] text-[var(--ink-soft)]">
+				<span>
+					<span className="font-bold text-[var(--accent)]">THE LEDGER</span> —
+					Fiscal transparency
+				</span>
+				<span className="hidden sm:inline">
+					{formatCurrency(totalTracked)} tracked · {totalDecisions} decisions
+				</span>
+			</div>
+
+			<section className="rise-in pt-10">
+				<p className="kicker text-[var(--accent)]">Spending · FY to date</p>
+				<h1 className="display mt-3 text-[40px] leading-[1.0] tracking-[-0.025em] sm:text-[56px]">
+					Where the money went
 				</h1>
-				<p className="max-w-2xl text-base text-[var(--sea-ink-soft)]">
-					Interactive charts showing fiscal decisions by governing body, budget
-					category, and time period. Click any data point to explore the
-					underlying decisions.
+				<p className="lede mt-5 max-w-[72ch] text-[18px] leading-[1.5]">
+					Every fiscal decision by every governing body, broken out by body,
+					category, and month. Click any row to drill into the meeting where the
+					decision was made.
 				</p>
 			</section>
 
-			{/* Active Filters */}
 			{activeFilters.length > 0 && (
-				<div className="mt-6 flex flex-wrap items-center gap-2">
-					<span className="text-sm text-[var(--sea-ink-soft)]">
-						Filtered by:
-					</span>
+				<div className="mono mt-6 flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.12em] text-[var(--ink-soft)]">
+					<span>Filtered by:</span>
 					{activeFilters.map((filter) => (
 						<span
-							key={filter}
-							className="rounded-full border border-[var(--line)] bg-[var(--chip-bg)] px-3 py-1 text-xs font-medium text-[var(--sea-ink)]"
+							key={filter.key}
+							className="border border-[var(--ink)] bg-[var(--paper)] px-2 py-1 font-bold text-[var(--ink)]"
 						>
-							{filter}
+							{filter.label}
 						</span>
 					))}
 					<button
@@ -164,7 +169,7 @@ function SpendingRoute() {
 								},
 							})
 						}
-						className="rounded-full px-3 py-1 text-xs font-medium text-[var(--lagoon-deep)] transition hover:bg-[var(--link-bg-hover)]"
+						className="mono px-2 py-1 font-bold tracking-[0.14em] text-[var(--accent)] underline decoration-[var(--accent)]/40 underline-offset-[3px] hover:decoration-[var(--accent)]"
 					>
 						Clear all
 					</button>
@@ -172,297 +177,227 @@ function SpendingRoute() {
 			)}
 
 			{!hasData ? (
-				<section className="island-shell rise-in mt-8 rounded-2xl p-10 text-center">
-					<p className="text-lg font-semibold text-[var(--sea-ink)]">
-						No fiscal data available yet
-					</p>
-					<p className="mt-2 text-sm text-[var(--sea-ink-soft)]">
+				<section className="paper-card mt-10 p-10 text-center">
+					<p className="display text-[22px]">No fiscal data available yet</p>
+					<p className="mt-2 text-[14px] text-[var(--ink-soft)]">
 						Spending data will appear here once the pipeline processes meeting
 						minutes with fiscal decisions.
 					</p>
 				</section>
 			) : (
 				<>
-					{/* Charts Grid */}
-					<div className="mt-8 grid gap-6 lg:grid-cols-2">
-						{/* Spending by Body */}
+					{/* Three-column ledger ruling */}
+					<div className="mt-12 grid gap-10 lg:grid-cols-[1.1fr_1fr_1fr]">
+						{/* By body — horizontal bars */}
 						{data.byBody.length > 0 && (
-							<div className="island-shell rise-in rounded-2xl p-6">
-								<h2 className="mb-1 text-base font-semibold text-[var(--sea-ink)]">
-									Spending by Body
-								</h2>
-								<p className="mb-4 text-xs text-[var(--sea-ink-soft)]">
-									Total fiscal decisions by governing body
-								</p>
-								<ChartContainer
-									config={bodyChartConfig}
-									className="min-h-[250px] w-full"
-								>
-									<BarChart
-										accessibilityLayer
-										data={data.byBody}
-										layout="vertical"
-										margin={{ left: 0, right: 16 }}
-									>
-										<CartesianGrid horizontal={false} />
-										<YAxis
-											dataKey="bodyName"
-											type="category"
-											tickLine={false}
-											axisLine={false}
-											width={140}
-											tick={{ fontSize: 11 }}
-										/>
-										<XAxis
-											type="number"
-											tickFormatter={(v) => formatCurrency(v)}
-											tickLine={false}
-											axisLine={false}
-										/>
-										<ChartTooltip
-											content={
-												<ChartTooltipContent
-													formatter={(value) => formatCurrency(value as number)}
-												/>
+							<div>
+								<div className="rule-double border-b-[3px] border-double border-[var(--rule)] pb-3">
+									<p className="kicker">By Body</p>
+									<h2 className="display mt-1 text-[22px]">Who spent what</h2>
+								</div>
+								<div className="mt-2">
+									{data.byBody.map((row, i) => (
+										<button
+											key={row.bodySlug}
+											type="button"
+											onClick={() =>
+												navigate({
+													search: { ...search, body: row.bodySlug },
+												})
 											}
-										/>
-										<Bar
-											dataKey="totalAmount"
-											fill="var(--color-totalAmount)"
-											radius={[0, 4, 4, 0]}
-											className="cursor-pointer"
-											onClick={(_data, _index, e) => {
-												const payload = (
-													e as unknown as {
-														payload?: FiscalByBody;
-													}
-												).payload;
-												if (payload?.bodySlug) {
-													navigate({
-														search: {
-															...search,
-															body: payload.bodySlug,
-														},
-													});
-												}
-											}}
-										/>
-									</BarChart>
-								</ChartContainer>
+											className="block w-full border-b border-dotted border-[var(--rule-dot)] py-3 text-left hover:bg-[var(--paper-alt)]"
+										>
+											<div className="mono flex items-baseline justify-between gap-2 text-[10px] uppercase tracking-[0.08em] text-[var(--ink-soft)]">
+												<span className="text-[13px] font-semibold normal-case tracking-normal text-[var(--ink)]">
+													{row.bodyName}
+												</span>
+												<span className="font-bold">
+													{formatCurrency(row.totalAmount)}
+												</span>
+											</div>
+											<div className="mt-1.5 h-[8px] border border-[var(--rule-soft)] bg-[var(--paper-alt)]">
+												<div
+													style={{
+														width: `${(row.totalAmount / maxByBody) * 100}%`,
+														height: "100%",
+														background:
+															i === 0 ? "var(--accent)" : "var(--ink)",
+													}}
+												/>
+											</div>
+											<div className="mono mt-1 text-[10px] uppercase tracking-[0.1em] text-[var(--ink-faint)]">
+												{row.decisionCount} decision
+												{row.decisionCount !== 1 ? "s" : ""}
+											</div>
+										</button>
+									))}
+								</div>
 							</div>
 						)}
 
-						{/* Spending by Category */}
-						{data.byCategory.length > 0 && (
-							<div className="island-shell rise-in rounded-2xl p-6">
-								<h2 className="mb-1 text-base font-semibold text-[var(--sea-ink)]">
-									Spending by Category
-								</h2>
-								<p className="mb-4 text-xs text-[var(--sea-ink-soft)]">
-									Total fiscal decisions by budget category
-								</p>
-								<ChartContainer
-									config={categoryChartConfig}
-									className="min-h-[250px] w-full"
+						{/* Time series — column strip */}
+						{timeOrdered.length > 0 && (
+							<div>
+								<div className="rule-double border-b-[3px] border-double border-[var(--rule)] pb-3">
+									<p className="kicker">Monthly pace</p>
+									<h2 className="display mt-1 text-[22px]">
+										The cadence of the year
+									</h2>
+								</div>
+								<div
+									className="mt-6 grid items-end gap-2"
+									style={{
+										gridTemplateColumns: `repeat(${timeOrdered.length}, 1fr)`,
+										height: 160,
+									}}
 								>
-									<BarChart
-										accessibilityLayer
-										data={data.byCategory}
-										layout="vertical"
-										margin={{ left: 0, right: 16 }}
-									>
-										<CartesianGrid horizontal={false} />
-										<YAxis
-											dataKey="budgetCategory"
-											type="category"
-											tickLine={false}
-											axisLine={false}
-											width={120}
-											tick={{ fontSize: 11 }}
-										/>
-										<XAxis
-											type="number"
-											tickFormatter={(v) => formatCurrency(v)}
-											tickLine={false}
-											axisLine={false}
-										/>
-										<ChartTooltip
-											content={
-												<ChartTooltipContent
-													formatter={(value) => formatCurrency(value as number)}
-												/>
-											}
-										/>
-										<Bar
-											dataKey="totalAmount"
-											fill="var(--color-totalAmount)"
-											radius={[0, 4, 4, 0]}
-											className="cursor-pointer"
-											onClick={(_data, _index, e) => {
-												const payload = (
-													e as unknown as {
-														payload?: FiscalByCategory;
-													}
-												).payload;
-												if (payload?.budgetCategory) {
+									{timeOrdered.map((row) => {
+										const height = (row.totalAmount / maxTimePeriod) * 140;
+										const isCurrent =
+											row.period === timeOrdered[timeOrdered.length - 1].period;
+										return (
+											<button
+												key={row.period}
+												type="button"
+												onClick={() =>
 													navigate({
-														search: {
-															...search,
-															category: payload.budgetCategory,
-														},
-													});
+														search: { ...search, period: row.period },
+													})
 												}
-											}}
-										/>
-									</BarChart>
-								</ChartContainer>
+												className="flex flex-col items-center justify-end gap-1 text-center hover:opacity-75"
+											>
+												<span className="mono text-[10px] font-bold text-[var(--ink)]">
+													{formatCurrency(row.totalAmount)}
+												</span>
+												<span
+													style={{
+														width: "70%",
+														height,
+														background: isCurrent
+															? "var(--accent)"
+															: "var(--ink)",
+													}}
+												/>
+												<span className="mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-soft)]">
+													{formatMonth(row.period)}
+												</span>
+											</button>
+										);
+									})}
+								</div>
+								<div className="rule-dot mono mt-3 flex justify-between pt-2 text-[10px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+									<span>Approved value, total</span>
+									<span>{timeOrdered.length} months</span>
+								</div>
+							</div>
+						)}
+
+						{/* By category — stacked rules */}
+						{data.byCategory.length > 0 && (
+							<div>
+								<div className="rule-double border-b-[3px] border-double border-[var(--rule)] pb-3">
+									<p className="kicker">By Category</p>
+									<h2 className="display mt-1 text-[22px]">
+										What it was spent on
+									</h2>
+								</div>
+								<div className="mt-2">
+									{data.byCategory.map((row, i) => (
+										<button
+											key={row.budgetCategory}
+											type="button"
+											onClick={() =>
+												navigate({
+													search: {
+														...search,
+														category: row.budgetCategory,
+													},
+												})
+											}
+											className="block w-full border-b border-dotted border-[var(--rule-dot)] py-3 text-left hover:bg-[var(--paper-alt)]"
+										>
+											<div className="flex items-baseline justify-between gap-2">
+												<span className="text-[13px] font-semibold capitalize text-[var(--ink)]">
+													{row.budgetCategory}
+												</span>
+												<span className="mono text-[11px] font-bold text-[var(--ink)]">
+													{formatCurrency(row.totalAmount)}
+												</span>
+											</div>
+											<div className="mt-1.5 h-[8px] border border-[var(--rule-soft)] bg-[var(--paper-alt)]">
+												<div
+													style={{
+														width: `${(row.totalAmount / maxByCategory) * 100}%`,
+														height: "100%",
+														background:
+															i === 0 ? "var(--accent)" : "var(--ink)",
+													}}
+												/>
+											</div>
+										</button>
+									))}
+								</div>
 							</div>
 						)}
 					</div>
 
-					{/* Spending Over Time - Full Width */}
-					{data.byTimePeriod.length > 0 && (
-						<div className="island-shell rise-in mt-6 rounded-2xl p-6">
-							<h2 className="mb-1 text-base font-semibold text-[var(--sea-ink)]">
-								Spending Over Time
-							</h2>
-							<p className="mb-4 text-xs text-[var(--sea-ink-soft)]">
-								Monthly spending trends across all governing bodies
-							</p>
-							<ChartContainer
-								config={trendChartConfig}
-								className="min-h-[250px] w-full"
-							>
-								<AreaChart
-									accessibilityLayer
-									data={[...data.byTimePeriod].reverse()}
-									margin={{ left: 0, right: 16 }}
-								>
-									<CartesianGrid vertical={false} />
-									<XAxis
-										dataKey="period"
-										tickFormatter={formatMonth}
-										tickLine={false}
-										axisLine={false}
-										tick={{ fontSize: 11 }}
-									/>
-									<YAxis
-										tickFormatter={(v) => formatCurrency(v)}
-										tickLine={false}
-										axisLine={false}
-									/>
-									<ChartTooltip
-										content={
-											<ChartTooltipContent
-												labelFormatter={(label) => formatMonth(label as string)}
-												formatter={(value) => formatCurrency(value as number)}
-											/>
-										}
-									/>
-									<defs>
-										<linearGradient id="fillTrend" x1="0" y1="0" x2="0" y2="1">
-											<stop
-												offset="5%"
-												stopColor="var(--color-totalAmount)"
-												stopOpacity={0.8}
-											/>
-											<stop
-												offset="95%"
-												stopColor="var(--color-totalAmount)"
-												stopOpacity={0.1}
-											/>
-										</linearGradient>
-									</defs>
-									<Area
-										dataKey="totalAmount"
-										type="monotone"
-										fill="url(#fillTrend)"
-										stroke="var(--color-totalAmount)"
-										strokeWidth={2}
-										className="cursor-pointer"
-										activeDot={{
-											r: 6,
-											className: "cursor-pointer",
-											onClick: (_e: unknown, payload: unknown) => {
-												const p = payload as { payload?: { period?: string } };
-												if (p.payload?.period) {
-													navigate({
-														search: { ...search, period: p.payload.period },
-													});
-												}
-											},
-										}}
-									/>
-								</AreaChart>
-							</ChartContainer>
+					{/* Receipts table */}
+					<section className="mt-14">
+						<div className="rule-double flex items-end justify-between border-b-[3px] border-double border-[var(--rule)] pb-3 pt-4">
+							<div>
+								<p className="kicker">The Receipts</p>
+								<h2 className="display mt-1 text-[26px]">
+									{activeFilters.length > 0
+										? "Filtered Decisions"
+										: "All Fiscal Decisions"}
+								</h2>
+							</div>
+							<span className="mono text-[11px] uppercase tracking-[0.12em] text-[var(--ink-soft)]">
+								{data.decisions.length} decision
+								{data.decisions.length !== 1 ? "s" : ""}
+							</span>
 						</div>
-					)}
-
-					{/* Decisions Table */}
-					<section className="island-shell rise-in mt-6 rounded-2xl p-6">
-						<h2 className="mb-1 text-base font-semibold text-[var(--sea-ink)]">
-							{activeFilters.length > 0
-								? "Filtered Decisions"
-								: "All Fiscal Decisions"}
-						</h2>
-						<p className="mb-4 text-xs text-[var(--sea-ink-soft)]">
-							{data.decisions.length} decision
-							{data.decisions.length !== 1 ? "s" : ""} found
-							{activeFilters.length > 0 ? " matching current filters" : ""}
-						</p>
 
 						{data.decisions.length === 0 ? (
-							<p className="py-6 text-center text-sm text-[var(--sea-ink-soft)]">
+							<p className="mt-6 py-6 text-center text-[14px] text-[var(--ink-soft)]">
 								No decisions match the current filters.
 							</p>
 						) : (
-							<div className="space-y-2">
-								{data.decisions.map((d) => {
-									let statusColor: string;
-									switch (d.status) {
-										case "approved":
-											statusColor = "text-emerald-700 bg-emerald-50";
-											break;
-										case "denied":
-											statusColor = "text-red-700 bg-red-50";
-											break;
-										case "tabled":
-											statusColor = "text-amber-700 bg-amber-50";
-											break;
-										default: {
-											const _exhaustive: never = d.status;
-											return _exhaustive;
-										}
-									}
-									return (
-										<Link
-											key={`${d.title}-${d.date}-${d.bodySlug}`}
-											to="/meetings/$bodySlug/$date"
-											params={{ bodySlug: d.bodySlug, date: d.date }}
-											className="flex items-center justify-between rounded-xl border border-[rgba(23,58,64,0.1)] px-4 py-3 no-underline transition hover:border-[color-mix(in_oklab,var(--lagoon-deep)_35%,var(--line))] hover:bg-[var(--surface)]"
-										>
-											<div className="min-w-0 flex-1">
-												<p className="truncate text-sm font-medium text-[var(--sea-ink)]">
-													{d.title}
-												</p>
-												<p className="text-xs text-[var(--sea-ink-soft)]">
-													{d.bodyName} &middot; {d.date} &middot;{" "}
-													{d.budgetCategory}
-												</p>
-											</div>
-											<div className="ml-4 flex shrink-0 items-center gap-2">
-												<span className="text-sm font-semibold text-[var(--sea-ink)]">
-													{formatCurrency(d.amount)}
-												</span>
-												<span
-													className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusColor}`}
-												>
-													{d.status}
-												</span>
-											</div>
-										</Link>
-									);
-								})}
+							<div className="mt-4 border border-[var(--rule)] bg-[var(--paper)]">
+								<div className="mono grid grid-cols-[minmax(0,1fr)_120px_120px_100px] gap-2 bg-[var(--ink)] px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--paper)]">
+									<span>Line item</span>
+									<span className="text-right">Amount</span>
+									<span>Category</span>
+									<span>Status</span>
+								</div>
+								{data.decisions.map((d, i) => (
+									<Link
+										key={`${d.title}-${d.date}-${d.bodySlug}`}
+										to="/meetings/$bodySlug/$date"
+										params={{ bodySlug: d.bodySlug, date: d.date }}
+										className={`grid grid-cols-[minmax(0,1fr)_120px_120px_100px] items-center gap-2 px-4 py-3 no-underline hover:bg-[var(--paper-alt)] ${
+											i < data.decisions.length - 1
+												? "border-b border-dotted border-[var(--rule-dot)]"
+												: ""
+										}`}
+									>
+										<div>
+											<p className="m-0 truncate text-[14px] font-semibold text-[var(--ink)]">
+												{d.title}
+											</p>
+											<p className="mono mt-0.5 text-[10px] uppercase tracking-[0.1em] text-[var(--ink-soft)]">
+												{d.bodyName} · {d.date}
+											</p>
+										</div>
+										<span className="mono text-right text-[13px] font-bold text-[var(--ink)]">
+											{formatCurrencyFull(d.amount)}
+										</span>
+										<span className="mono text-[11px] uppercase tracking-[0.1em] text-[var(--ink-soft)]">
+											{d.budgetCategory}
+										</span>
+										<span className={tagClass(d.status)}>{d.status}</span>
+									</Link>
+								))}
 							</div>
 						)}
 					</section>
