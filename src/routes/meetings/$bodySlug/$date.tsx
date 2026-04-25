@@ -277,7 +277,7 @@ function FiscalReceiptsTable({
 
 	return (
 		<div className="mt-4 border border-[var(--rule)] bg-[var(--paper)]">
-			<div className="mono grid grid-cols-[minmax(0,1fr)_120px_90px_110px] gap-2 bg-[var(--ink)] px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--paper)]">
+			<div className="mono hidden gap-2 bg-[var(--ink)] px-4 py-2.5 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--paper)] sm:grid sm:grid-cols-[minmax(0,1fr)_120px_90px_110px]">
 				<span>Line item</span>
 				<span className="text-right">Amount</span>
 				<span>Vote</span>
@@ -291,11 +291,11 @@ function FiscalReceiptsTable({
 					last={i === decisions.length - 1}
 				/>
 			))}
-			<div className="rule-double mono grid grid-cols-[minmax(0,1fr)_120px_90px_110px] gap-2 border-t-[3px] border-double border-[var(--rule)] bg-[var(--paper-alt)] px-4 py-3 text-[12px] font-bold uppercase tracking-[0.12em] text-[var(--ink)]">
+			<div className="rule-double mono flex flex-wrap items-baseline justify-between gap-2 border-t-[3px] border-double border-[var(--rule)] bg-[var(--paper-alt)] px-4 py-3 text-[12px] font-bold uppercase tracking-[0.12em] text-[var(--ink)] sm:grid sm:grid-cols-[minmax(0,1fr)_120px_90px_110px]">
 				<span>Total approved, this meeting</span>
 				<span className="text-right text-[14px]">{formatCurrency(total)}</span>
-				<span />
-				<span />
+				<span className="hidden sm:block" />
+				<span className="hidden sm:block" />
 			</div>
 		</div>
 	);
@@ -318,7 +318,7 @@ function FiscalRow({
 
 	return (
 		<div
-			className={`grid grid-cols-[minmax(0,1fr)_120px_90px_110px] items-center gap-2 px-4 py-3 ${
+			className={`px-4 py-3 sm:grid sm:grid-cols-[minmax(0,1fr)_120px_90px_110px] sm:items-center sm:gap-2 ${
 				last ? "" : "border-b border-dotted border-[var(--rule-dot)]"
 			}`}
 		>
@@ -340,13 +340,16 @@ function FiscalRow({
 					)}
 				</div>
 			</div>
-			<span className="mono text-right text-[14px] font-bold text-[var(--ink)]">
-				<FiscalFigure amount={decision.amount} ocrFlagged={ocrFlagged} />
-			</span>
-			<span className="mono text-[13px] font-semibold text-[var(--ink)]">
-				{voteText}
-			</span>
-			<StatusTag status={decision.status} />
+			<div className="mono mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-dotted border-[var(--rule-dot)] pt-3 sm:contents sm:mt-0 sm:border-0 sm:pt-0">
+				<span className="text-[14px] font-bold text-[var(--ink)] sm:text-right">
+					<FiscalFigure amount={decision.amount} ocrFlagged={ocrFlagged} />
+				</span>
+				<span className="text-[13px] font-semibold text-[var(--ink)]">
+					<span className="kicker mr-1 sm:hidden">Vote</span>
+					{voteText}
+				</span>
+				<StatusTag status={decision.status} />
+			</div>
 		</div>
 	);
 }
