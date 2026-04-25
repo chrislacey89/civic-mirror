@@ -98,6 +98,15 @@ export type GoverningBodySummary = {
 	type: BodyType;
 };
 
+export type BodyWithStats = {
+	name: string;
+	slug: string;
+	type: BodyType;
+	meetingCount: number;
+	totalSpending: number;
+	decisionCount: number;
+};
+
 /**
  * Lists recent meetings with summary data for the landing page feed.
  * Optionally filtered by body slug. Returns newest first.
@@ -381,6 +390,148 @@ export async function listGoverningBodiesQuery(
 		.all();
 
 	return rows.map((r) => ({ ...r, type: r.type as BodyType }));
+}
+
+/**
+ * Lists all governing bodies with aggregated meeting and spending stats.
+ *
+ * Uses three GROUP BY queries (bodies, meeting counts, fiscal aggregates) and
+ * stitches them together in memory rather than a per-body loop. Avoids the
+ * row-explosion that would happen if we LEFT JOINed both meetings and
+ * fiscal_decisions into a single query.
+ */
+export async function listBodiesWithStatsQuery(
+	db: LibSQLDatabase<typeof schema>,
+): Promise<BodyWithStats[]> {
+	const bodies = await db
+		.select()
+		.from(schema.governingBodies)
+		.orderBy(schema.governingBodies.name)
+		.all();
+
+	const meetingCounts = await db
+		.select({
+			bodyId: schema.meetings.bodyId,
+			count: sql<number>`count(*)`,
+		})
+		.from(schema.meetings)
+		.groupBy(schema.meetings.bodyId)
+		.all();
+
+	const fiscalAggs = await db
+		.select({
+			bodyId: schema.meetings.bodyId,
+			total: sum(schema.fiscalDecisions.amount),
+			count: sql<number>`count(${schema.fiscalDecisions.id})`,
+		})
+		.from(schema.fiscalDecisions)
+		.innerJoin(
+			schema.meetings,
+			eq(schema.fiscalDecisions.meetingId, schema.meetings.id),
+		)
+		.groupBy(schema.meetings.bodyId)
+		.all();
+
+	const meetingsByBody = new Map(meetingCounts.map((r) => [r.bodyId, r.count]));
+	const fiscalsByBody = new Map(
+		fiscalAggs.map((r) => [
+			r.bodyId,
+			{ total: Number(r.total) || 0, count: r.count },
+		]),
+	);
+
+	return bodies.map((body) => ({
+		name: body.name,
+		slug: body.slug,
+		type: body.type as BodyType,
+		meetingCount: meetingsByBody.get(body.id) ?? 0,
+		totalSpending: fiscalsByBody.get(body.id)?.total ?? 0,
+		decisionCount: fiscalsByBody.get(body.id)?.count ?? 0,
+	}));
+}
+
+/**
+ * Single-body variant of listBodiesWithStatsQuery — scoped to one body slug
+ * so the body profile page doesn't load the full bodies table to validate
+ * one slug. Returns null if the slug doesn't match an existing body.
+ */
+export async function getBodyWithStatsBySlugQuery(
+	db: LibSQLDatabase<typeof schema>,
+	bodySlug: string,
+): Promise<BodyWithStats | null> {
+	const body = await db
+		.select()
+		.from(schema.governingBodies)
+		.where(eq(schema.governingBodies.slug, bodySlug))
+		.get();
+
+	if (!body) return null;
+
+	const meetingCount = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(schema.meetings)
+		.where(eq(schema.meetings.bodyId, body.id))
+		.get();
+
+	const fiscalAgg = await db
+		.select({
+			total: sum(schema.fiscalDecisions.amount),
+			count: sql<number>`count(${schema.fiscalDecisions.id})`,
+		})
+		.from(schema.fiscalDecisions)
+		.innerJoin(
+			schema.meetings,
+			eq(schema.fiscalDecisions.meetingId, schema.meetings.id),
+		)
+		.where(eq(schema.meetings.bodyId, body.id))
+		.get();
+
+	return {
+		name: body.name,
+		slug: body.slug,
+		type: body.type as BodyType,
+		meetingCount: meetingCount?.count ?? 0,
+		totalSpending: Number(fiscalAgg?.total) || 0,
+		decisionCount: fiscalAgg?.count ?? 0,
+	};
+}
+
+/**
+ * Aggregates fiscal decisions by budget category for a single governing body.
+ */
+export async function aggregateFiscalByCategoryForBodyQuery(
+	db: LibSQLDatabase<typeof schema>,
+	bodySlug: string,
+): Promise<FiscalByCategory[]> {
+	const body = await db
+		.select()
+		.from(schema.governingBodies)
+		.where(eq(schema.governingBodies.slug, bodySlug))
+		.get();
+
+	if (!body) return [];
+
+	const rows = await db
+		.select({
+			budgetCategory: schema.fiscalDecisions.budgetCategory,
+			totalAmount: sum(schema.fiscalDecisions.amount),
+			decisionCount: sql<number>`count(${schema.fiscalDecisions.id})`,
+		})
+		.from(schema.fiscalDecisions)
+		.innerJoin(
+			schema.meetings,
+			eq(schema.fiscalDecisions.meetingId, schema.meetings.id),
+		)
+		.where(eq(schema.meetings.bodyId, body.id))
+		.groupBy(schema.fiscalDecisions.budgetCategory)
+		.orderBy(desc(sum(schema.fiscalDecisions.amount)))
+		.all();
+
+	return rows.map((r) => ({
+		budgetCategory: r.budgetCategory ?? "Uncategorized",
+		totalAmount: Number(r.totalAmount) || 0,
+		decisionCount: r.decisionCount,
+	}));
 }
 
 export type FiscalDecisionDetail = {
