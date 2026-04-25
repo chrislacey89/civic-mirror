@@ -5,6 +5,7 @@ import {
 	aggregateFiscalByCategoryForBodyQuery,
 	aggregateFiscalByCategoryQuery,
 	aggregateFiscalByTimePeriodQuery,
+	getBodyWithStatsBySlugQuery,
 	getMeetingByBodyAndDateQuery,
 	listBodiesWithStatsQuery,
 	listFiscalDecisionsQuery,
@@ -76,6 +77,14 @@ export const listBodiesWithStats = createServerFn({
 }).handler(async () => {
 	return await listBodiesWithStatsQuery(db);
 });
+
+export const getBodyWithStatsBySlug = createServerFn({
+	method: "GET",
+})
+	.inputValidator((input: { bodySlug: string }) => input)
+	.handler(async ({ data }) => {
+		return await getBodyWithStatsBySlugQuery(db, data.bodySlug);
+	});
 
 export const aggregateFiscalByCategoryForBody = createServerFn({
 	method: "GET",

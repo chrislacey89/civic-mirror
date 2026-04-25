@@ -6,7 +6,7 @@ import type {
 } from "#/db/queries.ts";
 import {
 	aggregateFiscalByCategoryForBody,
-	listBodiesWithStats,
+	getBodyWithStatsBySlug,
 	listRecentMeetings,
 } from "#/server/meetings.ts";
 
@@ -18,12 +18,11 @@ type BodyProfileData = {
 
 export const Route = createFileRoute("/bodies/$bodySlug")({
 	loader: async ({ params }): Promise<BodyProfileData | null> => {
-		const [bodies, meetings, byCategory] = await Promise.all([
-			listBodiesWithStats({ data: undefined }),
+		const [body, meetings, byCategory] = await Promise.all([
+			getBodyWithStatsBySlug({ data: { bodySlug: params.bodySlug } }),
 			listRecentMeetings({ data: { bodySlug: params.bodySlug } }),
 			aggregateFiscalByCategoryForBody({ data: { bodySlug: params.bodySlug } }),
 		]);
-		const body = bodies.find((b) => b.slug === params.bodySlug);
 		if (!body) return null;
 		return { body, meetings, byCategory };
 	},

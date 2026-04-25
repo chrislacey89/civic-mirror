@@ -394,6 +394,11 @@ export async function listGoverningBodiesQuery(
 
 /**
  * Lists all governing bodies with aggregated meeting and spending stats.
+ *
+ * Uses three GROUP BY queries (bodies, meeting counts, fiscal aggregates) and
+ * stitches them together in memory rather than a per-body loop. Avoids the
+ * row-explosion that would happen if we LEFT JOINed both meetings and
+ * fiscal_decisions into a single query.
  */
 export async function listBodiesWithStatsQuery(
 	db: LibSQLDatabase<typeof schema>,
@@ -404,38 +409,91 @@ export async function listBodiesWithStatsQuery(
 		.orderBy(schema.governingBodies.name)
 		.all();
 
-	const result: BodyWithStats[] = [];
-	for (const body of bodies) {
-		const meetingCount = await db
-			.select({ count: sql<number>`count(*)` })
-			.from(schema.meetings)
-			.where(eq(schema.meetings.bodyId, body.id))
-			.get();
+	const meetingCounts = await db
+		.select({
+			bodyId: schema.meetings.bodyId,
+			count: sql<number>`count(*)`,
+		})
+		.from(schema.meetings)
+		.groupBy(schema.meetings.bodyId)
+		.all();
 
-		const fiscalAgg = await db
-			.select({
-				total: sum(schema.fiscalDecisions.amount),
-				count: sql<number>`count(${schema.fiscalDecisions.id})`,
-			})
-			.from(schema.fiscalDecisions)
-			.innerJoin(
-				schema.meetings,
-				eq(schema.fiscalDecisions.meetingId, schema.meetings.id),
-			)
-			.where(eq(schema.meetings.bodyId, body.id))
-			.get();
+	const fiscalAggs = await db
+		.select({
+			bodyId: schema.meetings.bodyId,
+			total: sum(schema.fiscalDecisions.amount),
+			count: sql<number>`count(${schema.fiscalDecisions.id})`,
+		})
+		.from(schema.fiscalDecisions)
+		.innerJoin(
+			schema.meetings,
+			eq(schema.fiscalDecisions.meetingId, schema.meetings.id),
+		)
+		.groupBy(schema.meetings.bodyId)
+		.all();
 
-		result.push({
-			name: body.name,
-			slug: body.slug,
-			type: body.type as BodyType,
-			meetingCount: meetingCount?.count ?? 0,
-			totalSpending: Number(fiscalAgg?.total) || 0,
-			decisionCount: fiscalAgg?.count ?? 0,
-		});
-	}
+	const meetingsByBody = new Map(meetingCounts.map((r) => [r.bodyId, r.count]));
+	const fiscalsByBody = new Map(
+		fiscalAggs.map((r) => [
+			r.bodyId,
+			{ total: Number(r.total) || 0, count: r.count },
+		]),
+	);
 
-	return result;
+	return bodies.map((body) => ({
+		name: body.name,
+		slug: body.slug,
+		type: body.type as BodyType,
+		meetingCount: meetingsByBody.get(body.id) ?? 0,
+		totalSpending: fiscalsByBody.get(body.id)?.total ?? 0,
+		decisionCount: fiscalsByBody.get(body.id)?.count ?? 0,
+	}));
+}
+
+/**
+ * Single-body variant of listBodiesWithStatsQuery — scoped to one body slug
+ * so the body profile page doesn't load the full bodies table to validate
+ * one slug. Returns null if the slug doesn't match an existing body.
+ */
+export async function getBodyWithStatsBySlugQuery(
+	db: LibSQLDatabase<typeof schema>,
+	bodySlug: string,
+): Promise<BodyWithStats | null> {
+	const body = await db
+		.select()
+		.from(schema.governingBodies)
+		.where(eq(schema.governingBodies.slug, bodySlug))
+		.get();
+
+	if (!body) return null;
+
+	const meetingCount = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(schema.meetings)
+		.where(eq(schema.meetings.bodyId, body.id))
+		.get();
+
+	const fiscalAgg = await db
+		.select({
+			total: sum(schema.fiscalDecisions.amount),
+			count: sql<number>`count(${schema.fiscalDecisions.id})`,
+		})
+		.from(schema.fiscalDecisions)
+		.innerJoin(
+			schema.meetings,
+			eq(schema.fiscalDecisions.meetingId, schema.meetings.id),
+		)
+		.where(eq(schema.meetings.bodyId, body.id))
+		.get();
+
+	return {
+		name: body.name,
+		slug: body.slug,
+		type: body.type as BodyType,
+		meetingCount: meetingCount?.count ?? 0,
+		totalSpending: Number(fiscalAgg?.total) || 0,
+		decisionCount: fiscalAgg?.count ?? 0,
+	};
 }
 
 /**
