@@ -5,9 +5,12 @@ import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import {
 	aggregateFiscalByBodyQuery,
+	aggregateFiscalByCategoryForBodyQuery,
 	aggregateFiscalByCategoryQuery,
 	aggregateFiscalByTimePeriodQuery,
+	getBodyWithStatsBySlugQuery,
 	getMeetingByBodyAndDateQuery,
+	listBodiesWithStatsQuery,
 	listGoverningBodiesQuery,
 	listNotableFiscalDecisionsQuery,
 	listRecentMeetingsQuery,
@@ -553,5 +556,236 @@ describe("listGoverningBodiesQuery", () => {
 		expect(result).toHaveLength(2);
 		expect(result[0].name).toBe("Alpha Council");
 		expect(result[1].name).toBe("Zebra Board");
+	});
+});
+
+describe("listBodiesWithStatsQuery", () => {
+	it("returns each body with correct meeting count and fiscal totals", async () => {
+		const db = await createTestDb();
+		const town = await seedBody(db);
+		const county = await seedBody(db, {
+			name: "Monroe County Council",
+			slug: "monroe-county-council",
+			type: "county",
+		});
+
+		await seedMeetingWithSummary(db, town.id, "2026-01-15", {
+			fiscalDecisions: [
+				{ title: "Sale Street", amount: 287400, originalAmount: "$287,400" },
+				{ title: "Parks mower", amount: 42000, originalAmount: "$42,000" },
+			],
+		});
+		await seedMeetingWithSummary(db, town.id, "2026-02-15", {
+			fiscalDecisions: [
+				{ title: "Sidewalks", amount: 96500, originalAmount: "$96,500" },
+			],
+		});
+		await seedMeetingWithSummary(db, county.id, "2026-03-01", {
+			fiscalDecisions: [
+				{ title: "ARPA", amount: 2400000, originalAmount: "$2.4M" },
+			],
+		});
+
+		const result = await listBodiesWithStatsQuery(db);
+
+		expect(result).toHaveLength(2);
+		const townResult = result.find((b) => b.slug === town.slug);
+		const countyResult = result.find((b) => b.slug === county.slug);
+		expect(townResult).toMatchObject({
+			meetingCount: 2,
+			decisionCount: 3,
+			totalSpending: 425900,
+		});
+		expect(countyResult).toMatchObject({
+			meetingCount: 1,
+			decisionCount: 1,
+			totalSpending: 2400000,
+		});
+	});
+
+	it("returns zeros for a body with no meetings or decisions", async () => {
+		const db = await createTestDb();
+		await seedBody(db);
+
+		const result = await listBodiesWithStatsQuery(db);
+
+		expect(result).toHaveLength(1);
+		expect(result[0]).toMatchObject({
+			meetingCount: 0,
+			decisionCount: 0,
+			totalSpending: 0,
+		});
+	});
+
+	it("handles a body with meetings but no fiscal decisions", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-04-01");
+		await seedMeetingWithSummary(db, body.id, "2026-04-15");
+
+		const result = await listBodiesWithStatsQuery(db);
+
+		expect(result[0]).toMatchObject({
+			meetingCount: 2,
+			decisionCount: 0,
+			totalSpending: 0,
+		});
+	});
+
+	it("returns bodies sorted by name", async () => {
+		const db = await createTestDb();
+		await seedBody(db, {
+			name: "Zebra Board",
+			slug: "zebra-board",
+			type: "county",
+		});
+		await seedBody(db, {
+			name: "Alpha Council",
+			slug: "alpha-council",
+			type: "town",
+		});
+
+		const result = await listBodiesWithStatsQuery(db);
+
+		expect(result[0].name).toBe("Alpha Council");
+		expect(result[1].name).toBe("Zebra Board");
+	});
+
+	it("returns empty array when no bodies exist", async () => {
+		const db = await createTestDb();
+		expect(await listBodiesWithStatsQuery(db)).toEqual([]);
+	});
+});
+
+describe("getBodyWithStatsBySlugQuery", () => {
+	it("returns stats scoped to one body", async () => {
+		const db = await createTestDb();
+		const town = await seedBody(db);
+		const other = await seedBody(db, {
+			name: "Other Body",
+			slug: "other-body",
+			type: "county",
+		});
+
+		await seedMeetingWithSummary(db, town.id, "2026-01-15", {
+			fiscalDecisions: [{ title: "A", amount: 1000, originalAmount: "$1,000" }],
+		});
+		await seedMeetingWithSummary(db, other.id, "2026-02-15", {
+			fiscalDecisions: [{ title: "B", amount: 9999, originalAmount: "$9,999" }],
+		});
+
+		const result = await getBodyWithStatsBySlugQuery(db, town.slug);
+
+		expect(result).toMatchObject({
+			slug: town.slug,
+			meetingCount: 1,
+			decisionCount: 1,
+			totalSpending: 1000,
+		});
+	});
+
+	it("returns null for an unknown slug", async () => {
+		const db = await createTestDb();
+		await seedBody(db);
+		expect(await getBodyWithStatsBySlugQuery(db, "no-such-body")).toBeNull();
+	});
+
+	it("returns zeros for a body with no meetings", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+
+		const result = await getBodyWithStatsBySlugQuery(db, body.slug);
+
+		expect(result).toMatchObject({
+			slug: body.slug,
+			meetingCount: 0,
+			decisionCount: 0,
+			totalSpending: 0,
+		});
+	});
+});
+
+describe("aggregateFiscalByCategoryForBodyQuery", () => {
+	it("aggregates only the specified body's decisions", async () => {
+		const db = await createTestDb();
+		const town = await seedBody(db);
+		const other = await seedBody(db, {
+			name: "Other",
+			slug: "other",
+			type: "county",
+		});
+
+		await seedMeetingWithSummary(db, town.id, "2026-01-15", {
+			fiscalDecisions: [
+				{
+					title: "Road",
+					amount: 100000,
+					originalAmount: "$100,000",
+					budgetCategory: "infrastructure",
+				},
+				{
+					title: "Bridge",
+					amount: 200000,
+					originalAmount: "$200,000",
+					budgetCategory: "infrastructure",
+				},
+				{
+					title: "Library",
+					amount: 50000,
+					originalAmount: "$50,000",
+					budgetCategory: "education",
+				},
+			],
+		});
+		await seedMeetingWithSummary(db, other.id, "2026-02-15", {
+			fiscalDecisions: [
+				{
+					title: "Should not count",
+					amount: 999999,
+					originalAmount: "$999,999",
+					budgetCategory: "infrastructure",
+				},
+			],
+		});
+
+		const result = await aggregateFiscalByCategoryForBodyQuery(db, town.slug);
+
+		expect(result).toHaveLength(2);
+		expect(result[0]).toMatchObject({
+			budgetCategory: "infrastructure",
+			totalAmount: 300000,
+			decisionCount: 2,
+		});
+		expect(result[1]).toMatchObject({
+			budgetCategory: "education",
+			totalAmount: 50000,
+			decisionCount: 1,
+		});
+	});
+
+	it("groups null budgetCategory under 'Uncategorized'", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-01-15", {
+			fiscalDecisions: [
+				{ title: "Untagged", amount: 500, originalAmount: "$500" },
+			],
+		});
+
+		const result = await aggregateFiscalByCategoryForBodyQuery(db, body.slug);
+
+		expect(result[0]).toMatchObject({
+			budgetCategory: "Uncategorized",
+			totalAmount: 500,
+			decisionCount: 1,
+		});
+	});
+
+	it("returns empty array for an unknown slug", async () => {
+		const db = await createTestDb();
+		await seedBody(db);
+		expect(
+			await aggregateFiscalByCategoryForBodyQuery(db, "no-such-body"),
+		).toEqual([]);
 	});
 });
