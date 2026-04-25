@@ -97,6 +97,13 @@ body,
   min-height: 100%;
 }
 
+/* Reserve space for mobile tab bar */
+@media (max-width: 639px) {
+  body {
+    padding-bottom: 72px;
+  }
+}
+
 body {
   margin: 0;
   background: var(--paper);

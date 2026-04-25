@@ -2,9 +2,11 @@ import { createServerFn } from "@tanstack/react-start";
 import { db } from "#/db/index.ts";
 import {
 	aggregateFiscalByBodyQuery,
+	aggregateFiscalByCategoryForBodyQuery,
 	aggregateFiscalByCategoryQuery,
 	aggregateFiscalByTimePeriodQuery,
 	getMeetingByBodyAndDateQuery,
+	listBodiesWithStatsQuery,
 	listFiscalDecisionsQuery,
 	listGoverningBodiesQuery,
 	listNotableFiscalDecisionsQuery,
@@ -68,3 +70,17 @@ export const listGoverningBodies = createServerFn({
 }).handler(async () => {
 	return await listGoverningBodiesQuery(db);
 });
+
+export const listBodiesWithStats = createServerFn({
+	method: "GET",
+}).handler(async () => {
+	return await listBodiesWithStatsQuery(db);
+});
+
+export const aggregateFiscalByCategoryForBody = createServerFn({
+	method: "GET",
+})
+	.inputValidator((input: { bodySlug: string }) => input)
+	.handler(async ({ data }) => {
+		return await aggregateFiscalByCategoryForBodyQuery(db, data.bodySlug);
+	});

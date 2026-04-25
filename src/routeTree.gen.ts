@@ -10,13 +10,21 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SpendingRouteImport } from './routes/spending'
+import { Route as DramaRouteImport } from './routes/drama'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BodiesIndexRouteImport } from './routes/bodies/index'
+import { Route as BodiesBodySlugRouteImport } from './routes/bodies/$bodySlug'
 import { Route as MeetingsBodySlugDateRouteImport } from './routes/meetings/$bodySlug/$date'
 
 const SpendingRoute = SpendingRouteImport.update({
   id: '/spending',
   path: '/spending',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DramaRoute = DramaRouteImport.update({
+  id: '/drama',
+  path: '/drama',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -29,6 +37,16 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BodiesIndexRoute = BodiesIndexRouteImport.update({
+  id: '/bodies/',
+  path: '/bodies/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const BodiesBodySlugRoute = BodiesBodySlugRouteImport.update({
+  id: '/bodies/$bodySlug',
+  path: '/bodies/$bodySlug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MeetingsBodySlugDateRoute = MeetingsBodySlugDateRouteImport.update({
   id: '/meetings/$bodySlug/$date',
   path: '/meetings/$bodySlug/$date',
@@ -38,34 +56,68 @@ const MeetingsBodySlugDateRoute = MeetingsBodySlugDateRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/drama': typeof DramaRoute
   '/spending': typeof SpendingRoute
+  '/bodies/$bodySlug': typeof BodiesBodySlugRoute
+  '/bodies/': typeof BodiesIndexRoute
   '/meetings/$bodySlug/$date': typeof MeetingsBodySlugDateRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/drama': typeof DramaRoute
   '/spending': typeof SpendingRoute
+  '/bodies/$bodySlug': typeof BodiesBodySlugRoute
+  '/bodies': typeof BodiesIndexRoute
   '/meetings/$bodySlug/$date': typeof MeetingsBodySlugDateRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/drama': typeof DramaRoute
   '/spending': typeof SpendingRoute
+  '/bodies/$bodySlug': typeof BodiesBodySlugRoute
+  '/bodies/': typeof BodiesIndexRoute
   '/meetings/$bodySlug/$date': typeof MeetingsBodySlugDateRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/spending' | '/meetings/$bodySlug/$date'
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/drama'
+    | '/spending'
+    | '/bodies/$bodySlug'
+    | '/bodies/'
+    | '/meetings/$bodySlug/$date'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/spending' | '/meetings/$bodySlug/$date'
-  id: '__root__' | '/' | '/about' | '/spending' | '/meetings/$bodySlug/$date'
+  to:
+    | '/'
+    | '/about'
+    | '/drama'
+    | '/spending'
+    | '/bodies/$bodySlug'
+    | '/bodies'
+    | '/meetings/$bodySlug/$date'
+  id:
+    | '__root__'
+    | '/'
+    | '/about'
+    | '/drama'
+    | '/spending'
+    | '/bodies/$bodySlug'
+    | '/bodies/'
+    | '/meetings/$bodySlug/$date'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  DramaRoute: typeof DramaRoute
   SpendingRoute: typeof SpendingRoute
+  BodiesBodySlugRoute: typeof BodiesBodySlugRoute
+  BodiesIndexRoute: typeof BodiesIndexRoute
   MeetingsBodySlugDateRoute: typeof MeetingsBodySlugDateRoute
 }
 
@@ -76,6 +128,13 @@ declare module '@tanstack/react-router' {
       path: '/spending'
       fullPath: '/spending'
       preLoaderRoute: typeof SpendingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/drama': {
+      id: '/drama'
+      path: '/drama'
+      fullPath: '/drama'
+      preLoaderRoute: typeof DramaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -92,6 +151,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/bodies/': {
+      id: '/bodies/'
+      path: '/bodies'
+      fullPath: '/bodies/'
+      preLoaderRoute: typeof BodiesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/bodies/$bodySlug': {
+      id: '/bodies/$bodySlug'
+      path: '/bodies/$bodySlug'
+      fullPath: '/bodies/$bodySlug'
+      preLoaderRoute: typeof BodiesBodySlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/meetings/$bodySlug/$date': {
       id: '/meetings/$bodySlug/$date'
       path: '/meetings/$bodySlug/$date'
@@ -105,7 +178,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  DramaRoute: DramaRoute,
   SpendingRoute: SpendingRoute,
+  BodiesBodySlugRoute: BodiesBodySlugRoute,
+  BodiesIndexRoute: BodiesIndexRoute,
   MeetingsBodySlugDateRoute: MeetingsBodySlugDateRoute,
 }
 export const routeTree = rootRouteImport

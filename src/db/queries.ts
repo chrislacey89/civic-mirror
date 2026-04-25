@@ -98,6 +98,15 @@ export type GoverningBodySummary = {
 	type: BodyType;
 };
 
+export type BodyWithStats = {
+	name: string;
+	slug: string;
+	type: BodyType;
+	meetingCount: number;
+	totalSpending: number;
+	decisionCount: number;
+};
+
 /**
  * Lists recent meetings with summary data for the landing page feed.
  * Optionally filtered by body slug. Returns newest first.
@@ -381,6 +390,90 @@ export async function listGoverningBodiesQuery(
 		.all();
 
 	return rows.map((r) => ({ ...r, type: r.type as BodyType }));
+}
+
+/**
+ * Lists all governing bodies with aggregated meeting and spending stats.
+ */
+export async function listBodiesWithStatsQuery(
+	db: LibSQLDatabase<typeof schema>,
+): Promise<BodyWithStats[]> {
+	const bodies = await db
+		.select()
+		.from(schema.governingBodies)
+		.orderBy(schema.governingBodies.name)
+		.all();
+
+	const result: BodyWithStats[] = [];
+	for (const body of bodies) {
+		const meetingCount = await db
+			.select({ count: sql<number>`count(*)` })
+			.from(schema.meetings)
+			.where(eq(schema.meetings.bodyId, body.id))
+			.get();
+
+		const fiscalAgg = await db
+			.select({
+				total: sum(schema.fiscalDecisions.amount),
+				count: sql<number>`count(${schema.fiscalDecisions.id})`,
+			})
+			.from(schema.fiscalDecisions)
+			.innerJoin(
+				schema.meetings,
+				eq(schema.fiscalDecisions.meetingId, schema.meetings.id),
+			)
+			.where(eq(schema.meetings.bodyId, body.id))
+			.get();
+
+		result.push({
+			name: body.name,
+			slug: body.slug,
+			type: body.type as BodyType,
+			meetingCount: meetingCount?.count ?? 0,
+			totalSpending: Number(fiscalAgg?.total) || 0,
+			decisionCount: fiscalAgg?.count ?? 0,
+		});
+	}
+
+	return result;
+}
+
+/**
+ * Aggregates fiscal decisions by budget category for a single governing body.
+ */
+export async function aggregateFiscalByCategoryForBodyQuery(
+	db: LibSQLDatabase<typeof schema>,
+	bodySlug: string,
+): Promise<FiscalByCategory[]> {
+	const body = await db
+		.select()
+		.from(schema.governingBodies)
+		.where(eq(schema.governingBodies.slug, bodySlug))
+		.get();
+
+	if (!body) return [];
+
+	const rows = await db
+		.select({
+			budgetCategory: schema.fiscalDecisions.budgetCategory,
+			totalAmount: sum(schema.fiscalDecisions.amount),
+			decisionCount: sql<number>`count(${schema.fiscalDecisions.id})`,
+		})
+		.from(schema.fiscalDecisions)
+		.innerJoin(
+			schema.meetings,
+			eq(schema.fiscalDecisions.meetingId, schema.meetings.id),
+		)
+		.where(eq(schema.meetings.bodyId, body.id))
+		.groupBy(schema.fiscalDecisions.budgetCategory)
+		.orderBy(desc(sum(schema.fiscalDecisions.amount)))
+		.all();
+
+	return rows.map((r) => ({
+		budgetCategory: r.budgetCategory ?? "Uncategorized",
+		totalAmount: Number(r.totalAmount) || 0,
+		decisionCount: r.decisionCount,
+	}));
 }
 
 export type FiscalDecisionDetail = {
