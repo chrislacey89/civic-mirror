@@ -260,6 +260,94 @@ describe("StorageService", () => {
 			);
 		});
 
+		it("attaches new documents to an existing meeting when a later call brings siblings (agenda + ordinance)", async () => {
+			const db = await createTestDb();
+			const layer = StorageServiceLive(db);
+
+			// First call: a meeting with its minutes document.
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeMeeting({
+						bodySlug: "ellettsville-town-council",
+						date: "2025-12-22",
+						meetingType: "regular",
+						documents: [
+							{
+								sourceUrl: "https://ellettsville.in.us/egov/docs/1628.pdf",
+								rawText: "Minutes for the Dec 22 meeting.",
+								documentType: "minutes",
+								extractionMethod: "text-layer",
+							},
+						],
+					});
+				}).pipe(Effect.provide(layer)),
+			);
+
+			// Second call for the *same* meeting, different document (agenda).
+			// The storage layer must attach it to the existing meeting instead
+			// of dropping it via the idempotency short-circuit. See issue #27.
+			const secondHandle = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting({
+						bodySlug: "ellettsville-town-council",
+						date: "2025-12-22",
+						meetingType: "regular",
+						documents: [
+							{
+								sourceUrl: "https://ellettsville.in.us/egov/docs/1700.pdf",
+								rawText: "Agenda for the Dec 22 meeting.",
+								documentType: "agenda",
+								extractionMethod: "text-layer",
+							},
+						],
+					});
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const meetings = await db.select().from(schema.meetings).all();
+			expect(meetings).toHaveLength(1);
+			expect(secondHandle.id).toBe(meetings[0].id);
+
+			const docs = await db.select().from(schema.documents).all();
+			expect(docs).toHaveLength(2);
+			expect(docs.map((d) => d.documentType).sort()).toEqual([
+				"agenda",
+				"minutes",
+			]);
+		});
+
+		it("does not duplicate a document when the same (meetingId, sourceUrl) is re-submitted", async () => {
+			const db = await createTestDb();
+			const layer = StorageServiceLive(db);
+
+			const firstInput = {
+				bodySlug: "ellettsville-town-council",
+				date: "2025-12-22",
+				meetingType: "regular" as const,
+				documents: [
+					{
+						sourceUrl: "https://ellettsville.in.us/egov/docs/1628.pdf",
+						rawText: "Minutes text v1.",
+						documentType: "minutes" as const,
+						extractionMethod: "text-layer" as const,
+					},
+				],
+			};
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeMeeting(firstInput);
+					yield* storage.storeMeeting(firstInput);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const docs = await db.select().from(schema.documents).all();
+			expect(docs).toHaveLength(1);
+		});
+
 		it("is idempotent on re-run — second call with same (bodySlug, date) produces no duplicates", async () => {
 			const db = await createTestDb();
 			const layer = StorageServiceLive(db);

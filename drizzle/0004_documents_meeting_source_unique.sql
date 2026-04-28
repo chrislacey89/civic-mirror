@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `documents_meeting_id_source_url_unique` ON `documents` (`meeting_id`,`source_url`);

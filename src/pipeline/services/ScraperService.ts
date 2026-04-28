@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import { JSDOM } from "jsdom";
+import { extractMeetingDateFromTitle } from "#/pipeline/dates.ts";
 import { NetworkError, ParseError } from "#/pipeline/errors.ts";
 
 /**
@@ -7,16 +8,44 @@ import { NetworkError, ParseError } from "#/pipeline/errors.ts";
  * Represents one row in the HTML table — enough metadata to identify
  * and download the original PDF.
  */
+type EgovDocumentType = "agenda" | "minutes" | "ordinance";
+
 type EgovDocumentListing = {
 	/** eGov internal document ID, parsed from the `?id=` query parameter. */
 	id: number;
 	/** Document title as displayed in the listing (e.g. "Town Council Meeting Minutes December 8, 2025"). */
 	title: string;
-	/** Date string as shown in the table (MM/DD/YYYY format from eGov). */
+	/** Date string as shown in the table (MM/DD/YYYY format from eGov — the *publish* date). */
 	date: string;
+	/**
+	 * The real meeting date in ISO YYYY-MM-DD, extracted from the title.
+	 * Null when the title has no recognizable long-form date. The listing's
+	 * `date` cell is the portal upload date, not the meeting date — see #27.
+	 */
+	meetingDate: string | null;
+	/**
+	 * Document kind inferred from the title keyword ("Agenda" / "Minutes" /
+	 * "Ordinance"). Defaults to "minutes" when no keyword is present, since
+	 * searchType=12 (minutes) is the current default query path. Callers that
+	 * query other searchTypes should pass their own default via the
+	 * orchestrator.
+	 */
+	documentType: EgovDocumentType;
 	/** Full URL to download/view the document. */
 	downloadUrl: string;
 };
+
+/**
+ * Infers document kind from title keywords. Titles like "Town Council
+ * Meeting Agenda January 6, 2026" → "agenda"; "Ordinance 2025-14 Adopted"
+ * → "ordinance"; default "minutes" matches the eGov searchType=12 query
+ * that's currently the only path in production.
+ */
+function inferDocumentTypeFromTitle(title: string): EgovDocumentType {
+	if (/\bordinance\b/i.test(title)) return "ordinance";
+	if (/\bagenda\b/i.test(title)) return "agenda";
+	return "minutes";
+}
 
 /**
  * Parses the eGov document center HTML table into structured listings.
@@ -53,10 +82,13 @@ function parseEgovListingHtml(html: string): EgovDocumentListing[] {
 		const idMatch = href.match(/[?&]id=(\d+)/);
 		if (!idMatch) continue;
 
+		const title = (titleLink.textContent ?? "").trim();
 		results.push({
 			id: Number.parseInt(idMatch[1], 10),
-			title: (titleLink.textContent ?? "").trim(),
+			title,
 			date: (dateCell.textContent ?? "").trim(),
+			meetingDate: extractMeetingDateFromTitle(title),
+			documentType: inferDocumentTypeFromTitle(title),
 			downloadUrl: href,
 		});
 	}

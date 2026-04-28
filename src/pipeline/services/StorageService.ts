@@ -265,13 +265,14 @@ async function storeMeetingTransaction(
 		}
 
 		// Idempotency guard: (body_id, date) is the natural key. If this meeting
-		// already exists, skip the insert and return the existing handle without
-		// touching child rows. The weekly ingestion cron re-sees the same eGov /
-		// Finalsite listings every run; without this short-circuit every listing
-		// would accumulate duplicate meeting, document, summary, and fiscal rows.
-		// See issue #37. A follow-up can decide refresh semantics (pick up new
-		// documents posted after the first scrape) — this slice intentionally
-		// leaves existing rows untouched.
+		// already exists, attach any documents from this call that aren't
+		// already on it (idempotent by (meetingId, sourceUrl)) and return the
+		// existing handle. The weekly ingestion cron re-sees the same eGov /
+		// Finalsite listings every run; without the outer short-circuit every
+		// listing would stack duplicate meeting / summary / fiscal rows. But a
+		// sibling listing for the *same* meeting date (agenda + minutes +
+		// ordinance) should merge its document into the existing meeting
+		// rather than be dropped. See issues #37 and #27.
 		const existing = await tx
 			.select()
 			.from(schema.meetings)
@@ -284,6 +285,29 @@ async function storeMeetingTransaction(
 			.get();
 
 		if (existing) {
+			for (const doc of input.documents) {
+				const alreadyStored = await tx
+					.select({ id: schema.documents.id })
+					.from(schema.documents)
+					.where(
+						and(
+							eq(schema.documents.meetingId, existing.id),
+							eq(schema.documents.sourceUrl, doc.sourceUrl),
+						),
+					)
+					.get();
+				if (alreadyStored) continue;
+				await tx
+					.insert(schema.documents)
+					.values({
+						meetingId: existing.id,
+						sourceUrl: doc.sourceUrl,
+						rawText: doc.rawText,
+						documentType: doc.documentType,
+						extractionMethod: doc.extractionMethod,
+					})
+					.run();
+			}
 			return { id: existing.id, date: existing.date, bodyId: existing.bodyId };
 		}
 

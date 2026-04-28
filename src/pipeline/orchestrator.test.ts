@@ -181,12 +181,16 @@ describe("runPipeline", () => {
 					title: "Town Council Meeting February 4, 2026 Minutes",
 					date: "02/04/2026",
 					downloadUrl: "https://example.com/doc/1653",
+					meetingDate: "2026-02-04",
+					documentType: "minutes",
 				},
 				{
 					id: 1628,
 					title: "Town Council Meeting January 14, 2026 Minutes",
 					date: "01/14/2026",
 					downloadUrl: "https://example.com/doc/1628",
+					meetingDate: "2026-01-14",
+					documentType: "minutes",
 				},
 			],
 		});
@@ -223,6 +227,84 @@ describe("runPipeline", () => {
 		expect(result.errors).toBe(0);
 	});
 
+	it("stores eGov meetings under the title-derived meetingDate, not the publish-date cell", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				// Publish date (table cell) is 01/14/2026 — the real meeting date
+				// from the title is December 22, 2025. The orchestrator must store
+				// under the title-derived date so distinct meetings published in
+				// the same batch don't collapse. See issue #27.
+				{
+					id: 1628,
+					title: "Town Council Meeting Minutes December 22, 2025",
+					date: "01/14/2026",
+					downloadUrl: "https://example.com/doc/1628",
+					meetingDate: "2025-12-22",
+					documentType: "minutes",
+				},
+				{
+					id: 1627,
+					title: "Town Council Meeting Minutes December 8, 2025",
+					date: "01/14/2026",
+					downloadUrl: "https://example.com/doc/1627",
+					meetingDate: "2025-12-08",
+					documentType: "minutes",
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		const storedDates = log.store.map((s) => s.date).sort();
+		expect(storedDates).toEqual(["2025-12-08", "2025-12-22"]);
+		// Propagates documentType from the listing into the stored MeetingInput.
+		for (const stored of log.storeInputs) {
+			expect(stored.documents[0].documentType).toBe("minutes");
+		}
+	});
+
+	it("falls back to the publish date when the title has no extractable meetingDate", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 42,
+					title: "Town Council Annual Report",
+					date: "03/15/2026",
+					downloadUrl: "https://example.com/doc/42",
+					meetingDate: null,
+					documentType: "minutes",
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+		expect(log.store[0].date).toBe("2026-03-15");
+	});
+
 	it("skips storage and alerts in dry-run mode but still scrapes and summarizes", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
@@ -233,6 +315,8 @@ describe("runPipeline", () => {
 					title: "Meeting",
 					date: "01/01/2026",
 					downloadUrl: "https://example.com/doc/1",
+					meetingDate: null,
+					documentType: "minutes",
 				},
 			],
 		});
@@ -265,6 +349,8 @@ describe("runPipeline", () => {
 					title: "Town Council Meeting Minutes December 22, 2025",
 					date: "12/22/2025",
 					downloadUrl: "https://example.com/doc/1628",
+					meetingDate: "2025-12-22",
+					documentType: "minutes",
 				},
 				{
 					id: 1653,
@@ -272,12 +358,16 @@ describe("runPipeline", () => {
 						"Reorganization Board Meeting February 4, 2026 Minutes Approved",
 					date: "02/04/2026",
 					downloadUrl: "https://example.com/doc/1653",
+					meetingDate: "2026-02-04",
+					documentType: "minutes",
 				},
 				{
 					id: 1627,
 					title: "Town Council Meeting Minutes December 8, 2025",
 					date: "12/08/2025",
 					downloadUrl: "https://example.com/doc/1627",
+					meetingDate: "2025-12-08",
+					documentType: "minutes",
 				},
 			],
 		});
@@ -324,12 +414,16 @@ describe("runPipeline", () => {
 					title: "First",
 					date: "01/01/2026",
 					downloadUrl: "https://example.com/doc/1",
+					meetingDate: null,
+					documentType: "minutes",
 				},
 				{
 					id: 2,
 					title: "Second",
 					date: "01/02/2026",
 					downloadUrl: "https://example.com/doc/2",
+					meetingDate: null,
+					documentType: "minutes",
 				},
 			],
 			summarizationError: new Error("LLM boom"),
@@ -524,6 +618,8 @@ describe("runPipeline", () => {
 					title: "Scanned 2024 Minutes",
 					date: "05/13/2024",
 					downloadUrl: "https://example.com/doc/scanned-42",
+					meetingDate: null,
+					documentType: "minutes",
 				},
 			],
 		});
@@ -574,6 +670,8 @@ describe("runPipeline", () => {
 					title: "Scanned minutes that OCR could read",
 					date: "06/11/2024",
 					downloadUrl: "https://example.com/doc/ocr-99",
+					meetingDate: null,
+					documentType: "minutes",
 				},
 			],
 		});

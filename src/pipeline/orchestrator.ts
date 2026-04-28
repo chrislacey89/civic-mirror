@@ -1,4 +1,5 @@
 import { Duration, Effect, Schedule } from "effect";
+import { normalizeEgovDate, normalizeFinalsiteDate } from "#/pipeline/dates.ts";
 import {
 	AlertService,
 	formatPipelineErrorAlert,
@@ -396,6 +397,13 @@ function processEgovListing(
 				}),
 		});
 
+		// Meeting date comes from the title when present — the eGov listing cell
+		// is the publish/upload date, which collapses to the day staff posted a
+		// batch and would cause distinct meetings to merge. Fall back to the
+		// publish date only when the title has no extractable long-form date
+		// (rare; annual reports and similar). See #27.
+		const meetingDate = listing.meetingDate ?? normalizeEgovDate(listing.date);
+
 		// Unreadable branch: persist the document row so the meeting appears in
 		// listings with a link to the PDF, but skip summarization + fiscal
 		// extraction entirely. This is the "silent hole" the PRD is eliminating
@@ -406,13 +414,13 @@ function processEgovListing(
 
 			yield* storage.storeMeeting({
 				bodySlug: body.slug,
-				date: normalizeEgovDate(listing.date),
+				date: meetingDate,
 				meetingType: "regular",
 				documents: [
 					{
 						sourceUrl: listing.downloadUrl,
 						rawText: "",
-						documentType: "minutes",
+						documentType: listing.documentType,
 						extractionMethod: "unreadable",
 					},
 				],
@@ -432,13 +440,13 @@ function processEgovListing(
 
 		const meetingInput: MeetingInput = {
 			bodySlug: body.slug,
-			date: normalizeEgovDate(listing.date),
+			date: meetingDate,
 			meetingType: "regular",
 			documents: [
 				{
 					sourceUrl: listing.downloadUrl,
 					rawText: extraction.text,
-					documentType: "minutes",
+					documentType: listing.documentType,
 					extractionMethod: extraction.method,
 				},
 			],
@@ -730,46 +738,12 @@ function alertAndRecover(
 }
 
 // ---------------------------------------------------------------------------
-// Date normalization
+// Per-source helpers
 // ---------------------------------------------------------------------------
-
-/** Converts eGov "MM/DD/YYYY" to ISO "YYYY-MM-DD". */
-function normalizeEgovDate(mmddyyyy: string): string {
-	const parts = mmddyyyy.split("/");
-	if (parts.length !== 3) return mmddyyyy;
-	const [month, day, year] = parts;
-	return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-}
-
-const MONTHS: Record<string, string> = {
-	january: "01",
-	february: "02",
-	march: "03",
-	april: "04",
-	may: "05",
-	june: "06",
-	july: "07",
-	august: "08",
-	september: "09",
-	october: "10",
-	november: "11",
-	december: "12",
-};
-
-/** Converts Finalsite "Month Day, Year" (e.g. "January 6, 2026") to ISO. */
-function normalizeFinalsiteDate(label: string, year: number): string {
-	const match = label.match(/^(\w+)\s+(\d+),?\s*(\d+)?$/);
-	if (!match) return `${year}-01-01`;
-	const monthName = match[1].toLowerCase();
-	const day = match[2].padStart(2, "0");
-	const parsedYear = match[3] ? Number(match[3]) : year;
-	const month = MONTHS[monthName] ?? "01";
-	return `${parsedYear}-${month}-${day}`;
-}
 
 function meetingTypeFromFinalsiteLabel(
 	label: string,
-): "regular" | "special" | "workshop" {
+): MeetingInput["meetingType"] {
 	const lower = label.toLowerCase();
 	if (lower.includes("special")) return "special";
 	if (lower.includes("workshop")) return "workshop";
