@@ -84,7 +84,7 @@ const DEFAULT_BODIES: BodyConfigEntry[] = [
 		egovTitlePattern: /^Monroe County/i,
 	},
 	{
-		slug: "richland-bean-blossom-school-board",
+		slug: "rbb-school-board",
 		name: "Richland-Bean Blossom School Board",
 		finalsiteUrl: "https://www.rbbschools.net/school-board",
 	},
