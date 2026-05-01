@@ -211,3 +211,76 @@ export const budgetDiscussions = sqliteTable("budget_discussions", {
 		sql`(unixepoch())`,
 	),
 });
+
+/**
+ * Drama assessments scored by the LLM across seven friction categories.
+ * One assessment per (meeting_id, prompt_version, model) tuple ensures
+ * idempotent re-runs: re-scoring the same transcript with the same prompt
+ * version overwrites the prior assessment rather than accumulating duplicates.
+ *
+ * `publishedAt` is nullable: routine/bumpy/heated auto-publish at insert time;
+ * off-the-rails assessments land with publishedAt = null and require operator
+ * approval before appearing on the public `/drama` page.
+ *
+ * The `level` field is the mechanical sum-to-tier mapping: it must equal
+ * `mapSumToLevel(sum(category_scores.*.score))` and is enforced at the
+ * storage boundary, not the DB level.
+ */
+export const dramaAssessments = sqliteTable(
+	"drama_assessments",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		meetingId: integer("meeting_id")
+			.notNull()
+			.references(() => meetings.id),
+		level: text().notNull(), // "routine" | "bumpy" | "heated" | "off-the-rails"
+		confidence: real().notNull(), // 0.0–1.0
+		promptVersion: text("prompt_version").notNull(), // e.g. "v1"
+		model: text().notNull(), // e.g. "gemini-2.5-flash"
+		headline: text().notNull(),
+		narrative: text().notNull(),
+		publishedAt: integer("published_at", { mode: "timestamp" }), // nullable
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		// (meeting_id, prompt_version, model) is the natural key — one assessment
+		// row per (meeting, prompt version, model) tuple. Re-runs with the same
+		// prompt version overwrite prior rows rather than accumulating duplicates.
+		uniqueIndex("drama_assessments_meeting_prompt_model_unique").on(
+			table.meetingId,
+			table.promptVersion,
+			table.model,
+		),
+	],
+);
+
+/**
+ * Per-category scores for each drama assessment. Each assessment has exactly
+ * one row per category (even if the score is 0, in which case evidenceQuotes
+ * is an empty array). This shape enables future slicing and filtering by
+ * category on the public `/drama` page.
+ */
+export const dramaCategoryScores = sqliteTable(
+	"drama_category_scores",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		assessmentId: integer("assessment_id")
+			.notNull()
+			.references(() => dramaAssessments.id),
+		category: text().notNull(), // one of the seven category slugs
+		score: integer().notNull(), // 0, 1, 2, or 3
+		evidenceQuotes: text("evidence_quotes", { mode: "json" }).notNull(), // string[]
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [
+		// Each assessment has exactly one row per category
+		uniqueIndex("drama_category_scores_assessment_category_unique").on(
+			table.assessmentId,
+			table.category,
+		),
+	],
+);
