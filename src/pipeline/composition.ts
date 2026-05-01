@@ -4,7 +4,12 @@ import { Layer } from "effect";
 import { Resend } from "resend";
 import * as schema from "#/db/schema.ts";
 import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
+import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionService.ts";
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
+import {
+	createGeminiDramaDetector,
+	DRAMA_DETECTION_PROMPT_VERSION,
+} from "#/pipeline/services/GeminiDramaDetector.ts";
 import { createGeminiSummarizer } from "#/pipeline/services/GeminiSummarizer.ts";
 import { extractPdfText } from "#/pipeline/services/PdfExtractor.ts";
 import { EgovScraperLive } from "#/pipeline/services/ScraperService.ts";
@@ -143,6 +148,13 @@ function buildProductionLayers(input: BuildLayersInput) {
 		generateFn: geminiGenerator,
 	});
 
+	const dramaDetector = createGeminiDramaDetector({ modelId: geminiModelId });
+	const dramaDetection = DramaDetectionServiceLive({
+		model: geminiModelId,
+		promptVersion: DRAMA_DETECTION_PROMPT_VERSION,
+		generateFn: dramaDetector,
+	});
+
 	const storage = StorageServiceLive(db);
 
 	const alert = AlertServiceLive({
@@ -168,6 +180,7 @@ function buildProductionLayers(input: BuildLayersInput) {
 		youtube,
 		transcription,
 		summarization,
+		dramaDetection,
 		storage,
 		alert,
 	);

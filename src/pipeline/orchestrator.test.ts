@@ -4,6 +4,10 @@ import type { MeetingDetail } from "#/db/queries.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 import { runPipeline } from "#/pipeline/orchestrator.ts";
 import { AlertService } from "#/pipeline/services/AlertService.ts";
+import {
+	type DramaAssessmentResult,
+	DramaDetectionService,
+} from "#/pipeline/services/DramaDetectionService.ts";
 import type { FinalsiteMeetingListing } from "#/pipeline/services/FinalsiteScraper.ts";
 import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
@@ -35,6 +39,7 @@ type CallLog = {
 	store: Array<{ bodySlug: string; date: string }>;
 	storeInputs: Array<MeetingInput>;
 	alert: Array<{ subject: string; body: string }>;
+	drama: number;
 };
 
 function emptyCallLog(): CallLog {
@@ -49,6 +54,7 @@ function emptyCallLog(): CallLog {
 		store: [],
 		storeInputs: [],
 		alert: [],
+		drama: 0,
 	};
 }
 
@@ -62,6 +68,8 @@ type StubConfig = {
 	storedMeeting?: Meeting;
 	lastMeetingLookup?: MeetingDetail | null;
 	mostRecentMeetingDate?: string | null;
+	dramaDetectionResult?: DramaAssessmentResult;
+	dramaDetectionError?: Error;
 };
 
 function buildStubLayers(config: StubConfig) {
@@ -160,6 +168,40 @@ function buildStubLayers(config: StubConfig) {
 			}),
 	});
 
+	const defaultDramaResult: DramaAssessmentResult = {
+		category_scores: {
+			procedural_breakdown: { score: 0, evidence_quotes: [] },
+			question_looping: { score: 0, evidence_quotes: [] },
+			defensive_hedging: { score: 0, evidence_quotes: [] },
+			timeline_pressure: { score: 0, evidence_quotes: [] },
+			improvised_workarounds: { score: 0, evidence_quotes: [] },
+			visible_dissent: { score: 0, evidence_quotes: [] },
+			post_hoc_corrections: { score: 0, evidence_quotes: [] },
+		},
+		level: "routine",
+		confidence: 0.8,
+		headline: "Routine meeting",
+		narrative: "Nothing notable.",
+		model: "stub-model",
+		promptVersion: "v1",
+	};
+
+	const drama = Layer.succeed(DramaDetectionService, {
+		detect: () =>
+			Effect.try({
+				try: () => {
+					config.log.drama += 1;
+					if (config.dramaDetectionError) throw config.dramaDetectionError;
+					return config.dramaDetectionResult ?? defaultDramaResult;
+				},
+				catch: (error) =>
+					new LlmError({
+						model: "stub-model",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+	});
+
 	return Layer.mergeAll(
 		egov,
 		finalsite,
@@ -168,6 +210,7 @@ function buildStubLayers(config: StubConfig) {
 		summarization,
 		storage,
 		alert,
+		drama,
 	);
 }
 
@@ -606,7 +649,51 @@ describe("runPipeline", () => {
 		expect(log.summarize).toHaveLength(1);
 		expect(log.summarize[0].sourceText).toContain("transcript for abc123");
 		expect(log.store).toHaveLength(1);
+		expect(log.drama).toBe(1);
 		expect(result.processed).toBe(1);
+	});
+
+	it("does not block transcript storage when drama detection fails", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					videoId: "abc123",
+					title: "Town Council, March 23, 2026",
+					publishedAt: "2026-03-24T00:00:00Z",
+					hasCaptions: true,
+				},
+			],
+			dramaDetectionError: new Error("Gemini API down"),
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "town-council",
+					name: "Town Council",
+					youtubePlaylistId: "PL_test",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// Transcript and summary still landed despite drama detection failure.
+		expect(log.store).toHaveLength(1);
+		expect(result.processed).toBe(1);
+		expect(result.errors).toBe(0);
+		// Operator was alerted to the drama failure.
+		expect(log.alert.some((a) => a.subject.includes("drama-detection"))).toBe(
+			true,
+		);
 	});
 
 	it("persists an unreadable eGov PDF as a document row without summarizing", async () => {
