@@ -169,12 +169,12 @@ describe("dramaAssessmentSchema", () => {
 		expect(() => dramaAssessmentSchema.parse(bad)).toThrow();
 	});
 
-	it("rejects headlines longer than 100 chars", () => {
+	it("rejects headlines longer than 200 chars", () => {
 		const bad = {
 			category_scores: ZERO_CATEGORY_SCORES,
 			level: "routine",
 			confidence: 0.5,
-			headline: "x".repeat(101),
+			headline: "x".repeat(201),
 			narrative: "n",
 		};
 

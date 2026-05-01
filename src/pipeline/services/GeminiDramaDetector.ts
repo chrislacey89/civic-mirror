@@ -215,23 +215,39 @@ function createGeminiDramaDetector(
 	config: GeminiDramaDetectorConfig,
 ): DramaDetectionGenerateFn {
 	return async (input: DramaDetectionInput): Promise<DramaAssessmentOutput> => {
-		const { output } = await generateText({
-			model: google(config.modelId),
-			system: DRAMA_DETECTION_SYSTEM_PROMPT_V1,
-			prompt: buildPrompt(input),
-			output: Output.object({
-				schema: dramaAssessmentSchema,
-			}),
-			providerOptions: {
-				google: {
-					thinkingConfig: {
-						thinkingBudget: 4096,
-						includeThoughts: true,
-					},
-				} satisfies GoogleGenerativeAIProviderOptions,
-			},
-		});
-		return output;
+		try {
+			const { output } = await generateText({
+				model: google(config.modelId),
+				system: DRAMA_DETECTION_SYSTEM_PROMPT_V1,
+				prompt: buildPrompt(input),
+				output: Output.object({
+					schema: dramaAssessmentSchema,
+				}),
+				providerOptions: {
+					google: {
+						thinkingConfig: {
+							thinkingBudget: 4096,
+							includeThoughts: true,
+						},
+					} satisfies GoogleGenerativeAIProviderOptions,
+				},
+			});
+			return output;
+		} catch (err) {
+			// Surface the raw model output and the validation cause so prompt
+			// iteration is debuggable. AI SDK wraps schema mismatches as
+			// NoObjectGeneratedError with .text (raw) and .cause (Zod issues).
+			const e = err as { text?: string; cause?: unknown; message?: string };
+			if (e.text) {
+				console.error("[drama-detector] raw model output:");
+				console.error(e.text);
+			}
+			if (e.cause) {
+				console.error("[drama-detector] validation cause:");
+				console.error(e.cause);
+			}
+			throw err;
+		}
 	};
 }
 

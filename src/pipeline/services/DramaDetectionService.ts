@@ -8,12 +8,15 @@ import {
 import { LlmError } from "#/pipeline/errors.ts";
 
 /**
- * Per-category score schema. Score is a literal union (0|1|2|3) so the
- * model can't drift to fractional or out-of-range values; quotes are
- * capped at 2 to keep prompt-iteration noise low.
+ * Per-category score schema. The Gemini structured-output API rejects
+ * numeric enums (`enum: [0,1,2,3]` → "TYPE_STRING expected") even though
+ * regular JSON Schema permits them, so we constrain the score with
+ * `int().min(0).max(3)` instead of a literal union and rely on the
+ * system prompt to instruct the model on the 0–3 anchor scale.
+ * Evidence quotes are capped at 2 to keep prompt-iteration noise low.
  */
 const categoryScoreSchema = z.object({
-	score: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]),
+	score: z.number().int().min(0).max(3),
 	evidence_quotes: z.array(z.string()).max(2),
 });
 
@@ -29,7 +32,7 @@ const dramaAssessmentSchema = z.object({
 	}),
 	level: z.enum(DRAMA_LEVELS),
 	confidence: z.number().min(0).max(1),
-	headline: z.string().max(100),
+	headline: z.string().max(200),
 	narrative: z.string(),
 });
 
