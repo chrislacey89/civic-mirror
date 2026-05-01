@@ -31,7 +31,7 @@
     "@effect/cli": "^0.75.0",
     "@effect/platform": "^0.96.0",
     "@effect/platform-node": "^0.106.0",
-    "@libsql/client": "^0.17.2",
+    "@libsql/client": "^0.17.3",
     "@napi-rs/canvas": "^0.1.97",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-devtools": "latest",
