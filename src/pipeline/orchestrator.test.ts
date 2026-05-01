@@ -150,6 +150,7 @@ function buildStubLayers(config: StubConfig) {
 		storeTranscript: () => Effect.void,
 		getMostRecentMeetingDate: () =>
 			Effect.sync(() => config.mostRecentMeetingDate ?? null),
+		storeDramaAssessment: () => Effect.void,
 	});
 
 	const alert = Layer.succeed(AlertService, {

@@ -4,6 +4,12 @@ import { Context, Effect, Layer } from "effect";
 import type { MeetingDetail } from "#/db/queries.ts";
 import { getMeetingByBodyAndDateQuery } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
+import {
+	DRAMA_CATEGORIES,
+	type DramaCategory,
+	type DramaLevel,
+	mapSumToLevel,
+} from "#/lib/drama-levels.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 
 /**
@@ -84,6 +90,22 @@ type TranscriptInput = {
 /** Minimal handle returned after a successful store — just enough to reference the meeting. */
 type Meeting = { id: number; date: string; bodyId: number };
 
+type DramaCategoryScoreInput = {
+	score: 0 | 1 | 2 | 3;
+	evidenceQuotes: string[];
+};
+
+type StoreDramaAssessmentInput = {
+	meetingId: number;
+	level: DramaLevel;
+	confidence: number;
+	promptVersion: string;
+	model: string;
+	headline: string;
+	narrative: string;
+	categoryScores: Record<DramaCategory, DramaCategoryScoreInput>;
+};
+
 /**
  * The contract that StorageService consumers depend on.
  *
@@ -110,6 +132,24 @@ interface StorageServiceInterface {
 	getMostRecentMeetingDate(
 		slug: string,
 	): Effect.Effect<string | null, DatabaseError>;
+	/**
+	 * Persist a drama assessment + its seven per-category score rows atomically.
+	 *
+	 * Idempotent on the (meetingId, promptVersion, model) natural key: if a
+	 * row already exists for that tuple, this is a no-op.
+	 *
+	 * Storage-boundary invariant: `level` must equal
+	 * `mapSumToLevel(sum(categoryScores.*.score))`. On mismatch the computed
+	 * level wins and the override is logged — math is the source of truth,
+	 * the LLM does not get the last word.
+	 *
+	 * Auto-publish rule (v1, hardcoded): off-the-rails lands with
+	 * `publishedAt = null` and stays invisible to the public site until
+	 * operator review. Routine/bumpy/heated auto-publish at insert time.
+	 */
+	storeDramaAssessment(
+		input: StoreDramaAssessmentInput,
+	): Effect.Effect<void, DatabaseError>;
 }
 
 class StorageService extends Context.Tag("StorageService")<
@@ -217,6 +257,85 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		storeDramaAssessment: (input) =>
+			Effect.tryPromise({
+				try: () => storeDramaAssessmentTransaction(db, input),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "storeDramaAssessment",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+	});
+}
+
+/**
+ * Persist a drama assessment + 7 category-score rows atomically. Idempotent
+ * on (meetingId, promptVersion, model). Storage-boundary invariant:
+ * `level` must equal `mapSumToLevel(sum(scores))` — computed level wins on
+ * mismatch.
+ */
+async function storeDramaAssessmentTransaction(
+	db: LibSQLDatabase<typeof schema>,
+	input: StoreDramaAssessmentInput,
+): Promise<void> {
+	const existing = await db
+		.select({ id: schema.dramaAssessments.id })
+		.from(schema.dramaAssessments)
+		.where(
+			and(
+				eq(schema.dramaAssessments.meetingId, input.meetingId),
+				eq(schema.dramaAssessments.promptVersion, input.promptVersion),
+				eq(schema.dramaAssessments.model, input.model),
+			),
+		)
+		.get();
+	if (existing) return;
+
+	let total = 0;
+	for (const cat of DRAMA_CATEGORIES) {
+		total += input.categoryScores[cat].score;
+	}
+	const computedLevel = mapSumToLevel(total);
+	let level = input.level;
+	if (computedLevel !== level) {
+		console.warn(
+			`[drama-storage] level override on insert: input "${level}", ` +
+				`mapSumToLevel(${total}) = "${computedLevel}"`,
+		);
+		level = computedLevel;
+	}
+
+	const publishedAt = level === "off-the-rails" ? null : new Date();
+
+	await db.transaction(async (tx) => {
+		const assessment = await tx
+			.insert(schema.dramaAssessments)
+			.values({
+				meetingId: input.meetingId,
+				level,
+				confidence: input.confidence,
+				promptVersion: input.promptVersion,
+				model: input.model,
+				headline: input.headline,
+				narrative: input.narrative,
+				publishedAt,
+			})
+			.returning({ id: schema.dramaAssessments.id })
+			.get();
+
+		for (const cat of DRAMA_CATEGORIES) {
+			const cs = input.categoryScores[cat];
+			await tx
+				.insert(schema.dramaCategoryScores)
+				.values({
+					assessmentId: assessment.id,
+					category: cat,
+					score: cs.score,
+					evidenceQuotes: cs.evidenceQuotes,
+				})
+				.run();
+		}
 	});
 }
 
@@ -398,4 +517,10 @@ async function storeMeetingTransaction(
 }
 
 export { StorageService, StorageServiceLive, OCR_CONFIDENCE_MULTIPLIER };
-export type { MeetingInput, Meeting, ExtractionMethod };
+export type {
+	DramaCategoryScoreInput,
+	ExtractionMethod,
+	Meeting,
+	MeetingInput,
+	StoreDramaAssessmentInput,
+};

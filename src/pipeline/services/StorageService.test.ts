@@ -616,4 +616,173 @@ describe("StorageService", () => {
 			expect(transcripts).toHaveLength(1);
 		});
 	});
+
+	describe("storeDramaAssessment", () => {
+		const ZERO_SCORES = {
+			procedural_breakdown: { score: 0 as const, evidenceQuotes: [] },
+			question_looping: { score: 0 as const, evidenceQuotes: [] },
+			defensive_hedging: { score: 0 as const, evidenceQuotes: [] },
+			timeline_pressure: { score: 0 as const, evidenceQuotes: [] },
+			improvised_workarounds: { score: 0 as const, evidenceQuotes: [] },
+			visible_dissent: { score: 0 as const, evidenceQuotes: [] },
+			post_hoc_corrections: { score: 0 as const, evidenceQuotes: [] },
+		};
+
+		async function seedMeeting(db: Awaited<ReturnType<typeof createTestDb>>) {
+			const layer = StorageServiceLive(db);
+			return await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(testMeetingInput);
+				}).pipe(Effect.provide(layer)),
+			);
+		}
+
+		it("inserts an assessment row plus all 7 category-score rows for a routine meeting", async () => {
+			const db = await createTestDb();
+			const meeting = await seedMeeting(db);
+			const layer = StorageServiceLive(db);
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeDramaAssessment({
+						meetingId: meeting.id,
+						level: "routine",
+						confidence: 0.85,
+						promptVersion: "v1",
+						model: "gemini-2.5-flash",
+						headline: "Council adopts agenda; meeting concludes in 32 minutes",
+						narrative: "All items moved without objection.",
+						categoryScores: ZERO_SCORES,
+					});
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const assessments = await db.select().from(schema.dramaAssessments).all();
+			expect(assessments).toHaveLength(1);
+			expect(assessments[0].level).toBe("routine");
+			expect(assessments[0].promptVersion).toBe("v1");
+
+			const scores = await db.select().from(schema.dramaCategoryScores).all();
+			expect(scores).toHaveLength(7);
+			expect(scores.every((s) => s.score === 0)).toBe(true);
+		});
+
+		it("is idempotent on (meetingId, promptVersion, model)", async () => {
+			const db = await createTestDb();
+			const meeting = await seedMeeting(db);
+			const layer = StorageServiceLive(db);
+
+			const input = {
+				meetingId: meeting.id,
+				level: "routine" as const,
+				confidence: 0.85,
+				promptVersion: "v1",
+				model: "gemini-2.5-flash",
+				headline: "h",
+				narrative: "n",
+				categoryScores: ZERO_SCORES,
+			};
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeDramaAssessment(input);
+					yield* storage.storeDramaAssessment(input);
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const assessments = await db.select().from(schema.dramaAssessments).all();
+			expect(assessments).toHaveLength(1);
+			const scores = await db.select().from(schema.dramaCategoryScores).all();
+			expect(scores).toHaveLength(7);
+		});
+
+		it("auto-publishes routine, bumpy, and heated; queues off-the-rails", async () => {
+			const db = await createTestDb();
+			const meeting = await seedMeeting(db);
+			const layer = StorageServiceLive(db);
+
+			// Heated assessment — sum of 12 → heated
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeDramaAssessment({
+						meetingId: meeting.id,
+						level: "heated",
+						confidence: 0.8,
+						promptVersion: "v1",
+						model: "model-a",
+						headline: "h",
+						narrative: "n",
+						categoryScores: {
+							...ZERO_SCORES,
+							procedural_breakdown: { score: 3, evidenceQuotes: ["q"] },
+							question_looping: { score: 3, evidenceQuotes: ["q"] },
+							visible_dissent: { score: 3, evidenceQuotes: ["q"] },
+							post_hoc_corrections: { score: 3, evidenceQuotes: ["q"] },
+						},
+					});
+					// Off-the-rails — sum of 21
+					yield* storage.storeDramaAssessment({
+						meetingId: meeting.id,
+						level: "off-the-rails",
+						confidence: 0.95,
+						promptVersion: "v1",
+						model: "model-b",
+						headline: "h",
+						narrative: "n",
+						categoryScores: {
+							procedural_breakdown: { score: 3, evidenceQuotes: ["q"] },
+							question_looping: { score: 3, evidenceQuotes: ["q"] },
+							defensive_hedging: { score: 3, evidenceQuotes: ["q"] },
+							timeline_pressure: { score: 3, evidenceQuotes: ["q"] },
+							improvised_workarounds: { score: 3, evidenceQuotes: ["q"] },
+							visible_dissent: { score: 3, evidenceQuotes: ["q"] },
+							post_hoc_corrections: { score: 3, evidenceQuotes: ["q"] },
+						},
+					});
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const rows = await db.select().from(schema.dramaAssessments).all();
+			const heated = rows.find((r) => r.level === "heated");
+			const offRails = rows.find((r) => r.level === "off-the-rails");
+			expect(heated?.publishedAt).toBeInstanceOf(Date);
+			expect(offRails?.publishedAt).toBeNull();
+		});
+
+		it("overrides level on insert when input disagrees with the sum", async () => {
+			const db = await createTestDb();
+			const meeting = await seedMeeting(db);
+			const layer = StorageServiceLive(db);
+
+			// LLM-emitted "off-the-rails" but actual sum is 3 → routine
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeDramaAssessment({
+						meetingId: meeting.id,
+						level: "off-the-rails",
+						confidence: 0.4,
+						promptVersion: "v1",
+						model: "model-x",
+						headline: "h",
+						narrative: "n",
+						categoryScores: {
+							...ZERO_SCORES,
+							visible_dissent: { score: 3, evidenceQuotes: ["q"] },
+						},
+					});
+				}).pipe(Effect.provide(layer)),
+			);
+
+			const rows = await db.select().from(schema.dramaAssessments).all();
+			expect(rows).toHaveLength(1);
+			expect(rows[0].level).toBe("routine");
+			// Routine auto-publishes
+			expect(rows[0].publishedAt).toBeInstanceOf(Date);
+		});
+	});
 });
