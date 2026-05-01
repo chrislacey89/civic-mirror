@@ -6,6 +6,7 @@ import {
 	text,
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import type { DramaCategory, DramaLevel } from "../lib/drama-levels";
 
 /**
  * Star schema with `meetings` at the center.
@@ -233,7 +234,7 @@ export const dramaAssessments = sqliteTable(
 		meetingId: integer("meeting_id")
 			.notNull()
 			.references(() => meetings.id),
-		level: text().notNull(), // "routine" | "bumpy" | "heated" | "off-the-rails"
+		level: text().notNull().$type<DramaLevel>(),
 		confidence: real().notNull(), // 0.0–1.0
 		promptVersion: text("prompt_version").notNull(), // e.g. "v1"
 		model: text().notNull(), // e.g. "gemini-2.5-flash"
@@ -269,9 +270,11 @@ export const dramaCategoryScores = sqliteTable(
 		assessmentId: integer("assessment_id")
 			.notNull()
 			.references(() => dramaAssessments.id),
-		category: text().notNull(), // one of the seven category slugs
+		category: text().notNull().$type<DramaCategory>(),
 		score: integer().notNull(), // 0, 1, 2, or 3
-		evidenceQuotes: text("evidence_quotes", { mode: "json" }).notNull(), // string[]
+		evidenceQuotes: text("evidence_quotes", { mode: "json" })
+			.notNull()
+			.$type<string[]>(),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
