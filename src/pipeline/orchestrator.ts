@@ -839,5 +839,60 @@ function meetingTypeFromFinalsiteLabel(
 	return "regular";
 }
 
-export { runPipeline };
+/**
+ * One-shot entry point: run the YouTube branch on a single video. Used by
+ * the `drama:detect` CLI subcommand for first-run inspection of a known
+ * meeting before configuring the full playlist on a body. Bypasses
+ * YouTubeScraper.listPlaylistVideos entirely — the operator supplies the
+ * video metadata directly.
+ */
+function runDramaDetectForVideo(input: {
+	body: BodyConfig;
+	video: YouTubeVideo;
+	networkRetry?: RetryPolicy;
+	llmRetry?: RetryPolicy;
+	now?: Date;
+}): Effect.Effect<
+	PipelineResult,
+	never,
+	| TranscriptionService
+	| SummarizationService
+	| StorageService
+	| AlertService
+	| DramaDetectionService
+> {
+	const config: ResolvedConfig = {
+		bodies: [input.body],
+		crawlDelayMs: 0,
+		youtubeDelayMs: 0,
+		extractPdfText: async () => ({ text: "", method: "unreadable" }),
+		dryRun: false,
+		networkSchedule: scheduleFromPolicy(
+			input.networkRetry ?? DEFAULT_NETWORK_RETRY,
+		),
+		llmSchedule: scheduleFromPolicy(input.llmRetry ?? DEFAULT_LLM_RETRY),
+		now: input.now ?? new Date(),
+	};
+
+	return processYouTubeVideo(input.body, input.video, config).pipe(
+		Effect.catchAll((error) =>
+			Effect.gen(function* () {
+				const alert = yield* AlertService;
+				yield* alert
+					.sendAlert(
+						formatPipelineErrorAlert({
+							stage: error._tag,
+							bodyName: input.body.name,
+							errorTag: error._tag,
+							errorMessage: error.message,
+						}),
+					)
+					.pipe(Effect.catchAll(() => Effect.void));
+				return { processed: 0, errors: 1 };
+			}),
+		),
+	);
+}
+
+export { runDramaDetectForVideo, runPipeline };
 export type { BodyConfig, RunPipelineInput, PipelineResult, RetryPolicy };

@@ -2,7 +2,10 @@ import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import { LlmError } from "#/pipeline/errors.ts";
-import { runPipeline } from "#/pipeline/orchestrator.ts";
+import {
+	runDramaDetectForVideo,
+	runPipeline,
+} from "#/pipeline/orchestrator.ts";
 import { AlertService } from "#/pipeline/services/AlertService.ts";
 import {
 	type DramaAssessmentResult,
@@ -946,5 +949,36 @@ describe("runPipeline", () => {
 		expect(result.processed).toBe(1);
 		expect(result.errors).toBe(0);
 		expect(log.alert).toHaveLength(0);
+	});
+});
+
+describe("runDramaDetectForVideo", () => {
+	it("runs the YouTube path on one video without scraping a playlist", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({ log });
+
+		const program = runDramaDetectForVideo({
+			body: { slug: "town-council", name: "Town Council" },
+			video: {
+				videoId: "rbb-hiring-2026-04-15",
+				title: "RBB School Board, April 15 2026",
+				publishedAt: "2026-04-15T00:00:00Z",
+				hasCaptions: true,
+			},
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// Did NOT touch the playlist scraper.
+		expect(log.youtubeList).toHaveLength(0);
+		// Did transcribe, summarize, store, and run drama detection.
+		expect(log.transcribe).toEqual(["rbb-hiring-2026-04-15"]);
+		expect(log.summarize).toHaveLength(1);
+		expect(log.store).toHaveLength(1);
+		expect(log.drama).toBe(1);
+		expect(result.processed).toBe(1);
+		expect(result.errors).toBe(0);
 	});
 });
