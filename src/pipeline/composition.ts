@@ -1,4 +1,4 @@
-import { createClient } from "@libsql/client";
+import { createClient } from "@libsql/client/http";
 import { drizzle } from "drizzle-orm/libsql";
 import { Layer } from "effect";
 import { Resend } from "resend";
