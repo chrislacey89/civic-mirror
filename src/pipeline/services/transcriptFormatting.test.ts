@@ -31,7 +31,7 @@ describe("formatTranscriptWithTimestamps", () => {
 	});
 
 	describe("Whisper segments (reconstruction)", () => {
-		it("reconstructs transcript with MM:SS markers from segments", () => {
+		it("reconstructs transcript with MM:SS markers placed before each segment", () => {
 			const input = {
 				source: "whisper" as const,
 				rawText:
@@ -50,10 +50,9 @@ describe("formatTranscriptWithTimestamps", () => {
 
 			const result = formatTranscriptWithTimestamps(input);
 
-			expect(result).toContain("[00:00]");
-			expect(result).toContain("[00:15]");
-			expect(result).toContain("[01:30]");
-			expect(result).toContain("[05:00]");
+			expect(result).toBe(
+				"[00:00] Opening remarks [00:15] Budget discussion [01:30] Vote approval [05:00] Chair calls order",
+			);
 		});
 
 		it("handles empty segments array", () => {
@@ -81,9 +80,9 @@ describe("formatTranscriptWithTimestamps", () => {
 
 			const result = formatTranscriptWithTimestamps(input);
 
-			expect(result).toContain("[00:05]");
-			expect(result).toContain("[00:35]");
-			expect(result).toContain("[02:05]");
+			expect(result).toBe(
+				"[00:05] Quick mention [00:35] Extended discussion [02:05] Final thoughts",
+			);
 		});
 	});
 });
