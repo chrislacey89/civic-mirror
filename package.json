@@ -59,7 +59,7 @@
     "tesseract.js": "^7.0.0",
     "tw-animate-css": "^1.3.6",
     "unpdf": "^1.6.0",
-    "youtube-transcript": "^1.3.0",
+    "youtube-transcript": "^1.3.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {

@@ -147,7 +147,7 @@ const WHISPER_INITIAL_PROMPT = [
 ].join(", ");
 
 async function defaultRunWhisper(videoId: string): Promise<WhisperResult> {
-	const { execSync } = await import("node:child_process");
+	const { execFileSync } = await import("node:child_process");
 	const { mkdtempSync, readFileSync, rmSync } = await import("node:fs");
 	const { tmpdir } = await import("node:os");
 	const { join } = await import("node:path");
@@ -159,23 +159,25 @@ async function defaultRunWhisper(videoId: string): Promise<WhisperResult> {
 		const outputPath = join(workDir, "output");
 
 		// Download audio with yt-dlp and preprocess with ffmpeg
-		// 16kHz mono WAV + noise reduction (highpass, lowpass, afftdn)
-		execSync(
+		// 16kHz mono WAV + noise reduction (highpass, lowpass, afftdn).
+		// execFileSync bypasses /bin/sh, so the yt-dlp `%(ext)s` template token
+		// and any tmpdir paths containing spaces survive without quoting.
+		execFileSync(
+			"yt-dlp",
 			[
-				"yt-dlp",
 				"--extract-audio",
 				"--audio-format",
 				"wav",
 				"-o",
 				join(workDir, "raw.%(ext)s"),
 				`https://www.youtube.com/watch?v=${videoId}`,
-			].join(" "),
+			],
 			{ stdio: "pipe" },
 		);
 
-		execSync(
+		execFileSync(
+			"ffmpeg",
 			[
-				"ffmpeg",
 				"-i",
 				join(workDir, "raw.wav"),
 				"-ar",
@@ -185,14 +187,14 @@ async function defaultRunWhisper(videoId: string): Promise<WhisperResult> {
 				"-af",
 				"highpass=f=200,lowpass=f=3000,afftdn",
 				audioPath,
-			].join(" "),
+			],
 			{ stdio: "pipe" },
 		);
 
 		// Run whisper.cpp with medium model, VAD, and civic vocabulary prompt
-		execSync(
+		execFileSync(
+			"whisper-cpp",
 			[
-				"whisper-cpp",
 				"--model",
 				"medium",
 				"--vad",
@@ -202,9 +204,9 @@ async function defaultRunWhisper(videoId: string): Promise<WhisperResult> {
 				"--output-file",
 				outputPath,
 				"--initial-prompt",
-				`"${WHISPER_INITIAL_PROMPT}"`,
+				WHISPER_INITIAL_PROMPT,
 				audioPath,
-			].join(" "),
+			],
 			{ stdio: "pipe", timeout: 60 * 60 * 1000 }, // 60 min timeout
 		);
 

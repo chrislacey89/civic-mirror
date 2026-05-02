@@ -10,7 +10,10 @@ import {
 	DEFAULT_BODIES,
 	extractPdfText,
 } from "#/pipeline/composition.ts";
-import { runPipeline } from "#/pipeline/orchestrator.ts";
+import {
+	runDramaDetectForVideo,
+	runPipeline,
+} from "#/pipeline/orchestrator.ts";
 
 /**
  * Effect teaching note: This file owns the CLI surface — `@effect/cli` Command
@@ -93,6 +96,91 @@ const runCommand = Command.make(
 // can see what `run` will process without running anything.
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// `drama:detect` subcommand — first-run inspection on a single YouTube video.
+// Bypasses the playlist scraper so the operator can target one meeting,
+// observe the structured output, and confirm Heated-band assignment on the
+// RBB hiring transcript before configuring full playlist ingestion.
+// ---------------------------------------------------------------------------
+
+const detectVideoId = Options.text("video-id").pipe(
+	Options.withDescription("YouTube video ID (the part after `?v=`)."),
+);
+
+const detectBodySlug = Options.text("body").pipe(
+	Options.withDescription(
+		"Body slug to attribute the meeting to (must exist in governing_bodies).",
+	),
+);
+
+const detectTitle = Options.text("title").pipe(
+	Options.optional,
+	Options.withDescription(
+		"Meeting title used as the prompt context (defaults to a stub).",
+	),
+);
+
+const detectDate = Options.text("date").pipe(
+	Options.optional,
+	Options.withDescription(
+		"ISO date (YYYY-MM-DD) recorded as the meeting date (defaults to today).",
+	),
+);
+
+const dramaDetectCommand = Command.make(
+	"drama:detect",
+	{
+		videoId: detectVideoId,
+		bodySlug: detectBodySlug,
+		title: detectTitle,
+		date: detectDate,
+	},
+	({ videoId, bodySlug, title, date }) =>
+		Effect.gen(function* () {
+			const body = DEFAULT_BODIES.find((b) => b.slug === bodySlug);
+			if (!body) {
+				yield* Console.error(
+					`Unknown body slug: ${bodySlug}. Known slugs: ${DEFAULT_BODIES.map((b) => b.slug).join(", ")}`,
+				);
+				return;
+			}
+
+			const resolvedTitle = Option.getOrElse(
+				title,
+				() => `Manual drama:detect ${videoId}`,
+			);
+			const resolvedDate = Option.getOrElse(date, () =>
+				new Date().toISOString().slice(0, 10),
+			);
+
+			yield* Console.log(
+				`[drama:detect] body=${bodySlug} videoId=${videoId} date=${resolvedDate}`,
+			);
+
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			const result = yield* runDramaDetectForVideo({
+				body,
+				video: {
+					videoId,
+					title: resolvedTitle,
+					publishedAt: `${resolvedDate}T00:00:00Z`,
+					hasCaptions: true,
+				},
+			}).pipe(Effect.provide(layers));
+
+			yield* Console.log(
+				`[drama:detect] done: processed=${result.processed} errors=${result.errors}`,
+			);
+		}),
+);
+
 const listBodiesCommand = Command.make("list-bodies", {}, () =>
 	Effect.gen(function* () {
 		for (const body of DEFAULT_BODIES) {
@@ -115,7 +203,9 @@ const rootCommand = Command.make("pipeline", {}, () =>
 	Console.log(
 		"Civic Mirror pipeline — run `pipeline run --help` or `pipeline list-bodies`.",
 	),
-).pipe(Command.withSubcommands([runCommand, listBodiesCommand]));
+).pipe(
+	Command.withSubcommands([runCommand, listBodiesCommand, dramaDetectCommand]),
+);
 
 const cli = Command.run(rootCommand, {
 	name: "Civic Mirror Pipeline",
