@@ -1,6 +1,7 @@
 import { Duration, Effect, Schedule } from "effect";
-import { DRAMA_CATEGORIES } from "#/lib/drama-levels.ts";
+import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import { normalizeEgovDate, normalizeFinalsiteDate } from "#/pipeline/dates.ts";
+import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
 	AlertService,
 	formatPipelineErrorAlert,
@@ -12,7 +13,10 @@ import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
 import type { ExtractResult } from "#/pipeline/services/PdfExtractor.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
-import type { MeetingInput } from "#/pipeline/services/StorageService.ts";
+import type {
+	DramaCategoryScoreInput,
+	MeetingInput,
+} from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import type { TranscriptResult } from "#/pipeline/services/TranscriptionService.ts";
@@ -715,15 +719,21 @@ function runDramaDetection(input: {
 			meetingContext: `${input.body.name}, ${input.video.title}`,
 		});
 
-		const categoryScores = Object.fromEntries(
-			DRAMA_CATEGORIES.map((cat) => [
-				cat,
-				{
-					score: assessment.category_scores[cat].score,
-					evidenceQuotes: assessment.category_scores[cat].evidence_quotes,
-				},
-			]),
-		) as Parameters<typeof storage.storeDramaAssessment>[0]["categoryScores"];
+		const categoryScores: Record<DramaCategory, DramaCategoryScoreInput> = {
+			procedural_breakdown: { score: 0, evidenceQuotes: [] },
+			question_looping: { score: 0, evidenceQuotes: [] },
+			defensive_hedging: { score: 0, evidenceQuotes: [] },
+			timeline_pressure: { score: 0, evidenceQuotes: [] },
+			improvised_workarounds: { score: 0, evidenceQuotes: [] },
+			visible_dissent: { score: 0, evidenceQuotes: [] },
+			post_hoc_corrections: { score: 0, evidenceQuotes: [] },
+		};
+		for (const cat of DRAMA_CATEGORIES) {
+			categoryScores[cat] = {
+				score: assessment.category_scores[cat].score,
+				evidenceQuotes: assessment.category_scores[cat].evidence_quotes,
+			};
+		}
 
 		yield* storage.storeDramaAssessment({
 			meetingId: input.meetingId,
@@ -738,26 +748,16 @@ function runDramaDetection(input: {
 	});
 }
 
-function alertDramaFailure(body: BodyConfig, error: unknown) {
+function alertDramaFailure(body: BodyConfig, error: LlmError | DatabaseError) {
 	return Effect.gen(function* () {
 		const alert = yield* AlertService;
-		const tag =
-			typeof error === "object" && error !== null && "_tag" in error
-				? String((error as { _tag: unknown })._tag)
-				: "DramaDetectionError";
-		const message =
-			error instanceof Error
-				? error.message
-				: typeof error === "object" && error !== null && "message" in error
-					? String((error as { message: unknown }).message)
-					: String(error);
 		yield* alert
 			.sendAlert(
 				formatPipelineErrorAlert({
 					stage: "drama-detection",
 					bodyName: body.name,
-					errorTag: tag,
-					errorMessage: message,
+					errorTag: error._tag,
+					errorMessage: error.message,
 				}),
 			)
 			.pipe(Effect.catchAll(() => Effect.void));

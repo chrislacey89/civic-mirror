@@ -1,4 +1,4 @@
-import { Effect } from "effect";
+import { Cause, Effect, Exit } from "effect";
 import { describe, expect, it } from "vitest";
 import {
 	DramaDetectionService,
@@ -321,9 +321,17 @@ describe("DramaDetectionServiceLive", () => {
 			),
 		);
 
-		const error = await Effect.runPromise(program.pipe(Effect.flip));
+		// runPromiseExit preserves the typed Exit so we can distinguish a typed
+		// failure (Cause.Fail) from a defect (Cause.Die) — flip + runPromise
+		// would conflate the two.
+		const exit = await Effect.runPromiseExit(program);
 
-		expect(error._tag).toBe("LlmError");
-		expect(error.message).toContain("API quota exceeded");
+		expect(Exit.isFailure(exit)).toBe(true);
+		if (!Exit.isFailure(exit)) return;
+		const failure = Cause.failureOption(exit.cause);
+		expect(failure._tag).toBe("Some");
+		if (failure._tag !== "Some") return;
+		expect(failure.value._tag).toBe("LlmError");
+		expect(failure.value.message).toContain("API quota exceeded");
 	});
 });

@@ -91,7 +91,7 @@ type TranscriptInput = {
 type Meeting = { id: number; date: string; bodyId: number };
 
 type DramaCategoryScoreInput = {
-	score: 0 | 1 | 2 | 3;
+	score: number;
 	evidenceQuotes: string[];
 };
 

@@ -1,5 +1,5 @@
 import { type GoogleGenerativeAIProviderOptions, google } from "@ai-sdk/google";
-import { generateText, Output } from "ai";
+import { generateText, NoObjectGeneratedError, Output } from "ai";
 import {
 	type DramaAssessmentOutput,
 	type DramaDetectionGenerateFn,
@@ -237,14 +237,15 @@ function createGeminiDramaDetector(
 			// Surface the raw model output and the validation cause so prompt
 			// iteration is debuggable. AI SDK wraps schema mismatches as
 			// NoObjectGeneratedError with .text (raw) and .cause (Zod issues).
-			const e = err as { text?: string; cause?: unknown; message?: string };
-			if (e.text) {
-				console.error("[drama-detector] raw model output:");
-				console.error(e.text);
-			}
-			if (e.cause) {
-				console.error("[drama-detector] validation cause:");
-				console.error(e.cause);
+			if (NoObjectGeneratedError.isInstance(err)) {
+				if (err.text) {
+					console.error("[drama-detector] raw model output:");
+					console.error(err.text);
+				}
+				if (err.cause) {
+					console.error("[drama-detector] validation cause:");
+					console.error(err.cause);
+				}
 			}
 			throw err;
 		}
