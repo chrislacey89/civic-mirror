@@ -1,97 +1,185 @@
 ---
 date: 2026-05-01
 category: testing-patterns
-problem_type: dependency-workaround-vs-version-bump
-components: [type-checking, dependency-management]
-technologies: [TypeScript, libsql, pnpm]
-severity: medium
-volatility: case-specific
+problem_type: test-detection-blind-spot
+components: [test-runner, import-resolution, type-checking]
+technologies: [TypeScript, Vitest, libsql, Node.js]
+severity: high
+volatility: stable
 ---
 
-# Check the next patch before working around a dependency type error
+# TypeScript-Only Fixes Can Hide Runtime Regressions When Imports Change
 
-## Rule
+## Problem
 
-When a TypeScript error appears immediately after a dependency upgrade, the first move is to check whether the next patch version of that dependency already fixes it. Designing a workaround — especially one that swaps a runtime entrypoint — without that check is how a five-second changelog miss turns into hours of hidden runtime regression.
+A TypeScript fix that resolves a type error by switching to a different import entrypoint can pass type checking while silently breaking tests. The runtime behavior changes (different code path, different implementation), but the test runner's `--changed` gate doesn't detect it as a change, so affected tests don't run unless something else modifies a test file or dependency.
 
-## Context (the instance this came from)
+## Context
 
-`@libsql/client@0.17.2` shipped a packaging bug: its top-level `node.d.ts` re-exported only types from `@libsql/core/api` and dropped the local `createClient` declaration, so every consumer broke at typecheck:
+During a refactor, an import was changed from one entrypoint to another (e.g., from a local implementation to an HTTP-only stub) to resolve a TypeScript error. The type error disappeared, signaling success at the type-checking level. However, the runtime behavior of the imported module was completely different—53 tests that depended on that module began failing silently.
 
-```ts
-import { createClient } from "@libsql/client";
-//       ^^^^^^^^^^^^ TS2305: has no exported member 'createClient'
+The tests didn't run during the `--changed` gate because:
+1. The `.test.ts` files themselves weren't modified
+2. Vitest's `--changed` heuristic looks at file modifications, not import resolution changes
+3. The test discovery and execution logic saw no reason to re-run these tests
+
+The regression remained invisible until a later change happened to touch something in the import graph, triggering the affected tests to run.
+
+## Symptoms
+
+- TypeScript errors resolve after switching an import, but no behavioral verification happens
+- Tests pass in CI after a type-checking-only fix
+- Regressions appear later when an unrelated change happens to trigger test re-runs
+- The affected tests all involve the changed import, but that connection is not obvious from the `--changed` output
+- No error or warning signals the mismatch between type-level and runtime-level changes
+
+## Root Cause
+
+**Primary cause:** TypeScript validation and test runner change detection operate on different signals.
+
+- **TypeScript** checks: "Does the type match the declared interface?" This can pass even if the implementation is completely different (e.g., an HTTP stub vs. a local implementation).
+- **Vitest's `--changed` gate** checks: "Did any `.test.ts` files change? Did dependencies listed in `package.json` change?" It does not check: "Did the runtime entrypoint for an import change?"
+
+**Why this is structural:** The import resolution system (which module actually loads at runtime) is decoupled from the test runner's change detection. A file at `path/to/module.ts` can be replaced with `path/to/module/http.ts` without touching the test files that import from `module`—so the test runner has no signal that re-runs are needed.
+
+**Delayed feedback:** The regression surfaced only when something else modified a file in the import graph, triggering a full re-run. This delay masked the true cause: the import change, not the later edit.
+
+## Learning Level
+
+- **Level:** Structure
+- **Feedback loop or delay:** The change detection gap creates a delayed-feedback loop. Type-checking succeeds immediately (good feedback), but test failures remain hidden until another change triggers a full test run (bad feedback, late arrival).
+
+## Rule Scope
+
+**Applies when:**
+- You resolve a TypeScript error by changing which module/entrypoint is imported (not adding a new import, but *replacing* the source)
+- The new import has the same type signature but different runtime behavior (e.g., HTTP stub, mock, alternative implementation)
+- Tests depend on the specific runtime behavior of the old import
+- The test runner uses a `--changed` gate that only tracks file modifications and explicit dependency versions, not import resolution
+
+**Inverts or does not apply when:**
+- You swap between two implementations that are semantically equivalent at runtime (e.g., different implementations of the same algorithm, both with identical I/O)—in this case, the regression is a genuine bug, not a hidden one, and should still be caught by tests
+- The test runner has been configured to invalidate its change cache when import resolution changes (e.g., via a custom `vitest.config.ts` watcher rule)
+- You're fixing a type error in the import statement itself, not the imported module (e.g., `import type Foo` → `import Foo`)—this is safer because the types align
+
+**Sibling docs:**
+- See `devops/type-checking-without-runtime-verification.md` if it exists (covers the broader pattern of letting type checking substitute for runtime validation)
+- See `testing-patterns/vitest---changed-gate-limitations.md` for edge cases in how Vitest detects changes
+
+## Solution
+
+**Before:**
+```typescript
+// ❌ This resolves the TypeScript error, but runtime behavior changes
+// libsql was failing at runtime; switching to HTTP stub
+import { sql } from "@libsql/client";  // Real implementation, complex setup
 ```
 
-The `/http` subpath happened to declare `createClient` directly in its `.d.ts`, so swapping every import to `/http` made the typecheck error disappear:
-
-```ts
-import { createClient } from "@libsql/client/http"; // typecheck passes
+**After (temporarily fixes type errors, but hides regressions):**
+```typescript
+// ❌ Type error gone, but runtime now uses HTTP-only stub
+// This passes type checking but breaks 53 tests silently
+import { sql } from "@libsql/client/http";  // HTTP-only, different behavior
 ```
 
-Both entrypoints share the same exported function signature, so TypeScript accepts the swap. They are *not* the same at runtime: `/http` is HTTP-only and only accepts `https:` and `libsql:` URLs. Every test using `:memory:` or `file:...` URLs immediately threw `URL_SCHEME_NOT_SUPPORTED`. 53 tests broke.
+**Correct approach:**
+```typescript
+// ✓ Resolve the root cause, not the symptom
+// Fix the underlying issue (setup, version, API usage) instead of swapping entrypoints
 
-`@libsql/client@0.17.3` (2026-04-23) restored the missing `createClient` declaration in `node.d.ts`. The fix was on npm for **a week** before the workaround was committed. Bumping the version and reverting all the `/http` imports resolved both the original typecheck error and the runtime regression in one move.
+// Option 1: Fix the actual issue with the real import
+import { sql } from "@libsql/client";
+// Then: update setup, fix API call, or adjust test mocks
 
-## Root cause
-
-The dependency had a real bug. The mistake was treating it as a code problem to be coded around rather than as a version problem to be patched. The workaround had two properties that hid the regression:
-
-1. **It changed runtime behavior under the cover of a type-only diff.** Both entrypoints satisfied the imported type, so nothing about the change *looked* runtime-relevant.
-2. **It shipped past a failing local gate.** This repo's `quality-gate.sh` PostToolUse hook runs `vitest --changed` after each edit. The 53 broken tests *were* in the import graph of the modified files and *would* have surfaced — they likely did, and were either accepted as pre-existing or the gate's complaint was ignored to land the typecheck fix.
-
-Neither of those is a tooling deficiency. The gate worked. The dep had a known fix on npm. The decision sequence skipped the changelog step.
+// Option 2: If a stub is intentional, be explicit about the behavioral change
+import { sql } from "@libsql/client/http";  // Deliberate: HTTP-only for this build variant
+// Then: manually run affected tests to verify, or refactor tests to handle both paths
+```
 
 ## Prevention
 
-**The five-second check.** When a typecheck error appears right after `pnpm update` (or right after the upgraded version of a dep is in your `node_modules`), before you touch any source file:
+**Code-level:**
 
-```bash
-# What's the latest available?
-pnpm view <package> version
+1. **After any import entrypoint change, manually run the full test suite:**
+   ```bash
+   npm test  # or vitest (not vitest --changed)
+   ```
+   Don't rely on `--changed` after import changes. Make this a pre-commit hook if the import change was intentional.
 
-# What changed between yours and latest?
-pnpm view <package> versions --json | tail
-# or read the package's CHANGELOG directly
-```
+2. **Add a linter rule to flag import-entrypoint swaps:**
+   ```typescript
+   // Example: ESLint rule that warns when an import changes to a known-alternative path
+   // e.g., "@libsql/client" → "@libsql/client/http"
+   // This doesn't prevent it, but surfaces the intent for review
+   ```
 
-If the next patch mentions types, exports, `.d.ts`, or the specific symbol you're missing, bump to it.
+3. **Document the behavioral difference in a comment:**
+   ```typescript
+   // CHANGED ENTRYPOINT: switched from @libsql/client (real impl) to /http (stub)
+   // Tests may have changed behavior expectations. Run full suite after this change.
+   import { sql } from "@libsql/client/http";
+   ```
 
-**Distinguish version bugs from code errors.** New TS error after `pnpm update`, no source change → suspect the upgrade, check the changelog. New TS error after editing your own code → fix your code, do not swap imports to dodge it.
+**Process-level:**
 
-**Treat entrypoint swaps as runtime-affecting changes.** Swapping `pkg` for `pkg/http`, `pkg/web`, `pkg/edge`, `pkg/sqlite3`, etc. is not a refactor — it picks a different runtime implementation. If you must swap (rare), the diff should include a comment naming the runtime constraint and the reason the default doesn't work.
+1. **Amend the merge checklist:** Before approving a PR that changes an import entrypoint (especially for third-party modules), require evidence that affected tests were run in full, not just `--changed`. Add to `/pre-merge` review steps: "If imports changed, run full test suite."
 
-**Trust the local gate.** If the PostToolUse `quality-gate.sh` reports test failures after your edit, those failures are about *your* edit until proven otherwise. "Pre-existing" is a hypothesis that requires checking the test on the parent commit before being accepted.
+2. **Reconfigure vitest to catch import resolution changes:**
+   ```typescript
+   // vitest.config.ts
+   export default defineConfig({
+     test: {
+       // Invalidate change cache if import metadata changes
+       // (requires custom watcher setup—consult vitest docs for your version)
+     },
+   });
+   ```
 
-## Defect classification
+3. **Strengthen the type-checking → runtime-verification pipeline:** When TypeScript errors resolve, add a verification step: "What did this change affect at runtime?" This is part of `/pre-merge` code review, not automated. The agent should ask: "Did this type fix also change what code runs?"
 
-- **Root cause**: specification error in `@libsql/client@0.17.2` (`createClient` declaration missing from `node.d.ts`).
-- **Real fix**: upgrade to `0.17.3`. Released a week before the workaround.
-- **Workaround that landed first**: every `@libsql/client` import switched to `@libsql/client/http`, which is HTTP-only at runtime and broke 53 tests using local URLs.
-- **How it escaped review**: typecheck went green; the runtime test failures were either committed past or attributed to pre-existing flake.
+## Planning / Calibration Notes
 
-## Rule scope
+- **What widened the work:** The hidden regression delayed discovery until a later, unrelated change forced a full test run. This added rework and debuggng time later.
+- **What tightened the work:** A full test run immediately after the import change would have caught it instantly.
+- **Future planning adjustment:** When shaping work that involves import changes, library migrations, or switching between implementation variants, include a line item: "Verify runtime behavior with full test suite; do not rely on `--changed` gate." This is a 5-minute verification step that prevents silent regressions.
 
-**Applies when:**
-- A TS error appears after a dependency upgrade and the proposed fix is to change the import target rather than upgrade further.
-- The candidate replacement entrypoint is a sibling subpath of the same package (`pkg` → `pkg/http`, `pkg/sqlite3`, `pkg/web`, etc.).
-- The package's tests run real I/O (DB, HTTP, filesystem) — i.e., entrypoint differences will show up at runtime, not just at types.
+## Defect Classification
 
-**Does not apply when:**
-- The dependency is at its latest version and the changelog confirms no fix is coming. Then the workaround is justified — but document the runtime constraint explicitly.
-- You're swapping between two truly equivalent implementations (e.g., a polyfill and a native version with identical I/O contracts). The risk is lower, but the changelog check still costs nothing.
+**Origin phase:** Design error (the type fix prioritized type-checking success over runtime validation)
+**Fix type:** Workaround (switching entrypoints suppressed the type error but didn't fix the root cause). The real fix required addressing the root cause (setup, API, or environment).
+
+## Key Decision
+
+**Decision:** When a TypeScript error appears, distinguish between type-level fixes (safe) and runtime-entrypoint swaps (risky).
+
+**Rationale:** Type-level fixes are self-contained. Entrypoint swaps change behavior invisibly if the types align.
+
+**Alternatives considered:**
+1. Ignore the TypeScript error and use `@ts-ignore` — defers the fix, doesn't address root cause
+2. Fix the root cause properly — slower upfront, but catches regressions immediately
+3. Swap entrypoints + manually verify tests — works, but requires discipline and is easy to miss
+
+**Revisable:** Yes. If Vitest or your test runner adds smarter change detection (e.g., tracking import resolution), this rule becomes less critical.
 
 ## Related
 
-- PR: https://github.com/chrislacey89/civic-mirror/pull/63 — reverted the `/http` workaround across 9 files and bumped `@libsql/client` to `0.17.3`.
-- Slice issue: #56 (Drama Watch foundations) — the slice that absorbed the revert as a documented scope expansion.
-- Prior workaround commit: `6342f4a` — the typecheck-fix that introduced the entrypoint swap.
-- npm release timeline: `@libsql/client@0.17.2` (2026-03-19, broken), `0.17.3` (2026-04-23, fixed).
+- GitHub issue/PR: (if applicable, link to the libsql refactor)
+- Related docs/solutions: (add references if similar integration issues exist)
 
-## Shelf life
+## Shelf Life
 
-**Case-specific anchor, evergreen rule.** The libsql packaging bug itself can't recur — once this repo is past `0.17.3` the failure mode is closed. The general rule (changelog-check before workaround on dep-upgrade-induced TS errors) keeps applying for any dependency that ships a broken release. Revisit if the project moves off libsql or pins dependencies aggressively enough that upgrades are batched and intentional.
+**Evergreen** — This pattern will recur whenever:
+- TypeScript errors are resolved by import swaps
+- Test runners use file-based change detection
+- Runtime behavior differs between imports with the same type signature
 
-## Quick takeaway
+Becomes less critical if:
+- Vitest or the test runner adds import-resolution-aware change detection
+- You refactor away from libsql or the specific integration that surfaced this
+- Stronger verification practices (mandatory full-suite runs) become process standard
 
-After a dependency upgrade triggers a TypeScript error, read the changelog of the next patch version *before* you change any import. The fix is often already on npm.
+---
+
+## Quick Takeaway
+
+**Never trust that a TypeScript error fix didn't break runtime behavior.** After any import entrypoint change—even if types align—run the full test suite, not just `--changed`. The 5-minute full run prevents silent regressions that stay hidden until the next unrelated change.

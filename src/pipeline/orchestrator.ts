@@ -1,19 +1,27 @@
 import { Duration, Effect, Schedule } from "effect";
+import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import { normalizeEgovDate, normalizeFinalsiteDate } from "#/pipeline/dates.ts";
+import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
 	AlertService,
 	formatPipelineErrorAlert,
 	formatZeroResultsAlert,
 } from "#/pipeline/services/AlertService.ts";
+import { DramaDetectionService } from "#/pipeline/services/DramaDetectionService.ts";
 import type { FinalsiteMeetingListing } from "#/pipeline/services/FinalsiteScraper.ts";
 import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
 import type { ExtractResult } from "#/pipeline/services/PdfExtractor.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
-import type { MeetingInput } from "#/pipeline/services/StorageService.ts";
+import type {
+	DramaCategoryScoreInput,
+	MeetingInput,
+} from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
+import type { TranscriptResult } from "#/pipeline/services/TranscriptionService.ts";
 import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
+import { formatTranscriptWithTimestamps } from "#/pipeline/services/transcriptFormatting.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
 
@@ -165,6 +173,7 @@ function runPipeline(
 	| SummarizationService
 	| StorageService
 	| AlertService
+	| DramaDetectionService
 > {
 	const config: ResolvedConfig = {
 		...input,
@@ -203,6 +212,7 @@ function runPipelineForBody(
 	| SummarizationService
 	| StorageService
 	| AlertService
+	| DramaDetectionService
 > {
 	return Effect.gen(function* () {
 		// Zero-results anomaly check: alert if this body hasn't had fresh content
@@ -599,6 +609,7 @@ function runYouTubeForBody(
 	| SummarizationService
 	| StorageService
 	| AlertService
+	| DramaDetectionService
 > {
 	return Effect.gen(function* () {
 		const playlistId = body.youtubePlaylistId;
@@ -629,7 +640,11 @@ function processYouTubeVideo(
 ): Effect.Effect<
 	PipelineResult,
 	TaggedPipelineError,
-	TranscriptionService | SummarizationService | StorageService
+	| TranscriptionService
+	| SummarizationService
+	| StorageService
+	| DramaDetectionService
+	| AlertService
 > {
 	return Effect.gen(function* () {
 		const transcription = yield* TranscriptionService;
@@ -671,7 +686,81 @@ function processYouTubeVideo(
 			sourceUrl: `https://www.youtube.com/watch?v=${video.videoId}`,
 		});
 
+		// Drama detection runs AFTER transcript storage. Failure must not
+		// regress transcript or summary persistence — those are first-class
+		// transparency artifacts. The catchAll below absorbs any error,
+		// alerts the operator, and returns Effect.void so the orchestrator's
+		// tagged-error channel is unaffected.
+		yield* runDramaDetection({
+			body,
+			video,
+			meetingId: meeting.id,
+			transcript,
+		}).pipe(Effect.catchAll((error) => alertDramaFailure(body, error)));
+
 		return { processed: 1, errors: 0 };
+	});
+}
+
+function runDramaDetection(input: {
+	body: BodyConfig;
+	video: YouTubeVideo;
+	meetingId: number;
+	transcript: TranscriptResult;
+}) {
+	return Effect.gen(function* () {
+		const detector = yield* DramaDetectionService;
+		const storage = yield* StorageService;
+
+		const formatted = formatTranscriptWithTimestamps(input.transcript);
+
+		const assessment = yield* detector.detect({
+			sourceText: formatted,
+			meetingContext: `${input.body.name}, ${input.video.title}`,
+		});
+
+		const categoryScores: Record<DramaCategory, DramaCategoryScoreInput> = {
+			procedural_breakdown: { score: 0, evidenceQuotes: [] },
+			question_looping: { score: 0, evidenceQuotes: [] },
+			defensive_hedging: { score: 0, evidenceQuotes: [] },
+			timeline_pressure: { score: 0, evidenceQuotes: [] },
+			improvised_workarounds: { score: 0, evidenceQuotes: [] },
+			visible_dissent: { score: 0, evidenceQuotes: [] },
+			post_hoc_corrections: { score: 0, evidenceQuotes: [] },
+		};
+		for (const cat of DRAMA_CATEGORIES) {
+			categoryScores[cat] = {
+				score: assessment.category_scores[cat].score,
+				evidenceQuotes: assessment.category_scores[cat].evidence_quotes,
+			};
+		}
+
+		yield* storage.storeDramaAssessment({
+			meetingId: input.meetingId,
+			level: assessment.level,
+			confidence: assessment.confidence,
+			promptVersion: assessment.promptVersion,
+			model: assessment.model,
+			headline: assessment.headline,
+			narrative: assessment.narrative,
+			categoryScores,
+		});
+	});
+}
+
+function alertDramaFailure(body: BodyConfig, error: LlmError | DatabaseError) {
+	return Effect.gen(function* () {
+		const alert = yield* AlertService;
+		yield* alert
+			.sendAlert(
+				formatPipelineErrorAlert({
+					stage: "drama-detection",
+					bodyName: body.name,
+					errorTag: error._tag,
+					errorMessage: error.message,
+				}),
+			)
+			.pipe(Effect.catchAll(() => Effect.void));
 	});
 }
 
@@ -750,5 +839,60 @@ function meetingTypeFromFinalsiteLabel(
 	return "regular";
 }
 
-export { runPipeline };
+/**
+ * One-shot entry point: run the YouTube branch on a single video. Used by
+ * the `drama:detect` CLI subcommand for first-run inspection of a known
+ * meeting before configuring the full playlist on a body. Bypasses
+ * YouTubeScraper.listPlaylistVideos entirely — the operator supplies the
+ * video metadata directly.
+ */
+function runDramaDetectForVideo(input: {
+	body: BodyConfig;
+	video: YouTubeVideo;
+	networkRetry?: RetryPolicy;
+	llmRetry?: RetryPolicy;
+	now?: Date;
+}): Effect.Effect<
+	PipelineResult,
+	never,
+	| TranscriptionService
+	| SummarizationService
+	| StorageService
+	| AlertService
+	| DramaDetectionService
+> {
+	const config: ResolvedConfig = {
+		bodies: [input.body],
+		crawlDelayMs: 0,
+		youtubeDelayMs: 0,
+		extractPdfText: async () => ({ text: "", method: "unreadable" }),
+		dryRun: false,
+		networkSchedule: scheduleFromPolicy(
+			input.networkRetry ?? DEFAULT_NETWORK_RETRY,
+		),
+		llmSchedule: scheduleFromPolicy(input.llmRetry ?? DEFAULT_LLM_RETRY),
+		now: input.now ?? new Date(),
+	};
+
+	return processYouTubeVideo(input.body, input.video, config).pipe(
+		Effect.catchAll((error) =>
+			Effect.gen(function* () {
+				const alert = yield* AlertService;
+				yield* alert
+					.sendAlert(
+						formatPipelineErrorAlert({
+							stage: error._tag,
+							bodyName: input.body.name,
+							errorTag: error._tag,
+							errorMessage: error.message,
+						}),
+					)
+					.pipe(Effect.catchAll(() => Effect.void));
+				return { processed: 0, errors: 1 };
+			}),
+		),
+	);
+}
+
+export { runDramaDetectForVideo, runPipeline };
 export type { BodyConfig, RunPipelineInput, PipelineResult, RetryPolicy };
