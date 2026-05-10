@@ -1,0 +1,23 @@
+{
+	"schema_version": 1,
+	"id": "extra",
+	"transcript_path": "transcripts/extra.txt",
+	"meeting_context": "Fixture with all 7 canonical categories plus a typo/extra category",
+	"graded_at": "2026-05-10",
+	"graded_by": "fixture",
+	"ground_truth": {
+		"category_scores": {
+			"procedural_breakdown": { "score": 0, "evidence_quotes": [] },
+			"question_looping": { "score": 0, "evidence_quotes": [] },
+			"defensive_hedging": { "score": 0, "evidence_quotes": [] },
+			"timeline_pressure": { "score": 0, "evidence_quotes": [] },
+			"improvised_workarounds": { "score": 0, "evidence_quotes": [] },
+			"visible_dissent": { "score": 0, "evidence_quotes": [] },
+			"post_hoc_corrections": { "score": 0, "evidence_quotes": [] },
+			"weather_disruption": { "score": 0, "evidence_quotes": [] }
+		},
+		"level": "routine",
+		"headline": "x",
+		"narrative": "x"
+	}
+}
