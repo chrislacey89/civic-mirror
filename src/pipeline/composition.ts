@@ -6,10 +6,7 @@ import * as schema from "#/db/schema.ts";
 import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
 import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionService.ts";
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
-import {
-	createGeminiDramaDetector,
-	DRAMA_DETECTION_PROMPT_VERSION,
-} from "#/pipeline/services/GeminiDramaDetector.ts";
+import { createGeminiDramaDetector } from "#/pipeline/services/GeminiDramaDetector.ts";
 import { createGeminiSummarizer } from "#/pipeline/services/GeminiSummarizer.ts";
 import { extractPdfText } from "#/pipeline/services/PdfExtractor.ts";
 import { EgovScraperLive } from "#/pipeline/services/ScraperService.ts";
@@ -17,6 +14,7 @@ import { StorageServiceLive } from "#/pipeline/services/StorageService.ts";
 import { SummarizationServiceLive } from "#/pipeline/services/SummarizationService.ts";
 import { TranscriptionServiceLive } from "#/pipeline/services/TranscriptionService.ts";
 import { YouTubeScraperLive } from "#/pipeline/services/YouTubeScraper.ts";
+import { v1 as dramaProfileV1 } from "../../evals/profiles/v1.ts";
 
 /**
  * Effect teaching note: This file is the composition root — the single place
@@ -148,10 +146,23 @@ function buildProductionLayers(input: BuildLayersInput) {
 		generateFn: geminiGenerator,
 	});
 
-	const dramaDetector = createGeminiDramaDetector({ modelId: geminiModelId });
+	const dramaDetector = createGeminiDramaDetector({
+		modelId: geminiModelId,
+		promptVersion: dramaProfileV1.promptVersion,
+		systemPrompt: dramaProfileV1.systemPrompt,
+		...(dramaProfileV1.temperature !== undefined
+			? { temperature: dramaProfileV1.temperature }
+			: {}),
+		...(dramaProfileV1.thinkingBudget !== undefined
+			? { thinkingBudget: dramaProfileV1.thinkingBudget }
+			: {}),
+		...(dramaProfileV1.includeThoughts !== undefined
+			? { includeThoughts: dramaProfileV1.includeThoughts }
+			: {}),
+	});
 	const dramaDetection = DramaDetectionServiceLive({
 		model: geminiModelId,
-		promptVersion: DRAMA_DETECTION_PROMPT_VERSION,
+		promptVersion: dramaProfileV1.promptVersion,
 		generateFn: dramaDetector,
 	});
 
