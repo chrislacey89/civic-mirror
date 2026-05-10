@@ -44,6 +44,12 @@ type TrialResult = {
 };
 
 type AgreementSummary = {
+	/**
+	 * Recomputed from `groundTruth.ground_truth.category_scores` via
+	 * `mapSumToLevel` — never read from `groundTruth.ground_truth.level`.
+	 * Always defined (corpus always has scores), regardless of trial outcomes.
+	 */
+	groundTruthTier: DramaLevel;
 	tierMode: DramaLevel | null;
 	tierMin: DramaLevel | null;
 	tierMax: DramaLevel | null;
@@ -51,6 +57,8 @@ type AgreementSummary = {
 	totalCategoryMae: number | null;
 	driftEventCount: number;
 	emptyOutputCount: number;
+	/** Count of `ok` trials whose mechanical tier equals `groundTruthTier`. */
+	tierMatchCount: number;
 	trialsCounted: number;
 	trialsExcluded: number;
 };
@@ -167,8 +175,13 @@ function computeTrialSummary(
 	const trialsCounted = okTrials.length;
 	const trialsExcluded = trials.length - trialsCounted;
 
+	const groundTruthTier = mapSumToLevel(
+		sumCategoryScores(groundTruth.ground_truth.category_scores),
+	);
+
 	if (trialsCounted === 0) {
 		return {
+			groundTruthTier,
 			tierMode: null,
 			tierMin: null,
 			tierMax: null,
@@ -176,6 +189,7 @@ function computeTrialSummary(
 			totalCategoryMae: null,
 			driftEventCount: 0,
 			emptyOutputCount,
+			tierMatchCount: 0,
 			trialsCounted,
 			trialsExcluded,
 		};
@@ -198,7 +212,12 @@ function computeTrialSummary(
 	const totalCategoryMae =
 		perTrialAbsErr.reduce((a, b) => a + b, 0) / perTrialAbsErr.length;
 
+	const tierMatchCount = tiersPerTrial.filter(
+		(t) => t === groundTruthTier,
+	).length;
+
 	return {
+		groundTruthTier,
 		tierMode: pickTierMode(tiersPerTrial),
 		tierMin: tierMin(tiersPerTrial),
 		tierMax: tierMax(tiersPerTrial),
@@ -206,6 +225,7 @@ function computeTrialSummary(
 		totalCategoryMae,
 		driftEventCount,
 		emptyOutputCount,
+		tierMatchCount,
 		trialsCounted,
 		trialsExcluded,
 	};

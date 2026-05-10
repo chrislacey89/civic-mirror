@@ -321,6 +321,61 @@ describe("computeTrialSummary", () => {
 		expect(summary.sigma).toBeNull();
 		expect(summary.totalCategoryMae).toBeNull();
 		expect(summary.driftEventCount).toBe(0);
+		expect(summary.tierMatchCount).toBe(0);
+		// Ground-truth tier is still computed from corpus scores even when
+		// no trial data is usable.
+		expect(summary.groundTruthTier).toBe("heated");
+	});
+
+	it("recomputes groundTruthTier from corpus scores, ignoring corpus level", () => {
+		// Corpus level says "routine" but scores sum to 18 → off-the-rails
+		const gt = buildGroundTruth(scoresForSum(18), "routine");
+		const trials: TrialResult[] = [
+			buildTrial({
+				profile,
+				transcriptId,
+				trial: 1,
+				assessment: buildAssessment(18, "off-the-rails"),
+			}),
+		];
+		const summary = computeTrialSummary(trials, gt);
+		expect(summary.groundTruthTier).toBe("off-the-rails");
+		// All 1 trial matches recomputed GT tier
+		expect(summary.tierMatchCount).toBe(1);
+	});
+
+	it("tierMatchCount counts only trials whose mechanical tier equals groundTruthTier", () => {
+		// GT scores sum to 12 → heated
+		const gt = buildGroundTruth(scoresForSum(12), "heated");
+		const trials: TrialResult[] = [
+			buildTrial({
+				profile,
+				transcriptId,
+				trial: 1,
+				assessment: buildAssessment(12, "heated"),
+			}),
+			buildTrial({
+				profile,
+				transcriptId,
+				trial: 2,
+				// sum=11 → bumpy, doesn't match GT heated
+				assessment: buildAssessment(11, "bumpy"),
+			}),
+			buildTrial({
+				profile,
+				transcriptId,
+				trial: 3,
+				assessment: buildAssessment(13, "heated"),
+			}),
+		];
+		const summary = computeTrialSummary(trials, gt);
+		expect(summary.groundTruthTier).toBe("heated");
+		expect(summary.tierMatchCount).toBe(2);
+		expect(summary.trialsCounted).toBe(3);
+		// 2/3 ≥ 2/3 → meets PROMOTION_CRITERIA.minTierMatchFraction
+		expect(
+			summary.tierMatchCount / summary.trialsCounted,
+		).toBeGreaterThanOrEqual(PROMOTION_CRITERIA.minTierMatchFraction);
 	});
 
 	it("counts drift events from trial assessments", () => {
