@@ -16,6 +16,7 @@ const fixture = (name: string): string =>
 	fileURLToPath(new URL(`./__fixtures__/report/${name}`, import.meta.url));
 
 const v1Cell: AgreementSummary = {
+	kind: "evaluated",
 	groundTruthTier: "off-the-rails",
 	tierMode: "off-the-rails",
 	tierMin: "off-the-rails",
@@ -31,6 +32,7 @@ const v1Cell: AgreementSummary = {
 };
 
 const v2Cell: AgreementSummary = {
+	kind: "evaluated",
 	groundTruthTier: "off-the-rails",
 	tierMode: "heated",
 	tierMin: "bumpy",
@@ -69,17 +71,9 @@ describe("generateMarkdownReport", () => {
 
 	it("renders Promote=✗ when the cell has zero ok trials", () => {
 		const emptyCell: AgreementSummary = {
+			kind: "no-evidence",
 			groundTruthTier: "heated",
-			tierMode: null,
-			tierMin: null,
-			tierMax: null,
-			sigma: null,
-			totalCategoryMae: null,
-			driftEventCount: 0,
-			offTheRailsBoundaryDriftCount: 0,
 			emptyOutputCount: 3,
-			tierMatchCount: 0,
-			trialsCounted: 0,
 			trialsExcluded: 3,
 		};
 		const input: ReportInput = {

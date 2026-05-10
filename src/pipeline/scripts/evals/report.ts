@@ -1,6 +1,7 @@
 import { type DramaLevel, LEVEL_DISPLAY } from "#/lib/drama-levels.ts";
 import type {
 	AgreementSummary,
+	EvaluatedSummary,
 	PROMOTION_CRITERIA,
 } from "#/pipeline/scripts/evals/agreement.ts";
 
@@ -31,33 +32,29 @@ function cellKey(profile: string, transcript: string): string {
 	return `${profile}__${transcript}`;
 }
 
-function fmtTier(tier: DramaLevel | null): string {
-	return tier === null ? "—" : LEVEL_DISPLAY[tier];
+const EM_DASH = "—";
+
+function fmtTier(tier: DramaLevel): string {
+	return LEVEL_DISPLAY[tier];
 }
 
-function fmtTierRange(min: DramaLevel | null, max: DramaLevel | null): string {
-	if (min === null || max === null) return "—";
+function fmtTierRange(min: DramaLevel, max: DramaLevel): string {
 	if (min === max) return LEVEL_DISPLAY[min];
 	return `${LEVEL_DISPLAY[min]}–${LEVEL_DISPLAY[max]}`;
 }
 
-function fmtNum(n: number | null, decimals: number): string {
-	return n === null ? "—" : n.toFixed(decimals);
-}
-
 /**
- * Auto-checks the four PRD #66 promotion criteria where the data is
- * available. Returns `false` when any criterion fails or when no ok trials
- * exist (cell has no evidence to evaluate). MAE check is skipped when
+ * Auto-checks the four PRD #66 promotion criteria. A `no-evidence` cell
+ * always fails — there is nothing to evaluate. MAE check is skipped when
  * `prodMae` is `undefined` (no prod profile declared, or the prod cell
- * itself has null MAE).
+ * itself is `no-evidence`).
  */
 function passesPromotion(
 	cell: AgreementSummary,
 	prodMae: number | undefined,
 	criteria: typeof PROMOTION_CRITERIA,
 ): boolean {
-	if (cell.trialsCounted === 0) return false;
+	if (cell.kind === "no-evidence") return false;
 	const tierMatchFraction = cell.tierMatchCount / cell.trialsCounted;
 	if (tierMatchFraction < criteria.minTierMatchFraction) return false;
 	if (cell.emptyOutputCount > criteria.maxEmptyOutputs) return false;
@@ -66,11 +63,7 @@ function passesPromotion(
 	) {
 		return false;
 	}
-	if (
-		prodMae !== undefined &&
-		cell.totalCategoryMae !== null &&
-		cell.totalCategoryMae > prodMae
-	) {
+	if (prodMae !== undefined && cell.totalCategoryMae > prodMae) {
 		return false;
 	}
 	return true;
@@ -82,7 +75,32 @@ function lookupProdMae(
 ): number | undefined {
 	if (input.prodProfile === undefined) return undefined;
 	const prod = input.cells.get(cellKey(input.prodProfile, transcript));
-	return prod?.totalCategoryMae ?? undefined;
+	if (prod === undefined || prod.kind === "no-evidence") return undefined;
+	return prod.totalCategoryMae;
+}
+
+/**
+ * Renders one cell row in the markdown table. Discriminates on
+ * `cell.kind` so the no-evidence case shows em dashes for every metric
+ * column rather than zeros that could be confused with "evaluated, score
+ * 0". Promote is always ✗ for no-evidence (no evidence to evaluate).
+ */
+function renderMarkdownRow(
+	profile: string,
+	transcript: string,
+	cell: AgreementSummary,
+	promote: boolean,
+): string {
+	const promoteStr = promote ? "✓" : "✗";
+	const gt = fmtTier(cell.groundTruthTier);
+	if (cell.kind === "no-evidence") {
+		const totalTrials = cell.trialsExcluded;
+		return `| ${profile} | ${transcript} | ${gt} | ${EM_DASH} | ${EM_DASH} | ${EM_DASH} | ${EM_DASH} | 0 | 0 | ${cell.emptyOutputCount} | 0/0 | 0/${totalTrials} | ${promoteStr} |`;
+	}
+	const tierMatchStr = `${cell.tierMatchCount}/${cell.trialsCounted}`;
+	const totalTrials = cell.trialsCounted + cell.trialsExcluded;
+	const trialsStr = `${cell.trialsCounted}/${totalTrials}`;
+	return `| ${profile} | ${transcript} | ${gt} | ${fmtTier(cell.tierMode)} | ${fmtTierRange(cell.tierMin, cell.tierMax)} | ${cell.sigma.toFixed(2)} | ${cell.totalCategoryMae.toFixed(2)} | ${cell.driftEventCount} | ${cell.offTheRailsBoundaryDriftCount} | ${cell.emptyOutputCount} | ${tierMatchStr} | ${trialsStr} | ${promoteStr} |`;
 }
 
 function generateMarkdownReport(input: ReportInput): string {
@@ -139,13 +157,7 @@ function generateMarkdownReport(input: ReportInput): string {
 			if (!cell) continue;
 			const prodMae = lookupProdMae(input, transcript);
 			const promote = passesPromotion(cell, prodMae, input.promotionCriteria);
-			const promoteStr = promote ? "✓" : "✗";
-			const tierMatchStr = `${cell.tierMatchCount}/${cell.trialsCounted}`;
-			const totalTrials = cell.trialsCounted + cell.trialsExcluded;
-			const trialsStr = `${cell.trialsCounted}/${totalTrials}`;
-			lines.push(
-				`| ${profile} | ${transcript} | ${fmtTier(cell.groundTruthTier)} | ${fmtTier(cell.tierMode)} | ${fmtTierRange(cell.tierMin, cell.tierMax)} | ${fmtNum(cell.sigma, 2)} | ${fmtNum(cell.totalCategoryMae, 2)} | ${cell.driftEventCount} | ${cell.offTheRailsBoundaryDriftCount} | ${cell.emptyOutputCount} | ${tierMatchStr} | ${trialsStr} | ${promoteStr} |`,
-			);
+			lines.push(renderMarkdownRow(profile, transcript, cell, promote));
 		}
 	}
 	lines.push("");
@@ -155,12 +167,57 @@ function generateMarkdownReport(input: ReportInput): string {
 const CSV_HEADER =
 	"profile,transcript,gt_tier,tier_mode,tier_min,tier_max,sigma,total_category_mae,drift_event_count,otr_boundary_drift_count,empty_output_count,tier_match_count,trials_counted,trials_excluded,promote";
 
-function csvNum(n: number | null): string {
-	return n === null ? "" : n.toString();
-}
-
-function csvTier(t: DramaLevel | null): string {
-	return t === null ? "" : t;
+/**
+ * One CSV row per cell. No-evidence cells emit empty strings for every
+ * metric column (tier_mode, tier_min, tier_max, sigma, total_category_mae)
+ * and zeros for the count columns; this lets a spreadsheet filter on
+ * `promote == false AND tier_mode == ''` to find no-evidence cells
+ * specifically.
+ */
+function renderCsvRow(
+	profile: string,
+	transcript: string,
+	cell: AgreementSummary,
+	promote: boolean,
+): string {
+	const gt = cell.groundTruthTier;
+	if (cell.kind === "no-evidence") {
+		return [
+			profile,
+			transcript,
+			gt,
+			"",
+			"",
+			"",
+			"",
+			"",
+			0,
+			0,
+			cell.emptyOutputCount,
+			0,
+			0,
+			cell.trialsExcluded,
+			String(promote),
+		].join(",");
+	}
+	const e: EvaluatedSummary = cell;
+	return [
+		profile,
+		transcript,
+		gt,
+		e.tierMode,
+		e.tierMin,
+		e.tierMax,
+		e.sigma.toString(),
+		e.totalCategoryMae.toString(),
+		e.driftEventCount,
+		e.offTheRailsBoundaryDriftCount,
+		e.emptyOutputCount,
+		e.tierMatchCount,
+		e.trialsCounted,
+		e.trialsExcluded,
+		String(promote),
+	].join(",");
 }
 
 /**
@@ -178,25 +235,7 @@ function generateCsvReport(input: ReportInput): string {
 			if (!cell) continue;
 			const prodMae = lookupProdMae(input, transcript);
 			const promote = passesPromotion(cell, prodMae, input.promotionCriteria);
-			lines.push(
-				[
-					profile,
-					transcript,
-					csvTier(cell.groundTruthTier),
-					csvTier(cell.tierMode),
-					csvTier(cell.tierMin),
-					csvTier(cell.tierMax),
-					csvNum(cell.sigma),
-					csvNum(cell.totalCategoryMae),
-					cell.driftEventCount,
-					cell.offTheRailsBoundaryDriftCount,
-					cell.emptyOutputCount,
-					cell.tierMatchCount,
-					cell.trialsCounted,
-					cell.trialsExcluded,
-					String(promote),
-				].join(","),
-			);
+			lines.push(renderCsvRow(profile, transcript, cell, promote));
 		}
 	}
 	return `${lines.join("\n")}\n`;

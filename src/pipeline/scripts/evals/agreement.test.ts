@@ -5,6 +5,7 @@ import {
 	type AgreementSummary,
 	computeTrialSummary,
 	detectDriftEvent,
+	type EvaluatedSummary,
 	PROMOTION_CRITERIA,
 	type TrialResult,
 } from "#/pipeline/scripts/evals/agreement.ts";
@@ -52,6 +53,20 @@ function buildTrial(
 		durationMs: 1000,
 		...overrides,
 	};
+}
+
+/**
+ * Assertion helper: most tests below expect a fully-evaluated cell, and
+ * the discriminated-union shape requires narrowing before metrics can be
+ * read. This converts the runtime check + narrowing into a one-liner so
+ * each test stays focused on its assertion subject.
+ */
+function expectEvaluated(
+	summary: AgreementSummary,
+): asserts summary is EvaluatedSummary {
+	if (summary.kind !== "evaluated") {
+		throw new Error(`expected evaluated summary, got ${summary.kind}`);
+	}
 }
 
 function buildGroundTruth(
@@ -148,6 +163,7 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		// The fields that *would* be wrong if the impl read gt.level: groundTruthTier
 		// is the recomputed tier, and tierMatchCount counts trials whose mechanical
 		// tier equals groundTruthTier. If the impl read gt.level, both would
@@ -180,6 +196,7 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		expect(summary.tierMode).toBe("off-the-rails");
 		expect(summary.tierMin).toBe("bumpy");
 		expect(summary.tierMax).toBe("off-the-rails");
@@ -218,6 +235,7 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		expect(summary.tierMode).toBe("heated");
 	});
 
@@ -268,6 +286,7 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		// Mean of [7, 14] per-trial absolute error sums = 10.5
 		expect(summary.totalCategoryMae).toBe(10.5);
 	});
@@ -296,6 +315,7 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		expect(summary.trialsCounted).toBe(2);
 		expect(summary.trialsExcluded).toBe(1);
 		expect(summary.emptyOutputCount).toBe(1);
@@ -305,7 +325,7 @@ describe("computeTrialSummary", () => {
 		expect(summary.sigma).toBe(0);
 	});
 
-	it("produces null metrics when every trial is empty_output", () => {
+	it("produces a no-evidence summary when every trial is empty_output", () => {
 		const gt = buildGroundTruth(scoresForSum(12), "heated");
 		const trials: TrialResult[] = [
 			buildTrial({ profile, transcriptId, trial: 1, status: "empty_output" }),
@@ -314,18 +334,13 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
-		expect(summary.trialsCounted).toBe(0);
+		expect(summary.kind).toBe("no-evidence");
+		if (summary.kind !== "no-evidence") return;
 		expect(summary.trialsExcluded).toBe(3);
 		expect(summary.emptyOutputCount).toBe(3);
-		expect(summary.tierMode).toBeNull();
-		expect(summary.tierMin).toBeNull();
-		expect(summary.tierMax).toBeNull();
-		expect(summary.sigma).toBeNull();
-		expect(summary.totalCategoryMae).toBeNull();
-		expect(summary.driftEventCount).toBe(0);
-		expect(summary.tierMatchCount).toBe(0);
 		// Ground-truth tier is still computed from corpus scores even when
-		// no trial data is usable.
+		// no trial data is usable — the report uses it to show what the
+		// model *should* have said.
 		expect(summary.groundTruthTier).toBe("heated");
 	});
 
@@ -341,6 +356,7 @@ describe("computeTrialSummary", () => {
 			}),
 		];
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		expect(summary.groundTruthTier).toBe("off-the-rails");
 		// All 1 trial matches recomputed GT tier
 		expect(summary.tierMatchCount).toBe(1);
@@ -371,6 +387,7 @@ describe("computeTrialSummary", () => {
 			}),
 		];
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		expect(summary.groundTruthTier).toBe("heated");
 		expect(summary.tierMatchCount).toBe(2);
 		expect(summary.trialsCounted).toBe(3);
@@ -406,6 +423,7 @@ describe("computeTrialSummary", () => {
 			}),
 		];
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		expect(summary.driftEventCount).toBe(3);
 		expect(summary.offTheRailsBoundaryDriftCount).toBe(2);
 	});
@@ -437,6 +455,7 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		expect(summary.driftEventCount).toBe(2);
 	});
 
@@ -468,8 +487,8 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
-		expect(summary.sigma).not.toBeNull();
-		expect(summary.sigma as number).toBeCloseTo(3.0912, 3);
+		expectEvaluated(summary);
+		expect(summary.sigma).toBeCloseTo(3.0912, 3);
 	});
 
 	it("returns sigma=0 for a single ok trial (N=1 still defined)", () => {
@@ -482,7 +501,8 @@ describe("computeTrialSummary", () => {
 				assessment: buildAssessment(12, "heated"),
 			}),
 		];
-		const summary: AgreementSummary = computeTrialSummary(trials, gt);
+		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		expect(summary.sigma).toBe(0);
 	});
 
@@ -498,6 +518,7 @@ describe("computeTrialSummary", () => {
 			buildTrial({ profile, transcriptId, trial: 2, status: "error" }),
 		];
 		const summary = computeTrialSummary(trials, gt);
+		expectEvaluated(summary);
 		expect(summary.trialsCounted).toBe(1);
 		expect(summary.trialsExcluded).toBe(1);
 		// emptyOutputCount counts only `empty_output` status, not `error`

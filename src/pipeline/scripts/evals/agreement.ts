@@ -43,18 +43,43 @@ type TrialResult = {
 	durationMs: number;
 };
 
-type AgreementSummary = {
+/**
+ * A cell whose trials produced no usable evidence — every trial was
+ * `empty_output` or `error`. The report layer must render this case
+ * structurally distinct from a fully-evaluated cell so the operator can
+ * tell "the model said nothing" apart from "the model said this is fine".
+ *
+ * `groundTruthTier` is still present (corpus is always graded) so the
+ * report can show what the model *should* have said.
+ *
+ * Carries the `docs/solutions/patterns/empty-output-silent-degradation`
+ * lesson into eval-result aggregation: the no-evidence path is a tagged
+ * outcome rather than a soup of nullable fields.
+ */
+type NoEvidenceSummary = {
+	kind: "no-evidence";
+	groundTruthTier: DramaLevel;
+	emptyOutputCount: number;
+	trialsExcluded: number;
+};
+
+/**
+ * A cell with at least one `ok` trial. Every metric is defined — no
+ * nullable fields — so report.ts cannot accidentally render a "0" that
+ * means "no evidence" instead of "evidence says zero".
+ */
+type EvaluatedSummary = {
+	kind: "evaluated";
 	/**
 	 * Recomputed from `groundTruth.ground_truth.category_scores` via
 	 * `mapSumToLevel` — never read from `groundTruth.ground_truth.level`.
-	 * Always defined (corpus always has scores), regardless of trial outcomes.
 	 */
 	groundTruthTier: DramaLevel;
-	tierMode: DramaLevel | null;
-	tierMin: DramaLevel | null;
-	tierMax: DramaLevel | null;
-	sigma: number | null;
-	totalCategoryMae: number | null;
+	tierMode: DramaLevel;
+	tierMin: DramaLevel;
+	tierMax: DramaLevel;
+	sigma: number;
+	totalCategoryMae: number;
 	driftEventCount: number;
 	/**
 	 * Subset of `driftEventCount` where the LLM-emitted tier and the
@@ -66,9 +91,12 @@ type AgreementSummary = {
 	emptyOutputCount: number;
 	/** Count of `ok` trials whose mechanical tier equals `groundTruthTier`. */
 	tierMatchCount: number;
+	/** Strictly > 0 in this variant. */
 	trialsCounted: number;
 	trialsExcluded: number;
 };
+
+type AgreementSummary = NoEvidenceSummary | EvaluatedSummary;
 
 /**
  * Compares the LLM-emitted `level` against `mapSumToLevel(sum_of_scores)`.
@@ -200,17 +228,9 @@ function computeTrialSummary(
 
 	if (trialsCounted === 0) {
 		return {
+			kind: "no-evidence",
 			groundTruthTier,
-			tierMode: null,
-			tierMin: null,
-			tierMax: null,
-			sigma: null,
-			totalCategoryMae: null,
-			driftEventCount: 0,
-			offTheRailsBoundaryDriftCount: 0,
 			emptyOutputCount,
-			tierMatchCount: 0,
-			trialsCounted,
 			trialsExcluded,
 		};
 	}
@@ -240,6 +260,7 @@ function computeTrialSummary(
 	).length;
 
 	return {
+		kind: "evaluated",
 		groundTruthTier,
 		tierMode: pickTierMode(tiersPerTrial),
 		tierMin: tierMin(tiersPerTrial),
@@ -256,4 +277,11 @@ function computeTrialSummary(
 }
 
 export { computeTrialSummary, detectDriftEvent, PROMOTION_CRITERIA };
-export type { AgreementSummary, DriftEvent, TrialResult, TrialStatus };
+export type {
+	AgreementSummary,
+	DriftEvent,
+	EvaluatedSummary,
+	NoEvidenceSummary,
+	TrialResult,
+	TrialStatus,
+};
