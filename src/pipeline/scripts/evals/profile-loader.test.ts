@@ -61,6 +61,17 @@ describe("loadProfiles", () => {
 		}
 	});
 
+	it("rejects a profile whose optional field has the wrong type", async () => {
+		const exit = await Effect.runPromiseExit(
+			loadProfiles(fixtureDir("bad-optional-types")),
+		);
+
+		expect(Exit.isFailure(exit)).toBe(true);
+		if (Exit.isFailure(exit)) {
+			expect(exit.cause.toString()).toContain("ProfileLoadError");
+		}
+	});
+
 	it("rejects a non-existent directory", async () => {
 		const exit = await Effect.runPromiseExit(
 			loadProfiles(fixtureDir("does-not-exist")),

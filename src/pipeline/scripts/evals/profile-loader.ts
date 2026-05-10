@@ -20,23 +20,39 @@ class ProfileLoadError extends Data.TaggedError("ProfileLoadError")<{
 type LoadedProfile = EvalProfile & { sourcePath: string };
 
 /**
- * Heuristic: a profile is any exported value that has a string
- * `promptVersion` and a string `systemPrompt`. The optional fields
- * (`temperature`, `thinkingBudget`, `includeThoughts`) are coerced
- * by structural assignment if present and pass `EvalProfile` typing
- * downstream — we trust the TS shape at the import boundary.
+ * Type predicate validating the full `EvalProfile` shape — required
+ * string fields plus runtime checks on every optional field. Without
+ * this, a profile module exporting `{ thinkingBudget: "huge" }` would
+ * pass a two-field structural check and get cast to `EvalProfile`,
+ * carrying the bad type into the detector at runtime.
+ *
+ * Effect teaching note: a `value is T` return type extends narrowing
+ * through every branch the predicate verified, so `findProfileExport`
+ * does not need an `as` assertion — the compiler tracks what we proved.
  */
+function isEvalProfile(value: unknown): value is EvalProfile {
+	if (value === null || typeof value !== "object") return false;
+	const v = value as Partial<EvalProfile>;
+	if (typeof v.promptVersion !== "string") return false;
+	if (typeof v.systemPrompt !== "string") return false;
+	if (v.temperature !== undefined && typeof v.temperature !== "number") {
+		return false;
+	}
+	if (v.thinkingBudget !== undefined && typeof v.thinkingBudget !== "number") {
+		return false;
+	}
+	if (
+		v.includeThoughts !== undefined &&
+		typeof v.includeThoughts !== "boolean"
+	) {
+		return false;
+	}
+	return true;
+}
+
 function findProfileExport(mod: Record<string, unknown>): EvalProfile | null {
 	for (const value of Object.values(mod)) {
-		if (
-			value !== null &&
-			typeof value === "object" &&
-			typeof (value as { promptVersion?: unknown }).promptVersion ===
-				"string" &&
-			typeof (value as { systemPrompt?: unknown }).systemPrompt === "string"
-		) {
-			return value as EvalProfile;
-		}
+		if (isEvalProfile(value)) return value;
 	}
 	return null;
 }
