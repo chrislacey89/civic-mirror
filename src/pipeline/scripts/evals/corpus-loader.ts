@@ -19,11 +19,13 @@ const CategoryScoreSchema = z.object({
 	evidence_quotes: z.array(z.string()),
 });
 
-const CategoryScoresSchema = z.object(
-	Object.fromEntries(
-		DRAMA_CATEGORIES.map((c) => [c, CategoryScoreSchema]),
-	) as Record<DramaCategory, typeof CategoryScoreSchema>,
-);
+const CategoryScoresSchema = z
+	.object(
+		Object.fromEntries(
+			DRAMA_CATEGORIES.map((c) => [c, CategoryScoreSchema]),
+		) as Record<DramaCategory, typeof CategoryScoreSchema>,
+	)
+	.strict();
 
 const CorpusEntrySchema = z.object({
 	schema_version: z.literal(1),

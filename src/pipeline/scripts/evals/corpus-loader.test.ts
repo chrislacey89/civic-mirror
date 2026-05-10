@@ -55,6 +55,19 @@ describe("loadCorpus", () => {
 		}
 	});
 
+	it("rejects a corpus entry with a non-canonical extra category key", async () => {
+		const exit = await Effect.runPromiseExit(
+			loadCorpus(fixtureCorpusDir("extra-category")),
+		);
+
+		expect(Exit.isFailure(exit)).toBe(true);
+		if (Exit.isFailure(exit)) {
+			const err = exit.cause.toString();
+			expect(err).toContain("CorpusLoadError");
+			expect(err).toContain("weather_disruption");
+		}
+	});
+
 	it("rejects malformed JSON with a useful error", async () => {
 		const exit = await Effect.runPromiseExit(
 			loadCorpus(fixtureCorpusDir("malformed")),
