@@ -378,6 +378,36 @@ describe("computeTrialSummary", () => {
 		).toBeGreaterThanOrEqual(PROMOTION_CRITERIA.minTierMatchFraction);
 	});
 
+	it("counts off-the-rails-boundary drift events as a distinct subset of total drift", () => {
+		const gt = buildGroundTruth(scoresForSum(18), "off-the-rails");
+		const trials: TrialResult[] = [
+			buildTrial({
+				profile,
+				transcriptId,
+				trial: 1,
+				// LLM said "heated" (not OTR), sum=18 → OTR. CROSSES boundary.
+				assessment: buildAssessment(18, "heated"),
+			}),
+			buildTrial({
+				profile,
+				transcriptId,
+				trial: 2,
+				// LLM said "off-the-rails", sum=11 → bumpy. CROSSES boundary other way.
+				assessment: buildAssessment(11, "off-the-rails"),
+			}),
+			buildTrial({
+				profile,
+				transcriptId,
+				trial: 3,
+				// LLM said "heated", sum=11 → bumpy. Drift, but does NOT cross OTR boundary.
+				assessment: buildAssessment(11, "heated"),
+			}),
+		];
+		const summary = computeTrialSummary(trials, gt);
+		expect(summary.driftEventCount).toBe(3);
+		expect(summary.offTheRailsBoundaryDriftCount).toBe(2);
+	});
+
 	it("counts drift events from trial assessments", () => {
 		const gt = buildGroundTruth(scoresForSum(11), "bumpy");
 		const trials: TrialResult[] = [

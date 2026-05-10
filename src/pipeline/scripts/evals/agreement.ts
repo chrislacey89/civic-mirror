@@ -56,6 +56,13 @@ type AgreementSummary = {
 	sigma: number | null;
 	totalCategoryMae: number | null;
 	driftEventCount: number;
+	/**
+	 * Subset of `driftEventCount` where the LLM-emitted tier and the
+	 * mechanical tier sit on different sides of the off-the-rails boundary
+	 * (one is `"off-the-rails"` and the other is not). Promotion criterion
+	 * §3 from PRD #66 forbids these.
+	 */
+	offTheRailsBoundaryDriftCount: number;
 	emptyOutputCount: number;
 	/** Count of `ok` trials whose mechanical tier equals `groundTruthTier`. */
 	tierMatchCount: number;
@@ -82,6 +89,18 @@ function detectDriftEvent(
 		computed,
 		sum,
 	};
+}
+
+/**
+ * A drift event crosses the off-the-rails boundary iff exactly one of
+ * `llmEmitted` and `computed` is `"off-the-rails"`. These are the events
+ * PRD #66 promotion criteria forbid because they would have flipped a
+ * cell's queue/auto-publish decision under the prod detector's override.
+ */
+function isOffTheRailsBoundaryDrift(event: DriftEvent): boolean {
+	const a = event.llmEmitted === "off-the-rails";
+	const b = event.computed === "off-the-rails";
+	return a !== b;
 }
 
 const TIER_RANK: Record<DramaLevel, number> = (() => {
@@ -188,6 +207,7 @@ function computeTrialSummary(
 			sigma: null,
 			totalCategoryMae: null,
 			driftEventCount: 0,
+			offTheRailsBoundaryDriftCount: 0,
 			emptyOutputCount,
 			tierMatchCount: 0,
 			trialsCounted,
@@ -200,10 +220,13 @@ function computeTrialSummary(
 	);
 	const tiersPerTrial = sums.map((s) => mapSumToLevel(s));
 
-	const driftEventCount = okTrials.reduce(
-		(acc, t) => acc + (detectDriftEvent(t.assessment) === null ? 0 : 1),
-		0,
-	);
+	const driftEvents = okTrials
+		.map((t) => detectDriftEvent(t.assessment))
+		.filter((e): e is DriftEvent => e !== null);
+	const driftEventCount = driftEvents.length;
+	const offTheRailsBoundaryDriftCount = driftEvents.filter(
+		isOffTheRailsBoundaryDrift,
+	).length;
 
 	const gtScores = groundTruth.ground_truth.category_scores;
 	const perTrialAbsErr = okTrials.map((t) =>
@@ -224,6 +247,7 @@ function computeTrialSummary(
 		sigma: populationSigma(sums),
 		totalCategoryMae,
 		driftEventCount,
+		offTheRailsBoundaryDriftCount,
 		emptyOutputCount,
 		tierMatchCount,
 		trialsCounted,
