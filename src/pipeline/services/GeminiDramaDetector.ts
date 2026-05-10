@@ -44,7 +44,10 @@ type GeminiDramaDetectorConfig = {
 	includeThoughts?: boolean;
 };
 
-function buildPrompt(input: DramaDetectionInput): string {
+function buildPrompt(
+	input: DramaDetectionInput,
+	promptVersion: string,
+): string {
 	return `Meeting context: ${input.meetingContext}
 
 Transcript (with inline timestamps):
@@ -52,7 +55,7 @@ Transcript (with inline timestamps):
 ${input.sourceText}
 ---
 
-Score this meeting against the v1 rubric and return the JSON structure.`;
+Score this meeting against the ${promptVersion} rubric and return the JSON structure.`;
 }
 
 /**
@@ -77,7 +80,7 @@ function createGeminiDramaDetector(
 			const { output } = await generateText({
 				model: google(config.modelId),
 				system: config.systemPrompt,
-				prompt: buildPrompt(input),
+				prompt: buildPrompt(input, config.promptVersion),
 				...(config.temperature !== undefined
 					? { temperature: config.temperature }
 					: {}),
