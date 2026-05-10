@@ -148,10 +148,12 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
-		// If the function read gt.level it would conclude tier=routine vs trial-tier=off-the-rails
-		// → MAE on tier would be huge; in fact the trial scores match gt scores so MAE is 0.
-		expect(summary.totalCategoryMae).toBe(0);
-		expect(summary.tierMode).toBe("off-the-rails");
+		// The fields that *would* be wrong if the impl read gt.level: groundTruthTier
+		// is the recomputed tier, and tierMatchCount counts trials whose mechanical
+		// tier equals groundTruthTier. If the impl read gt.level, both would
+		// disagree with the trials' tier (tier-match=0 instead of 3).
+		expect(summary.groundTruthTier).toBe("off-the-rails");
+		expect(summary.tierMatchCount).toBe(3);
 	});
 
 	it("computes tier mode/min/max across N=3 ok trials", () => {
