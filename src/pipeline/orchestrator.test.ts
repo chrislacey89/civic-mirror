@@ -1035,6 +1035,62 @@ describe("runPipeline stage logging", () => {
 		expect(downloadStart?.annotations.body).toBe("town-council");
 		expect(downloadStart?.annotations.url).toBe("https://example.com/doc/1");
 	});
+
+	it("emits ordered download/extract/summarize stage logs for a readable egov listing", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 1,
+					title: "Town Council Meeting Minutes February 4, 2026",
+					date: "02/04/2026",
+					downloadUrl: "https://example.com/doc/1",
+					meetingDate: "2026-02-04",
+					documentType: "minutes",
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{ slug: "town-council", name: "Town Council", egovSearchType: "12" },
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: "body text",
+				method: "ocr",
+			}),
+			dryRun: true,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const tags = captured
+			.flatMap((c) =>
+				c.message.filter((m): m is string => typeof m === "string"),
+			)
+			.filter((m) => m.startsWith("egov."));
+
+		expect(tags).toEqual([
+			"egov.download.start",
+			"egov.download.finish",
+			"egov.extract.start",
+			"egov.extract.finish",
+			"egov.summarize.start",
+			"egov.summarize.finish",
+		]);
+
+		const downloadFinish = findStageLog(captured, "egov.download.finish");
+		expect(downloadFinish?.annotations.bytes).toBe("fake pdf".length);
+
+		const extractFinish = findStageLog(captured, "egov.extract.finish");
+		expect(extractFinish?.annotations.method).toBe("ocr");
+	});
 });
 
 describe("runDramaDetectForVideo", () => {

@@ -399,7 +399,11 @@ function processEgovListing(
 		const bytes = yield* scraper
 			.downloadDocument(listing.downloadUrl)
 			.pipe(Effect.retry(config.networkSchedule));
+		yield* Effect.log("egov.download.finish").pipe(
+			Effect.annotateLogs({ bytes: bytes.byteLength }),
+		);
 
+		yield* Effect.log("egov.extract.start");
 		const extraction = yield* Effect.tryPromise({
 			try: () => config.extractPdfText(bytes),
 			catch: (error) =>
@@ -407,6 +411,9 @@ function processEgovListing(
 					message: error instanceof Error ? error.message : String(error),
 				}),
 		});
+		yield* Effect.log("egov.extract.finish").pipe(
+			Effect.annotateLogs({ method: extraction.method }),
+		);
 
 		// Meeting date comes from the title when present — the eGov listing cell
 		// is the publish/upload date, which collapses to the day staff posted a
@@ -440,12 +447,14 @@ function processEgovListing(
 			return { processed: 1, errors: 0 };
 		}
 
+		yield* Effect.log("egov.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
 				sourceText: extraction.text,
 				meetingContext: `${body.name}, ${listing.date}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log("egov.summarize.finish");
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
