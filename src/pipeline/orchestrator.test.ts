@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, HashMap, Layer, Logger } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import { LlmError } from "#/pipeline/errors.ts";
@@ -949,6 +949,91 @@ describe("runPipeline", () => {
 		expect(result.processed).toBe(1);
 		expect(result.errors).toBe(0);
 		expect(log.alert).toHaveLength(0);
+	});
+});
+
+/**
+ * Effect teaching note: `Logger.replace(Logger.defaultLogger, captureLogger)`
+ * swaps the root logger for the duration of the provided effect — every
+ * `Effect.log(...)` call inside the program is routed through `captureLogger`
+ * instead of the default logfmt-to-stdout one. The capture stores message
+ * varargs and the annotation HashMap from `Effect.annotateLogs(...)` so the
+ * test can assert on the structured stage events the orchestrator emits.
+ */
+type CapturedLog = {
+	message: ReadonlyArray<unknown>;
+	annotations: Record<string, unknown>;
+};
+
+function buildLogCapture(): {
+	captured: Array<CapturedLog>;
+	layer: Layer.Layer<never>;
+} {
+	const captured: Array<CapturedLog> = [];
+	const logger = Logger.make<unknown, void>(({ message, annotations }) => {
+		const annObj: Record<string, unknown> = {};
+		HashMap.forEach(annotations, (value, key) => {
+			annObj[key] = value;
+		});
+		captured.push({
+			message: Array.isArray(message)
+				? (message as ReadonlyArray<unknown>)
+				: [message],
+			annotations: annObj,
+		});
+	});
+	return {
+		captured,
+		layer: Logger.replace(Logger.defaultLogger, logger),
+	};
+}
+
+function findStageLog(
+	captured: ReadonlyArray<CapturedLog>,
+	tag: string,
+): CapturedLog | undefined {
+	return captured.find((c) => c.message.some((m) => m === tag));
+}
+
+describe("runPipeline stage logging", () => {
+	it("emits a download.start stage log with body and url annotations during egov processing", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 1,
+					title: "Town Council Meeting Minutes February 4, 2026",
+					date: "02/04/2026",
+					downloadUrl: "https://example.com/doc/1",
+					meetingDate: "2026-02-04",
+					documentType: "minutes",
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{ slug: "town-council", name: "Town Council", egovSearchType: "12" },
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: "body text",
+				method: "text-layer",
+			}),
+			dryRun: true,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const downloadStart = findStageLog(captured, "egov.download.start");
+		expect(downloadStart).toBeDefined();
+		expect(downloadStart?.annotations.body).toBe("town-council");
+		expect(downloadStart?.annotations.url).toBe("https://example.com/doc/1");
 	});
 });
 

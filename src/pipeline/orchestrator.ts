@@ -395,6 +395,7 @@ function processEgovListing(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
+		yield* Effect.log("egov.download.start");
 		const bytes = yield* scraper
 			.downloadDocument(listing.downloadUrl)
 			.pipe(Effect.retry(config.networkSchedule));
@@ -472,7 +473,13 @@ function processEgovListing(
 		yield* storage.storeMeeting(meetingInput);
 
 		return { processed: 1, errors: 0 };
-	});
+	}).pipe(
+		Effect.annotateLogs({
+			body: body.slug,
+			source: "egov",
+			url: listing.downloadUrl,
+		}),
+	);
 }
 
 // ---------------------------------------------------------------------------
