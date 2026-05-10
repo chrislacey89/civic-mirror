@@ -1,4 +1,4 @@
-import { Effect, Layer } from "effect";
+import { Effect, HashMap, Layer, Logger } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import { LlmError } from "#/pipeline/errors.ts";
@@ -949,6 +949,277 @@ describe("runPipeline", () => {
 		expect(result.processed).toBe(1);
 		expect(result.errors).toBe(0);
 		expect(log.alert).toHaveLength(0);
+	});
+});
+
+/**
+ * Effect teaching note: `Logger.replace(Logger.defaultLogger, captureLogger)`
+ * swaps the root logger for the duration of the provided effect — every
+ * `Effect.log(...)` call inside the program is routed through `captureLogger`
+ * instead of the default logfmt-to-stdout one. The capture stores message
+ * varargs and the annotation HashMap from `Effect.annotateLogs(...)` so the
+ * test can assert on the structured stage events the orchestrator emits.
+ */
+type CapturedLog = {
+	message: ReadonlyArray<unknown>;
+	annotations: Record<string, unknown>;
+};
+
+function buildLogCapture(): {
+	captured: Array<CapturedLog>;
+	layer: Layer.Layer<never>;
+} {
+	const captured: Array<CapturedLog> = [];
+	const logger = Logger.make<unknown, void>(({ message, annotations }) => {
+		const annObj: Record<string, unknown> = {};
+		HashMap.forEach(annotations, (value, key) => {
+			annObj[key] = value;
+		});
+		captured.push({
+			message: Array.isArray(message)
+				? (message as ReadonlyArray<unknown>)
+				: [message],
+			annotations: annObj,
+		});
+	});
+	return {
+		captured,
+		layer: Logger.replace(Logger.defaultLogger, logger),
+	};
+}
+
+function findStageLog(
+	captured: ReadonlyArray<CapturedLog>,
+	tag: string,
+): CapturedLog | undefined {
+	return captured.find((c) => c.message.some((m) => m === tag));
+}
+
+describe("runPipeline stage logging", () => {
+	it("emits a download.start stage log with body and url annotations during egov processing", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 1,
+					title: "Town Council Meeting Minutes February 4, 2026",
+					date: "02/04/2026",
+					downloadUrl: "https://example.com/doc/1",
+					meetingDate: "2026-02-04",
+					documentType: "minutes",
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{ slug: "town-council", name: "Town Council", egovSearchType: "12" },
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: "body text",
+				method: "text-layer",
+			}),
+			dryRun: true,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const downloadStart = findStageLog(captured, "egov.download.start");
+		expect(downloadStart).toBeDefined();
+		expect(downloadStart?.annotations.body).toBe("town-council");
+		expect(downloadStart?.annotations.url).toBe("https://example.com/doc/1");
+	});
+
+	it("emits ordered download/extract/summarize stage logs for a readable egov listing", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 1,
+					title: "Town Council Meeting Minutes February 4, 2026",
+					date: "02/04/2026",
+					downloadUrl: "https://example.com/doc/1",
+					meetingDate: "2026-02-04",
+					documentType: "minutes",
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{ slug: "town-council", name: "Town Council", egovSearchType: "12" },
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: "body text",
+				method: "ocr",
+			}),
+			dryRun: true,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const tags = captured
+			.flatMap((c) =>
+				c.message.filter((m): m is string => typeof m === "string"),
+			)
+			.filter((m) => m.startsWith("egov."));
+
+		expect(tags).toEqual([
+			"egov.download.start",
+			"egov.download.finish",
+			"egov.extract.start",
+			"egov.extract.finish",
+			"egov.summarize.start",
+			"egov.summarize.finish",
+		]);
+
+		const downloadFinish = findStageLog(captured, "egov.download.finish");
+		expect(downloadFinish?.annotations.bytes).toBe("fake pdf".length);
+
+		const extractFinish = findStageLog(captured, "egov.extract.finish");
+		expect(extractFinish?.annotations.method).toBe("ocr");
+	});
+
+	it("emits per-document finalsite download/extract logs and a single summarize pair", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "January 20, 2026",
+					meetingType: "Regular Meeting",
+					year: 2026,
+					documents: [
+						{
+							uuid: "uuid-agenda",
+							documentType: "agenda",
+							downloadUrl: "/fs/resource-manager/view/uuid-agenda",
+							fileName: "agenda.pdf",
+						},
+						{
+							uuid: "uuid-minutes",
+							documentType: "minutes",
+							downloadUrl: "/fs/resource-manager/view/uuid-minutes",
+							fileName: "minutes.pdf",
+						},
+					],
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: "school board text",
+				method: "text-layer",
+			}),
+			dryRun: true,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const tags = captured
+			.flatMap((c) =>
+				c.message.filter((m): m is string => typeof m === "string"),
+			)
+			.filter((m) => m.startsWith("finalsite."));
+
+		expect(tags).toEqual([
+			"finalsite.download.start",
+			"finalsite.download.finish",
+			"finalsite.extract.start",
+			"finalsite.extract.finish",
+			"finalsite.download.start",
+			"finalsite.download.finish",
+			"finalsite.extract.start",
+			"finalsite.extract.finish",
+			"finalsite.summarize.start",
+			"finalsite.summarize.finish",
+		]);
+
+		const downloadStarts = captured.filter((c) =>
+			c.message.includes("finalsite.download.start"),
+		);
+		expect(downloadStarts).toHaveLength(2);
+		expect(downloadStarts[0]?.annotations.uuid).toBe("uuid-agenda");
+		expect(downloadStarts[1]?.annotations.uuid).toBe("uuid-minutes");
+		expect(downloadStarts[0]?.annotations.body).toBe("school-board");
+	});
+
+	it("emits transcribe/summarize/drama stage logs for a youtube video", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					videoId: "vid-001",
+					title: "School Board April 15 2026",
+					publishedAt: "2026-04-15T00:00:00Z",
+					hasCaptions: true,
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					youtubePlaylistId: "PL-XYZ",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "", method: "unreadable" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const tags = captured
+			.flatMap((c) =>
+				c.message.filter((m): m is string => typeof m === "string"),
+			)
+			.filter((m) => m.startsWith("youtube."));
+
+		expect(tags).toEqual([
+			"youtube.transcribe.start",
+			"youtube.transcribe.finish",
+			"youtube.summarize.start",
+			"youtube.summarize.finish",
+			"youtube.drama.start",
+			"youtube.drama.finish",
+		]);
+
+		const transcribeStart = findStageLog(captured, "youtube.transcribe.start");
+		expect(transcribeStart?.annotations.body).toBe("school-board");
+		expect(transcribeStart?.annotations.videoId).toBe("vid-001");
 	});
 });
 

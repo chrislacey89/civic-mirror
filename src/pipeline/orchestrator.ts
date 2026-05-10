@@ -395,10 +395,15 @@ function processEgovListing(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
+		yield* Effect.log("egov.download.start");
 		const bytes = yield* scraper
 			.downloadDocument(listing.downloadUrl)
 			.pipe(Effect.retry(config.networkSchedule));
+		yield* Effect.log("egov.download.finish").pipe(
+			Effect.annotateLogs({ bytes: bytes.byteLength }),
+		);
 
+		yield* Effect.log("egov.extract.start");
 		const extraction = yield* Effect.tryPromise({
 			try: () => config.extractPdfText(bytes),
 			catch: (error) =>
@@ -406,6 +411,9 @@ function processEgovListing(
 					message: error instanceof Error ? error.message : String(error),
 				}),
 		});
+		yield* Effect.log("egov.extract.finish").pipe(
+			Effect.annotateLogs({ method: extraction.method }),
+		);
 
 		// Meeting date comes from the title when present — the eGov listing cell
 		// is the publish/upload date, which collapses to the day staff posted a
@@ -439,12 +447,14 @@ function processEgovListing(
 			return { processed: 1, errors: 0 };
 		}
 
+		yield* Effect.log("egov.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
 				sourceText: extraction.text,
 				meetingContext: `${body.name}, ${listing.date}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log("egov.summarize.finish");
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -472,7 +482,13 @@ function processEgovListing(
 		yield* storage.storeMeeting(meetingInput);
 
 		return { processed: 1, errors: 0 };
-	});
+	}).pipe(
+		Effect.annotateLogs({
+			body: body.slug,
+			source: "egov",
+			url: listing.downloadUrl,
+		}),
+	);
 }
 
 // ---------------------------------------------------------------------------
@@ -523,27 +539,38 @@ function processFinalsiteListing(
 		let combinedText = "";
 
 		for (const doc of listing.documents) {
-			const bytes = yield* scraper
-				.downloadDocument(doc.uuid)
-				.pipe(Effect.retry(config.networkSchedule));
+			yield* Effect.gen(function* () {
+				yield* Effect.log("finalsite.download.start");
+				const bytes = yield* scraper
+					.downloadDocument(doc.uuid)
+					.pipe(Effect.retry(config.networkSchedule));
+				yield* Effect.log("finalsite.download.finish").pipe(
+					Effect.annotateLogs({ bytes: bytes.byteLength }),
+				);
 
-			const extraction = yield* Effect.tryPromise({
-				try: () => config.extractPdfText(bytes),
-				catch: (error) =>
-					new PipelineExtractError({
-						message: error instanceof Error ? error.message : String(error),
-					}),
-			});
-			documents.push({
-				sourceUrl: doc.downloadUrl,
-				rawText: extraction.text,
-				documentType:
-					doc.documentType === "notice" ? "agenda" : doc.documentType,
-				extractionMethod: extraction.method,
-			});
-			if (extraction.method !== "unreadable") {
-				combinedText += `\n${extraction.text}`;
-			}
+				yield* Effect.log("finalsite.extract.start");
+				const extraction = yield* Effect.tryPromise({
+					try: () => config.extractPdfText(bytes),
+					catch: (error) =>
+						new PipelineExtractError({
+							message: error instanceof Error ? error.message : String(error),
+						}),
+				});
+				yield* Effect.log("finalsite.extract.finish").pipe(
+					Effect.annotateLogs({ method: extraction.method }),
+				);
+
+				documents.push({
+					sourceUrl: doc.downloadUrl,
+					rawText: extraction.text,
+					documentType:
+						doc.documentType === "notice" ? "agenda" : doc.documentType,
+					extractionMethod: extraction.method,
+				});
+				if (extraction.method !== "unreadable") {
+					combinedText += `\n${extraction.text}`;
+				}
+			}).pipe(Effect.annotateLogs({ uuid: doc.uuid, url: doc.downloadUrl }));
 		}
 
 		// If every document for the meeting came back unreadable, skip
@@ -567,12 +594,14 @@ function processFinalsiteListing(
 			return { processed: 1, errors: 0 };
 		}
 
+		yield* Effect.log("finalsite.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
 				sourceText: combinedText,
 				meetingContext: `${body.name}, ${listing.date}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log("finalsite.summarize.finish");
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -591,7 +620,7 @@ function processFinalsiteListing(
 		});
 
 		return { processed: 1, errors: 0 };
-	});
+	}).pipe(Effect.annotateLogs({ body: body.slug, source: "finalsite" }));
 }
 
 // ---------------------------------------------------------------------------
@@ -651,16 +680,22 @@ function processYouTubeVideo(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
+		yield* Effect.log("youtube.transcribe.start");
 		const transcript = yield* transcription
 			.transcribe(video.videoId)
 			.pipe(Effect.retry(config.networkSchedule));
+		yield* Effect.log("youtube.transcribe.finish").pipe(
+			Effect.annotateLogs({ source: transcript.source }),
+		);
 
+		yield* Effect.log("youtube.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
 				sourceText: transcript.rawText,
 				meetingContext: `${body.name}, ${video.title}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log("youtube.summarize.finish");
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -691,15 +726,17 @@ function processYouTubeVideo(
 		// transparency artifacts. The catchAll below absorbs any error,
 		// alerts the operator, and returns Effect.void so the orchestrator's
 		// tagged-error channel is unaffected.
+		yield* Effect.log("youtube.drama.start");
 		yield* runDramaDetection({
 			body,
 			video,
 			meetingId: meeting.id,
 			transcript,
 		}).pipe(Effect.catchAll((error) => alertDramaFailure(body, error)));
+		yield* Effect.log("youtube.drama.finish");
 
 		return { processed: 1, errors: 0 };
-	});
+	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
 }
 
 function runDramaDetection(input: {
