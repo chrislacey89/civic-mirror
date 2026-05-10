@@ -1168,6 +1168,59 @@ describe("runPipeline stage logging", () => {
 		expect(downloadStarts[1]?.annotations.uuid).toBe("uuid-minutes");
 		expect(downloadStarts[0]?.annotations.body).toBe("school-board");
 	});
+
+	it("emits transcribe/summarize/drama stage logs for a youtube video", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					videoId: "vid-001",
+					title: "School Board April 15 2026",
+					publishedAt: "2026-04-15T00:00:00Z",
+					hasCaptions: true,
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					youtubePlaylistId: "PL-XYZ",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "", method: "unreadable" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const tags = captured
+			.flatMap((c) =>
+				c.message.filter((m): m is string => typeof m === "string"),
+			)
+			.filter((m) => m.startsWith("youtube."));
+
+		expect(tags).toEqual([
+			"youtube.transcribe.start",
+			"youtube.transcribe.finish",
+			"youtube.summarize.start",
+			"youtube.summarize.finish",
+			"youtube.drama.start",
+			"youtube.drama.finish",
+		]);
+
+		const transcribeStart = findStageLog(captured, "youtube.transcribe.start");
+		expect(transcribeStart?.annotations.body).toBe("school-board");
+		expect(transcribeStart?.annotations.videoId).toBe("vid-001");
+	});
 });
 
 describe("runDramaDetectForVideo", () => {

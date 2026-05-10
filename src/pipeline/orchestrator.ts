@@ -680,16 +680,22 @@ function processYouTubeVideo(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
+		yield* Effect.log("youtube.transcribe.start");
 		const transcript = yield* transcription
 			.transcribe(video.videoId)
 			.pipe(Effect.retry(config.networkSchedule));
+		yield* Effect.log("youtube.transcribe.finish").pipe(
+			Effect.annotateLogs({ source: transcript.source }),
+		);
 
+		yield* Effect.log("youtube.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
 				sourceText: transcript.rawText,
 				meetingContext: `${body.name}, ${video.title}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log("youtube.summarize.finish");
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -720,15 +726,17 @@ function processYouTubeVideo(
 		// transparency artifacts. The catchAll below absorbs any error,
 		// alerts the operator, and returns Effect.void so the orchestrator's
 		// tagged-error channel is unaffected.
+		yield* Effect.log("youtube.drama.start");
 		yield* runDramaDetection({
 			body,
 			video,
 			meetingId: meeting.id,
 			transcript,
 		}).pipe(Effect.catchAll((error) => alertDramaFailure(body, error)));
+		yield* Effect.log("youtube.drama.finish");
 
 		return { processed: 1, errors: 0 };
-	});
+	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
 }
 
 function runDramaDetection(input: {
