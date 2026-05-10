@@ -1091,6 +1091,83 @@ describe("runPipeline stage logging", () => {
 		const extractFinish = findStageLog(captured, "egov.extract.finish");
 		expect(extractFinish?.annotations.method).toBe("ocr");
 	});
+
+	it("emits per-document finalsite download/extract logs and a single summarize pair", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "January 20, 2026",
+					meetingType: "Regular Meeting",
+					year: 2026,
+					documents: [
+						{
+							uuid: "uuid-agenda",
+							documentType: "agenda",
+							downloadUrl: "/fs/resource-manager/view/uuid-agenda",
+							fileName: "agenda.pdf",
+						},
+						{
+							uuid: "uuid-minutes",
+							documentType: "minutes",
+							downloadUrl: "/fs/resource-manager/view/uuid-minutes",
+							fileName: "minutes.pdf",
+						},
+					],
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: "school board text",
+				method: "text-layer",
+			}),
+			dryRun: true,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const tags = captured
+			.flatMap((c) =>
+				c.message.filter((m): m is string => typeof m === "string"),
+			)
+			.filter((m) => m.startsWith("finalsite."));
+
+		expect(tags).toEqual([
+			"finalsite.download.start",
+			"finalsite.download.finish",
+			"finalsite.extract.start",
+			"finalsite.extract.finish",
+			"finalsite.download.start",
+			"finalsite.download.finish",
+			"finalsite.extract.start",
+			"finalsite.extract.finish",
+			"finalsite.summarize.start",
+			"finalsite.summarize.finish",
+		]);
+
+		const downloadStarts = captured.filter((c) =>
+			c.message.includes("finalsite.download.start"),
+		);
+		expect(downloadStarts).toHaveLength(2);
+		expect(downloadStarts[0]?.annotations.uuid).toBe("uuid-agenda");
+		expect(downloadStarts[1]?.annotations.uuid).toBe("uuid-minutes");
+		expect(downloadStarts[0]?.annotations.body).toBe("school-board");
+	});
 });
 
 describe("runDramaDetectForVideo", () => {

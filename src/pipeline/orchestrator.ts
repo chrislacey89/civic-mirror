@@ -539,27 +539,38 @@ function processFinalsiteListing(
 		let combinedText = "";
 
 		for (const doc of listing.documents) {
-			const bytes = yield* scraper
-				.downloadDocument(doc.uuid)
-				.pipe(Effect.retry(config.networkSchedule));
+			yield* Effect.gen(function* () {
+				yield* Effect.log("finalsite.download.start");
+				const bytes = yield* scraper
+					.downloadDocument(doc.uuid)
+					.pipe(Effect.retry(config.networkSchedule));
+				yield* Effect.log("finalsite.download.finish").pipe(
+					Effect.annotateLogs({ bytes: bytes.byteLength }),
+				);
 
-			const extraction = yield* Effect.tryPromise({
-				try: () => config.extractPdfText(bytes),
-				catch: (error) =>
-					new PipelineExtractError({
-						message: error instanceof Error ? error.message : String(error),
-					}),
-			});
-			documents.push({
-				sourceUrl: doc.downloadUrl,
-				rawText: extraction.text,
-				documentType:
-					doc.documentType === "notice" ? "agenda" : doc.documentType,
-				extractionMethod: extraction.method,
-			});
-			if (extraction.method !== "unreadable") {
-				combinedText += `\n${extraction.text}`;
-			}
+				yield* Effect.log("finalsite.extract.start");
+				const extraction = yield* Effect.tryPromise({
+					try: () => config.extractPdfText(bytes),
+					catch: (error) =>
+						new PipelineExtractError({
+							message: error instanceof Error ? error.message : String(error),
+						}),
+				});
+				yield* Effect.log("finalsite.extract.finish").pipe(
+					Effect.annotateLogs({ method: extraction.method }),
+				);
+
+				documents.push({
+					sourceUrl: doc.downloadUrl,
+					rawText: extraction.text,
+					documentType:
+						doc.documentType === "notice" ? "agenda" : doc.documentType,
+					extractionMethod: extraction.method,
+				});
+				if (extraction.method !== "unreadable") {
+					combinedText += `\n${extraction.text}`;
+				}
+			}).pipe(Effect.annotateLogs({ uuid: doc.uuid, url: doc.downloadUrl }));
 		}
 
 		// If every document for the meeting came back unreadable, skip
@@ -583,12 +594,14 @@ function processFinalsiteListing(
 			return { processed: 1, errors: 0 };
 		}
 
+		yield* Effect.log("finalsite.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
 				sourceText: combinedText,
 				meetingContext: `${body.name}, ${listing.date}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log("finalsite.summarize.finish");
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -607,7 +620,7 @@ function processFinalsiteListing(
 		});
 
 		return { processed: 1, errors: 0 };
-	});
+	}).pipe(Effect.annotateLogs({ body: body.slug, source: "finalsite" }));
 }
 
 // ---------------------------------------------------------------------------
