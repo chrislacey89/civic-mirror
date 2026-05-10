@@ -1,0 +1,4 @@
+[00:00:00] Chair: Let's call the meeting to order.
+[00:00:05] Member A: I move we approve the agenda as presented.
+[00:00:08] Member B: Second.
+[00:00:10] Chair: All in favor? Motion carries.
