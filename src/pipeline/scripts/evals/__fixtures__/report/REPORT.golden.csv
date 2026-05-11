@@ -1,0 +1,3 @@
+profile,transcript,gt_tier,tier_mode,tier_min,tier_max,sigma,total_category_mae,drift_event_count,otr_boundary_drift_count,empty_output_count,tier_match_count,trials_counted,trials_excluded,promote
+v1,rbb-hiring,off-the-rails,off-the-rails,off-the-rails,off-the-rails,0,0,0,0,0,3,3,0,true
+v2,rbb-hiring,off-the-rails,heated,bumpy,off-the-rails,3.09,4.5,1,1,0,1,3,0,false
