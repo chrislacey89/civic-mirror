@@ -1,6 +1,5 @@
 import {
 	DRAMA_CATEGORIES,
-	DRAMA_LEVELS,
 	type DramaLevel,
 	mapSumToLevel,
 } from "#/lib/drama-levels.ts";
@@ -39,7 +38,6 @@ type TrialResult = {
 	trial: number;
 	status: TrialStatus;
 	assessment?: DramaAssessmentOutput;
-	driftEvent?: DriftEvent | null;
 	durationMs: number;
 };
 
@@ -131,13 +129,17 @@ function isOffTheRailsBoundaryDrift(event: DriftEvent): boolean {
 	return a !== b;
 }
 
-const TIER_RANK: Record<DramaLevel, number> = (() => {
-	const ranks = {} as Record<DramaLevel, number>;
-	DRAMA_LEVELS.forEach((level, idx) => {
-		ranks[level] = idx;
-	});
-	return ranks;
-})();
+/**
+ * Inline literal so adding a fifth `DramaLevel` fails compilation here
+ * until the rank is assigned — `satisfies Record<DramaLevel, number>`
+ * enforces exhaustiveness without widening the literal value types away.
+ */
+const TIER_RANK = {
+	routine: 0,
+	bumpy: 1,
+	heated: 2,
+	"off-the-rails": 3,
+} as const satisfies Record<DramaLevel, number>;
 
 /**
  * Bimodal tiebreak: when two tiers tie for most-frequent, the higher-ranked

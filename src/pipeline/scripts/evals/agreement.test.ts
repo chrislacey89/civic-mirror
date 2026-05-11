@@ -6,6 +6,7 @@ import {
 	computeTrialSummary,
 	detectDriftEvent,
 	type EvaluatedSummary,
+	type NoEvidenceSummary,
 	PROMOTION_CRITERIA,
 	type TrialResult,
 } from "#/pipeline/scripts/evals/agreement.ts";
@@ -56,16 +57,26 @@ function buildTrial(
 }
 
 /**
- * Assertion helper: most tests below expect a fully-evaluated cell, and
- * the discriminated-union shape requires narrowing before metrics can be
- * read. This converts the runtime check + narrowing into a one-liner so
- * each test stays focused on its assertion subject.
+ * Assertion helpers: the discriminated-union shape requires narrowing
+ * before variant-specific fields can be read. Asserting at the top of
+ * a test converts the runtime check + narrowing into a one-liner so
+ * each test stays focused on its actual subject. Mirror helpers for
+ * both variants so the no-evidence path stays as ergonomic as the
+ * evaluated path.
  */
 function expectEvaluated(
 	summary: AgreementSummary,
 ): asserts summary is EvaluatedSummary {
 	if (summary.kind !== "evaluated") {
 		throw new Error(`expected evaluated summary, got ${summary.kind}`);
+	}
+}
+
+function expectNoEvidence(
+	summary: AgreementSummary,
+): asserts summary is NoEvidenceSummary {
+	if (summary.kind !== "no-evidence") {
+		throw new Error(`expected no-evidence summary, got ${summary.kind}`);
 	}
 }
 
@@ -334,8 +345,7 @@ describe("computeTrialSummary", () => {
 		];
 
 		const summary = computeTrialSummary(trials, gt);
-		expect(summary.kind).toBe("no-evidence");
-		if (summary.kind !== "no-evidence") return;
+		expectNoEvidence(summary);
 		expect(summary.trialsExcluded).toBe(3);
 		expect(summary.emptyOutputCount).toBe(3);
 		// Ground-truth tier is still computed from corpus scores even when
