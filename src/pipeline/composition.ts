@@ -93,20 +93,25 @@ function readEnv(name: string): string | undefined {
 	return value && value.length > 0 ? value : undefined;
 }
 
-function requireEnv(name: string): string {
-	const value = readEnv(name);
-	if (!value) {
-		throw new Error(
-			`Missing required environment variable: ${name}. Set it in .env.local or the shell.`,
-		);
+// `aliases` are additional accepted names, tried in order after `name`. They
+// exist so a canonical variable can be renamed without breaking a deployment
+// that still sets the old name, and so the error names every name that works.
+function requireEnv(name: string, ...aliases: string[]): string {
+	for (const candidate of [name, ...aliases]) {
+		const value = readEnv(candidate);
+		if (value) return value;
 	}
-	return value;
+	throw new Error(
+		`Missing required environment variable: ${[name, ...aliases].join(" or ")}. Set it in .env.local or the shell.`,
+	);
 }
 
 type BuildLayersInput = { dryRun: boolean };
 
 function buildProductionLayers(input: BuildLayersInput) {
-	const databaseUrl = requireEnv("DATABASE_URL");
+	// DATABASE_URL is canonical across web, seed, drizzle-kit and the pipeline;
+	// TURSO_DATABASE_URL is accepted as a legacy alias.
+	const databaseUrl = requireEnv("DATABASE_URL", "TURSO_DATABASE_URL");
 	const authToken = readEnv("TURSO_AUTH_TOKEN");
 
 	const client = createClient({

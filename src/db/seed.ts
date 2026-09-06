@@ -76,8 +76,12 @@ const GOVERNING_BODIES = [
 	},
 ] as const;
 
+// Same resolution order as src/db/index.ts: DATABASE_URL is canonical,
+// TURSO_DATABASE_URL is a legacy alias. No production guard — this script is
+// run by an operator against an explicitly chosen database.
 const client = createClient({
-	url: process.env.TURSO_DATABASE_URL ?? "file:dev.db",
+	url:
+		process.env.DATABASE_URL ?? process.env.TURSO_DATABASE_URL ?? "file:dev.db",
 	authToken: process.env.TURSO_AUTH_TOKEN,
 });
 const db = drizzle(client);
