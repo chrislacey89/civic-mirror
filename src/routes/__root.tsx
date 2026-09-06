@@ -30,11 +30,35 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 			{
 				title: "Civic Mirror — The Ledger",
 			},
+			{
+				name: "theme-color",
+				content: "#1a1a1a",
+			},
 		],
 		links: [
 			{
 				rel: "stylesheet",
 				href: appCss,
+			},
+			{
+				rel: "icon",
+				href: "/favicon.ico",
+				sizes: "48x48 32x32 16x16",
+			},
+			{
+				rel: "icon",
+				href: "/favicon.svg",
+				type: "image/svg+xml",
+				sizes: "any",
+			},
+			{
+				rel: "apple-touch-icon",
+				href: "/apple-touch-icon.png",
+				sizes: "180x180",
+			},
+			{
+				rel: "manifest",
+				href: "/manifest.json",
 			},
 		],
 	}),
