@@ -2,30 +2,31 @@ name: Weekly Ingestion Pipeline
 
 on:
   schedule:
-    # Every Sunday at 6:00 AM UTC
+    # Every Sunday at 06:00 UTC
     - cron: "0 6 * * 0"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   ingest:
     name: Run ingestion pipeline
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    env:
-      TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
-      TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
-      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+    # eGov enforces a 300 s crawl delay per PDF download; a body with a dozen new
+    # documents needs ~1 h. 360 is the GitHub-hosted maximum.
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        # version comes from package.json "packageManager"
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
           cache: pnpm
@@ -33,5 +34,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Secrets are scoped to this step alone, not the job, so `pnpm install`
+      # and any postinstall script cannot read the production DB token.
+      # RESEND_API_KEY / YOUTUBE_API_KEY may be unset: the pipeline falls back
+      # to a console alert stub and a `missing-key` YouTube key respectively.
+      # Unset repository variables resolve to empty strings, which
+      # composition.ts treats as unset.
       - name: Run ingestion pipeline
-        run: pnpm run pipeline:ingest
+        env:
+          DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ vars.RESEND_FROM }}
+          ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+        run: pnpm run pipeline:run
