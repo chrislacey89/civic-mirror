@@ -1,12 +1,10 @@
 import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 
+import { resolveDatabaseUrl } from "./database-url.ts";
 import * as schema from "./schema.ts";
 
-// DATABASE_URL is the canonical name across web, seed, drizzle-kit and the
-// pipeline. TURSO_DATABASE_URL is accepted as a legacy alias so an existing
-// deployment keeps working while it is migrated.
-const databaseUrl = process.env.DATABASE_URL ?? process.env.TURSO_DATABASE_URL;
+const databaseUrl = resolveDatabaseUrl();
 
 if (!databaseUrl && process.env.NODE_ENV === "production") {
 	throw new Error(

@@ -2,6 +2,7 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { Layer } from "effect";
 import { Resend } from "resend";
+import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
 import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
 import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionService.ts";
@@ -109,9 +110,15 @@ function requireEnv(name: string, ...aliases: string[]): string {
 type BuildLayersInput = { dryRun: boolean };
 
 function buildProductionLayers(input: BuildLayersInput) {
-	// DATABASE_URL is canonical across web, seed, drizzle-kit and the pipeline;
-	// TURSO_DATABASE_URL is accepted as a legacy alias.
-	const databaseUrl = requireEnv("DATABASE_URL", "TURSO_DATABASE_URL");
+	// Resolved by the same shared helper as src/db/index.ts and
+	// src/db/seed.ts, so the DATABASE_URL / TURSO_DATABASE_URL fallback rule
+	// (including the empty-string case) can't diverge between them again.
+	const databaseUrl = resolveDatabaseUrl();
+	if (!databaseUrl) {
+		throw new Error(
+			"Missing required environment variable: DATABASE_URL or TURSO_DATABASE_URL. Set it in .env.local or the shell.",
+		);
+	}
 	const authToken = readEnv("TURSO_AUTH_TOKEN");
 
 	const client = createClient({
