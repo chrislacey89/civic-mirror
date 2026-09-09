@@ -9,6 +9,7 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import Footer from "../components/Footer";
 import Header from "../components/Header";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
+import { getHeadIconLinks } from "../lib/icon-inventory";
 import appCss from "../styles.css?url";
 
 interface MyRouterContext {
@@ -40,22 +41,7 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 				rel: "stylesheet",
 				href: appCss,
 			},
-			{
-				rel: "icon",
-				href: "/favicon.ico",
-				sizes: "48x48 32x32 16x16",
-			},
-			{
-				rel: "icon",
-				href: "/favicon.svg",
-				type: "image/svg+xml",
-				sizes: "any",
-			},
-			{
-				rel: "apple-touch-icon",
-				href: "/apple-touch-icon.png",
-				sizes: "180x180",
-			},
+			...getHeadIconLinks(),
 			{
 				rel: "manifest",
 				href: "/manifest.json",

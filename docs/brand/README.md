@@ -29,7 +29,10 @@ To adopt one, copy it over `mark.svg` and re-run the commands below.
 
 ## Regenerating `public/`
 
-Everything in `public/` is generated from `mark.svg` and `mark-maskable.svg`:
+The icon files in `public/` are generated from `mark.svg` and
+`mark-maskable.svg` (`public/` also holds `drizzle.svg`, `robots.txt`, and
+`manifest.json`, which are not — see `src/lib/icon-inventory.ts` for the
+canonical list of generated icons and where each one is referenced):
 
 ```bash
 rsvg-convert -w 180 -h 180 docs/brand/mark.svg -o public/apple-touch-icon.png
