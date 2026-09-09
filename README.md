@@ -20,8 +20,9 @@ pnpm db:setup   # = db:migrate + db:seed
 ```
 
 No env vars are needed — both the app and drizzle-kit default to `file:dev.db`.
-Point `TURSO_DATABASE_URL` (app) and `DATABASE_URL` (drizzle-kit) at the same
-`libsql://` URL to run against Turso instead.
+To run against Turso instead, set `DATABASE_URL` to your `libsql://` URL
+(`TURSO_DATABASE_URL` also works, but `DATABASE_URL` takes precedence if both
+are set) — see `.env.example`.
 
 # Building For Production
 
