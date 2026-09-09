@@ -9,6 +9,20 @@ pnpm install
 pnpm dev
 ```
 
+## Database
+
+Local dev uses a SQLite file (`dev.db`) via libSQL. A fresh checkout has no
+schema, so the first page load fails with `Failed query: select ... from
+"governing_bodies"`. Apply the migrations and seed the eight governing bodies:
+
+```bash
+pnpm db:setup   # = db:migrate + db:seed
+```
+
+No env vars are needed — both the app and drizzle-kit default to `file:dev.db`.
+Point `TURSO_DATABASE_URL` (app) and `DATABASE_URL` (drizzle-kit) at the same
+`libsql://` URL to run against Turso instead.
+
 # Building For Production
 
 To build this application for production:
