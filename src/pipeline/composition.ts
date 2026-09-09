@@ -2,6 +2,7 @@ import { createClient } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import { Layer } from "effect";
 import { Resend } from "resend";
+import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
 import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
 import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionService.ts";
@@ -93,20 +94,31 @@ function readEnv(name: string): string | undefined {
 	return value && value.length > 0 ? value : undefined;
 }
 
-function requireEnv(name: string): string {
-	const value = readEnv(name);
-	if (!value) {
-		throw new Error(
-			`Missing required environment variable: ${name}. Set it in .env.local or the shell.`,
-		);
+// `aliases` are additional accepted names, tried in order after `name`. They
+// exist so a canonical variable can be renamed without breaking a deployment
+// that still sets the old name, and so the error names every name that works.
+function requireEnv(name: string, ...aliases: string[]): string {
+	for (const candidate of [name, ...aliases]) {
+		const value = readEnv(candidate);
+		if (value) return value;
 	}
-	return value;
+	throw new Error(
+		`Missing required environment variable: ${[name, ...aliases].join(" or ")}. Set it in .env.local or the shell.`,
+	);
 }
 
 type BuildLayersInput = { dryRun: boolean };
 
 function buildProductionLayers(input: BuildLayersInput) {
-	const databaseUrl = requireEnv("DATABASE_URL");
+	// Resolved by the same shared helper as src/db/index.ts and
+	// src/db/seed.ts, so the DATABASE_URL / TURSO_DATABASE_URL fallback rule
+	// (including the empty-string case) can't diverge between them again.
+	const databaseUrl = resolveDatabaseUrl();
+	if (!databaseUrl) {
+		throw new Error(
+			"Missing required environment variable: DATABASE_URL or TURSO_DATABASE_URL. Set it in .env.local or the shell.",
+		);
+	}
 	const authToken = readEnv("TURSO_AUTH_TOKEN");
 
 	const client = createClient({
