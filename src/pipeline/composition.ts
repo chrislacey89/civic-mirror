@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/libsql";
 import { Layer } from "effect";
 import { Resend } from "resend";
 import * as schema from "#/db/schema.ts";
+import { requireDatabaseUrl } from "#/db/url.ts";
 import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
 import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionService.ts";
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
@@ -106,7 +107,7 @@ function requireEnv(name: string): string {
 type BuildLayersInput = { dryRun: boolean };
 
 function buildProductionLayers(input: BuildLayersInput) {
-	const databaseUrl = requireEnv("DATABASE_URL");
+	const databaseUrl = requireDatabaseUrl();
 	const authToken = readEnv("TURSO_AUTH_TOKEN");
 
 	const client = createClient({

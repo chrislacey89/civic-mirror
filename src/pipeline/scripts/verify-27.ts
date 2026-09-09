@@ -1,10 +1,11 @@
 import { createClient } from "@libsql/client";
 import { config } from "dotenv";
+import { requireDatabaseUrl } from "#/db/url.ts";
 
 config({ path: [".env.local", ".env"] });
 
 const client = createClient({
-	url: process.env.DATABASE_URL ?? "",
+	url: requireDatabaseUrl(),
 	...(process.env.TURSO_AUTH_TOKEN
 		? { authToken: process.env.TURSO_AUTH_TOKEN }
 		: {}),

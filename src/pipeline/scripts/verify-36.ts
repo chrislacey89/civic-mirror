@@ -3,6 +3,7 @@ import { config } from "dotenv";
 import { drizzle } from "drizzle-orm/libsql";
 import { Effect } from "effect";
 import * as schema from "#/db/schema.ts";
+import { requireDatabaseUrl } from "#/db/url.ts";
 import {
 	StorageService,
 	StorageServiceLive,
@@ -11,7 +12,7 @@ import {
 config({ path: [".env.local", ".env"] });
 
 const client = createClient({
-	url: process.env.DATABASE_URL ?? "",
+	url: requireDatabaseUrl(),
 	...(process.env.TURSO_AUTH_TOKEN
 		? { authToken: process.env.TURSO_AUTH_TOKEN }
 		: {}),

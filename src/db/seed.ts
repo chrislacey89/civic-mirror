@@ -2,6 +2,7 @@ import { createClient } from "@libsql/client";
 import { config } from "dotenv";
 import { drizzle } from "drizzle-orm/libsql";
 import { governingBodies } from "./schema.ts";
+import { resolveDatabaseUrl } from "./url.ts";
 
 config({ path: [".env.local", ".env"] });
 
@@ -77,7 +78,7 @@ const GOVERNING_BODIES = [
 ] as const;
 
 const client = createClient({
-	url: process.env.TURSO_DATABASE_URL ?? "file:dev.db",
+	url: resolveDatabaseUrl(),
 	authToken: process.env.TURSO_AUTH_TOKEN,
 });
 const db = drizzle(client);
