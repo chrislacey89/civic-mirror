@@ -16,6 +16,7 @@ todos.json
 .claude/.tdd-skipped
 .claude/.ralph-checked
 .claude/.review-stamped
+.claude/.fix-findings-active
 
 # tesseract.js downloads language traineddata on first run (~10 MB each)
 *.traineddata
