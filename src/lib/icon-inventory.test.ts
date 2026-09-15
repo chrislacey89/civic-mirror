@@ -29,13 +29,30 @@ describe("ICON_INVENTORY", () => {
 });
 
 describe("getHeadIconLinks", () => {
-	it("emits a link for every inHead entry, in inventory order", () => {
-		const links = getHeadIconLinks();
-		const expectedFiles = ICON_INVENTORY.filter((e) => e.inHead).map(
-			(e) => e.file,
-		);
-
-		expect(links.map((l) => l.href)).toEqual(expectedFiles.map((f) => `/${f}`));
+	it("emits the exact head link descriptors — rel, href, type and sizes — for the current icon set", () => {
+		// Expected values are independently stated here, not derived from
+		// ICON_INVENTORY or getHeadIconLinks() itself: if either drifts (a
+		// swapped `rel`, a corrupted `type`/`sizes`), this must go red.
+		expect(getHeadIconLinks()).toEqual([
+			{
+				rel: "icon",
+				href: "/favicon.ico",
+				type: "image/x-icon",
+				sizes: "48x48 32x32 16x16",
+			},
+			{
+				rel: "icon",
+				href: "/favicon.svg",
+				type: "image/svg+xml",
+				sizes: "any",
+			},
+			{
+				rel: "apple-touch-icon",
+				href: "/apple-touch-icon.png",
+				type: "image/png",
+				sizes: "180x180",
+			},
+		]);
 	});
 });
 
