@@ -69,6 +69,26 @@ describe("resolveDatabaseUrl", () => {
 			/DATABASE_URL\/TURSO_DATABASE_URL is not set in a production environment/,
 		);
 	});
+
+	// NODE_ENV is hand-typed into platform dashboards; an exact `=== "production"`
+	// match lets any of these realistic spellings walk past the guard and
+	// silently open file:dev.db in what is actually production.
+	it.each([
+		"Production",
+		"PRODUCTION",
+		"production ",
+		"prod",
+	])("throws in production for the %j spelling of NODE_ENV", (nodeEnv) => {
+		process.env.NODE_ENV = nodeEnv;
+		expect(() => resolveDatabaseUrl()).toThrow(
+			/DATABASE_URL\/TURSO_DATABASE_URL is not set in a production environment/,
+		);
+	});
+
+	it("treats a whitespace-only DATABASE_URL as unset and falls back to file:dev.db", () => {
+		process.env.DATABASE_URL = "   ";
+		expect(resolveDatabaseUrl()).toBe("file:dev.db");
+	});
 });
 
 describe("drizzle.config.ts", () => {

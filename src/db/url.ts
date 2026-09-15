@@ -17,12 +17,27 @@
 
 function readUrlEnv(name: string): string | undefined {
 	const value = process.env[name];
-	return value && value.length > 0 ? value : undefined;
+	// Whitespace-only values ("   ") are as unconfigured as "" — without this,
+	// a whitespace-only DATABASE_URL reaches createClient() as an opaque
+	// libsql parse error instead of this module's own clear message.
+	return value && value.trim().length > 0 ? value : undefined;
 }
 
-/** DATABASE_URL wins if both are set; "" counts as unset either way. */
+/** DATABASE_URL wins if both are set; "" or whitespace-only counts as unset either way. */
 function readConfiguredUrl(): string | undefined {
 	return readUrlEnv("DATABASE_URL") ?? readUrlEnv("TURSO_DATABASE_URL");
+}
+
+/**
+ * True when NODE_ENV names a production environment. Case- and
+ * whitespace-insensitive, and accepts the "prod" shorthand, because platform
+ * dashboards are hand-typed and an exact `=== "production"` match lets
+ * `Production`, `PRODUCTION`, a trailing-space paste, or `prod` walk past the
+ * guard below and silently open file:dev.db in what is actually production.
+ */
+function isProductionEnv(): boolean {
+	const value = process.env.NODE_ENV?.trim().toLowerCase();
+	return value === "production" || value === "prod";
 }
 
 /**
@@ -37,7 +52,7 @@ export function resolveDatabaseUrl(): string {
 	const configured = readConfiguredUrl();
 	if (configured) return configured;
 
-	if (process.env.NODE_ENV === "production") {
+	if (isProductionEnv()) {
 		throw new Error(
 			"DATABASE_URL/TURSO_DATABASE_URL is not set in a production environment. " +
 				"Refusing to fall back to file:dev.db — set DATABASE_URL or TURSO_DATABASE_URL.",
