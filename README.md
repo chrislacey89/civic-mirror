@@ -1,213 +1,71 @@
-Welcome to your new TanStack Start app! 
+# Civic Mirror
 
-# Getting Started
+**A local newspaper for a town that lost one.**
 
-To run this application:
+Civic Mirror reads the public meetings of local governing bodies in Ellettsville and Monroe County, Indiana, and writes them up for residents. Each meeting gets highlights, a plain-language summary, and a ledger of fiscal decisions. Every figure links back to the source document so readers can check it themselves.
+
+No ads, no paywall, no political slant. It covers what elected officials actually did this week.
+
+**Live:** [civic-mirror-rho.vercel.app](https://civic-mirror-rho.vercel.app)
+
+## What it covers
+
+The site tracks eight bodies: the Ellettsville Town Council, Plan Commission, Parks & Recreation Board, Board of Zoning Appeals, and Redevelopment Commission; the Monroe County Commissioners and County Council; and the Richland-Bean Blossom School Board.
+
+The weekly pipeline currently ingests four of them: the Ellettsville Town Council, the Ellettsville Plan Commission, the Monroe County Commissioners, and the Richland-Bean Blossom School Board. The other four are next.
+
+## How it works
+
+1. **Collect.** Agendas, minutes, and ordinances come from public portals (Ellettsville's eGov document center and the school district's Finalsite pages). Meeting videos come from YouTube.
+2. **Extract.** PDF text is extracted directly. Scanned PDFs go through OCR, and a document that can't be read at all is kept as "unreadable" instead of silently producing an empty summary.
+3. **Summarize.** Gemini turns each meeting into highlights, a prose summary, and structured fiscal decisions.
+4. **Publish.** Results land in a Turso (libSQL) database and are served by a TanStack Start app.
+
+A GitHub Actions workflow runs the pipeline every Sunday. Failures and zero-result runs send an email alert through Resend.
+
+**Being honest about limits.** Figures that came from OCR carry a small `?` badge. Meetings whose documents couldn't be extracted show only a link to the source PDF. Civic Mirror is a starting point for an informed resident, not a replacement for the minutes.
+
+**In progress: Drama Watch.** Drama Watch flags meetings where more than ten minutes went to circular debate, fixations, or personal grievances. It's being added to the pipeline now.
+
+## Stack
+
+- **App:** TanStack Start (React 19, SSR), Tailwind CSS, shadcn/ui, Recharts
+- **Pipeline:** Effect TS, Vercel AI SDK with Gemini, unpdf (PDF text) and tesseract.js (OCR), YouTube transcripts
+- **Data:** Drizzle ORM on Turso / libSQL (SQLite locally)
+- **Ops:** GitHub Actions (weekly ingest), Resend (alerts), Vercel (hosting)
+- **Quality:** Vitest, Biome, Lefthook pre-commit hooks
+
+## Running it locally
+
+Requires Node 22 and pnpm.
 
 ```bash
 pnpm install
-pnpm dev
+cp .env.example .env.local   # fill in keys; see comments in the file
+pnpm db:migrate
+pnpm dev                     # http://localhost:3000
 ```
 
-# Building For Production
+Without `DATABASE_URL`, local development uses a SQLite file (`dev.db`).
 
-To build this application for production:
+### Pipeline
 
 ```bash
-pnpm build
+pnpm pipeline list-bodies                     # show configured bodies
+pnpm pipeline:dry                             # full run, no writes or alerts
+pnpm pipeline:run                             # full run
+pnpm pipeline run --body ellettsville-town-council   # one body only
 ```
 
-## Testing
+Ellettsville's eGov portal enforces a 300-second delay between PDF downloads, so a full run can take about an hour. `--skip-crawl-delay` is for local testing only.
 
-This project uses [Vitest](https://vitest.dev/) for testing. You can run the tests with:
+### Checks
 
 ```bash
-pnpm test
+pnpm test      # Vitest
+pnpm check     # Biome lint + format
 ```
 
-## Styling
+## Project notes
 
-This project uses [Tailwind CSS](https://tailwindcss.com/) for styling.
-
-### Removing Tailwind CSS
-
-If you prefer not to use Tailwind CSS:
-
-1. Remove the demo pages in `src/routes/demo/`
-2. Replace the Tailwind import in `src/styles.css` with your own styles
-3. Remove `tailwindcss()` from the plugins array in `vite.config.ts`
-4. Uninstall the packages: `pnpm add @tailwindcss/vite tailwindcss --dev`
-
-## Linting & Formatting
-
-This project uses [Biome](https://biomejs.dev/) for linting and formatting. The following scripts are available:
-
-
-```bash
-pnpm lint
-pnpm format
-pnpm check
-```
-
-
-## Shadcn
-
-Add components using the latest version of [Shadcn](https://ui.shadcn.com/).
-
-```bash
-pnpm dlx shadcn@latest add button
-```
-
-
-
-## Routing
-
-This project uses [TanStack Router](https://tanstack.com/router) with file-based routing. Routes are managed as files in `src/routes`.
-
-### Adding A Route
-
-To add a new route to your application just add a new file in the `./src/routes` directory.
-
-TanStack will automatically generate the content of the route file for you.
-
-Now that you have two routes you can use a `Link` component to navigate between them.
-
-### Adding Links
-
-To use SPA (Single Page Application) navigation you will need to import the `Link` component from `@tanstack/react-router`.
-
-```tsx
-import { Link } from "@tanstack/react-router";
-```
-
-Then anywhere in your JSX you can use it like so:
-
-```tsx
-<Link to="/about">About</Link>
-```
-
-This will create a link that will navigate to the `/about` route.
-
-More information on the `Link` component can be found in the [Link documentation](https://tanstack.com/router/v1/docs/framework/react/api/router/linkComponent).
-
-### Using A Layout
-
-In the File Based Routing setup the layout is located in `src/routes/__root.tsx`. Anything you add to the root route will appear in all the routes. The route content will appear in the JSX where you render `{children}` in the `shellComponent`.
-
-Here is an example layout that includes a header:
-
-```tsx
-import { HeadContent, Scripts, createRootRoute } from '@tanstack/react-router'
-
-export const Route = createRootRoute({
-  head: () => ({
-    meta: [
-      { charSet: 'utf-8' },
-      { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-      { title: 'My App' },
-    ],
-  }),
-  shellComponent: ({ children }) => (
-    <html lang="en">
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <header>
-          <nav>
-            <Link to="/">Home</Link>
-            <Link to="/about">About</Link>
-          </nav>
-        </header>
-        {children}
-        <Scripts />
-      </body>
-    </html>
-  ),
-})
-```
-
-More information on layouts can be found in the [Layouts documentation](https://tanstack.com/router/latest/docs/framework/react/guide/routing-concepts#layouts).
-
-## Server Functions
-
-TanStack Start provides server functions that allow you to write server-side code that seamlessly integrates with your client components.
-
-```tsx
-import { createServerFn } from '@tanstack/react-start'
-
-const getServerTime = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  return new Date().toISOString()
-})
-
-// Use in a component
-function MyComponent() {
-  const [time, setTime] = useState('')
-  
-  useEffect(() => {
-    getServerTime().then(setTime)
-  }, [])
-  
-  return <div>Server time: {time}</div>
-}
-```
-
-## API Routes
-
-You can create API routes by using the `server` property in your route definitions:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-import { json } from '@tanstack/react-start'
-
-export const Route = createFileRoute('/api/hello')({
-  server: {
-    handlers: {
-      GET: () => json({ message: 'Hello, World!' }),
-    },
-  },
-})
-```
-
-## Data Fetching
-
-There are multiple ways to fetch data in your application. You can use TanStack Query to fetch data from a server. But you can also use the `loader` functionality built into TanStack Router to load the data for a route before it's rendered.
-
-For example:
-
-```tsx
-import { createFileRoute } from '@tanstack/react-router'
-
-export const Route = createFileRoute('/people')({
-  loader: async () => {
-    const response = await fetch('https://swapi.dev/api/people')
-    return response.json()
-  },
-  component: PeopleComponent,
-})
-
-function PeopleComponent() {
-  const data = Route.useLoaderData()
-  return (
-    <ul>
-      {data.results.map((person) => (
-        <li key={person.name}>{person.name}</li>
-      ))}
-    </ul>
-  )
-}
-```
-
-Loaders simplify your data fetching logic dramatically. Check out more information in the [Loader documentation](https://tanstack.com/router/latest/docs/framework/react/guide/data-loading#loader-parameters).
-
-# Demo files
-
-Files prefixed with `demo` can be safely deleted. They are there to provide a starting point for you to play around with the features you've installed.
-
-# Learn More
-
-You can learn more about all of the offerings from TanStack in the [TanStack documentation](https://tanstack.com).
-
-For TanStack Start specific documentation, visit [TanStack Start](https://tanstack.com/start).
+Lessons from building the pipeline, such as idempotent re-runs, silent-failure patterns, and LLM scoring drift, are written up in [`docs/solutions/`](docs/solutions/).
