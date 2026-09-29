@@ -1,4 +1,4 @@
-import { Effect, HashMap, Layer, Logger } from "effect";
+import { Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import { LlmError } from "#/pipeline/errors.ts";
@@ -953,12 +953,14 @@ describe("runPipeline", () => {
 });
 
 /**
- * Effect teaching note: `Logger.replace(Logger.defaultLogger, captureLogger)`
- * swaps the root logger for the duration of the provided effect — every
- * `Effect.log(...)` call inside the program is routed through `captureLogger`
- * instead of the default logfmt-to-stdout one. The capture stores message
- * varargs and the annotation HashMap from `Effect.annotateLogs(...)` so the
- * test can assert on the structured stage events the orchestrator emits.
+ * Effect teaching note: `Logger.layer([captureLogger])` installs exactly this
+ * set of loggers for the scope of the provided effect (no `mergeWithExisting`,
+ * so the default logger is replaced) — every `Effect.log(...)` call inside the
+ * program is routed through `captureLogger` instead of the default one. The
+ * capture stores the message and the annotations from `Effect.annotateLogs(...)`
+ * so the test can assert on the structured stage events the orchestrator emits.
+ * In v4 `Logger.make` receives `{ message, logLevel, cause, fiber, date }`; the
+ * annotations are read from the fiber via `fiber.getRef(References.CurrentLogAnnotations)`.
  */
 type CapturedLog = {
 	message: ReadonlyArray<unknown>;
@@ -970,21 +972,15 @@ function buildLogCapture(): {
 	layer: Layer.Layer<never>;
 } {
 	const captured: Array<CapturedLog> = [];
-	const logger = Logger.make<unknown, void>(({ message, annotations }) => {
-		const annObj: Record<string, unknown> = {};
-		HashMap.forEach(annotations, (value, key) => {
-			annObj[key] = value;
-		});
+	const logger = Logger.make<unknown, void>(({ message, fiber }) => {
 		captured.push({
-			message: Array.isArray(message)
-				? (message as ReadonlyArray<unknown>)
-				: [message],
-			annotations: annObj,
+			message: Array.isArray(message) ? message : [message],
+			annotations: { ...fiber.getRef(References.CurrentLogAnnotations) },
 		});
 	});
 	return {
 		captured,
-		layer: Logger.replace(Logger.defaultLogger, logger),
+		layer: Logger.layer([logger]),
 	};
 }
 
