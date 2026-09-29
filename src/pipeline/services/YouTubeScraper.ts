@@ -5,7 +5,7 @@ import { NetworkError } from "#/pipeline/errors.ts";
  * Effect teaching note: This service demonstrates how to wrap an external REST API
  * (YouTube Data API v3) in an Effect service. The key pattern is:
  * 1. Define types for the domain (YouTubeVideo)
- * 2. Define a service interface with Context.Tag
+ * 2. Define a service interface with Context.Service
  * 3. Wrap HTTP calls in Effect.tryPromise at the boundary
  * 4. Inject a fetch function for testability
  */
@@ -23,10 +23,10 @@ interface YouTubeScraperInterface {
 	): Effect.Effect<YouTubeVideo[], NetworkError>;
 }
 
-class YouTubeScraper extends Context.Tag("YouTubeScraper")<
+class YouTubeScraper extends Context.Service<
 	YouTubeScraper,
 	YouTubeScraperInterface
->() {}
+>()("YouTubeScraper") {}
 
 const YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3";
 

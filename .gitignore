@@ -21,3 +21,6 @@ todos.json
 *.traineddata
 .claude/.review-stamped
 .claude/.fix-findings-active
+
+# lfg tracer artifacts
+test-results/

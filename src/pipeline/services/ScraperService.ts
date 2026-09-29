@@ -99,7 +99,7 @@ function parseEgovListingHtml(html: string): EgovDocumentListing[] {
 /**
  * Effect teaching note: This is the third implementation of a scraper service —
  * completing the trio alongside FinalsiteScraper and YouTubeScraper. All three
- * follow the same Context.Tag + Layer.succeed pattern with an injected fetchFn,
+ * follow the same Context.Service + Layer.succeed pattern with an injected fetchFn,
  * but each has its own service tag so consumers can depend on them independently.
  *
  * EgovScraper is kept deliberately minimal: it fetches pages and downloads
@@ -125,10 +125,9 @@ interface EgovScraperInterface {
 	downloadDocument(url: string): Effect.Effect<ArrayBuffer, NetworkError>;
 }
 
-class EgovScraper extends Context.Tag("EgovScraper")<
-	EgovScraper,
-	EgovScraperInterface
->() {}
+class EgovScraper extends Context.Service<EgovScraper, EgovScraperInterface>()(
+	"EgovScraper",
+) {}
 
 type EgovScraperConfig = {
 	/** Base URL for the eGov document center (e.g. https://ellettsville.in.us/egov/apps/document/center.egov). */

@@ -1,7 +1,7 @@
-import { Command, Options } from "@effect/cli";
-import { NodeContext, NodeRuntime } from "@effect/platform-node";
+import { NodeRuntime, NodeServices } from "@effect/platform-node";
 import { config as loadDotenv } from "dotenv";
 import { Console, Effect, Option } from "effect";
+import { Command, Flag } from "effect/cli";
 
 loadDotenv({ path: [".env.local", ".env"] });
 
@@ -16,8 +16,8 @@ import {
 } from "#/pipeline/orchestrator.ts";
 
 /**
- * Effect teaching note: This file owns the CLI surface — `@effect/cli` Command
- * and Options definitions plus the `NodeRuntime.runMain` entrypoint — and
+ * Effect teaching note: This file owns the CLI surface — `effect/cli` Command
+ * and Flag definitions plus the `NodeRuntime.runMain` entrypoint — and
  * nothing else. The production layer graph, the hardcoded body list, the env
  * binding, and the real PDF extractor all live in composition.ts, so
  * changing how services are wired for production doesn't force edits past
@@ -28,23 +28,23 @@ import {
 // `run` subcommand — full pipeline execution
 // ---------------------------------------------------------------------------
 
-const dryRun = Options.boolean("dry-run").pipe(
-	Options.withDefault(false),
-	Options.withDescription(
+const dryRun = Flag.Boolean("dry-run").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
 		"Run all stages except storage and alerts — safe smoke test.",
 	),
 );
 
-const skipCrawlDelay = Options.boolean("skip-crawl-delay").pipe(
-	Options.withDefault(false),
-	Options.withDescription(
+const skipCrawlDelay = Flag.Boolean("skip-crawl-delay").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
 		"Skip the 300-second eGov crawl delay between downloads (local testing only).",
 	),
 );
 
-const bodySlug = Options.text("body").pipe(
-	Options.optional,
-	Options.withDescription(
+const bodySlug = Flag.String("body").pipe(
+	Flag.optional,
+	Flag.withDescription(
 		"Only process the body with this slug (defaults to all bodies).",
 	),
 );
@@ -103,26 +103,26 @@ const runCommand = Command.make(
 // RBB hiring transcript before configuring full playlist ingestion.
 // ---------------------------------------------------------------------------
 
-const detectVideoId = Options.text("video-id").pipe(
-	Options.withDescription("YouTube video ID (the part after `?v=`)."),
+const detectVideoId = Flag.String("video-id").pipe(
+	Flag.withDescription("YouTube video ID (the part after `?v=`)."),
 );
 
-const detectBodySlug = Options.text("body").pipe(
-	Options.withDescription(
+const detectBodySlug = Flag.String("body").pipe(
+	Flag.withDescription(
 		"Body slug to attribute the meeting to (must exist in governing_bodies).",
 	),
 );
 
-const detectTitle = Options.text("title").pipe(
-	Options.optional,
-	Options.withDescription(
+const detectTitle = Flag.String("title").pipe(
+	Flag.optional,
+	Flag.withDescription(
 		"Meeting title used as the prompt context (defaults to a stub).",
 	),
 );
 
-const detectDate = Options.text("date").pipe(
-	Options.optional,
-	Options.withDescription(
+const detectDate = Flag.String("date").pipe(
+	Flag.optional,
+	Flag.withDescription(
 		"ISO date (YYYY-MM-DD) recorded as the meeting date (defaults to today).",
 	),
 );
@@ -207,9 +207,11 @@ const rootCommand = Command.make("pipeline", {}, () =>
 	Command.withSubcommands([runCommand, listBodiesCommand, dramaDetectCommand]),
 );
 
-const cli = Command.run(rootCommand, {
-	name: "Civic Mirror Pipeline",
+const cli = Command.runWith(rootCommand, {
 	version: "0.1.0",
 });
 
-cli(process.argv).pipe(Effect.provide(NodeContext.layer), NodeRuntime.runMain);
+cli(process.argv.slice(2)).pipe(
+	Effect.provide(NodeServices.layer),
+	NodeRuntime.runMain,
+);

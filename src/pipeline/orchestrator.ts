@@ -45,7 +45,7 @@ function detectZeroResultsAnomaly(input: {
 	});
 	return Effect.gen(function* () {
 		const alert = yield* AlertService;
-		yield* alert.sendAlert(formatted).pipe(Effect.catchAll(() => Effect.void));
+		yield* alert.sendAlert(formatted).pipe(Effect.catch(() => Effect.void));
 	});
 }
 
@@ -58,7 +58,7 @@ function detectZeroResultsAnomaly(input: {
  * parameter of `Effect.Effect<A, E, R>` is the union of every service it
  * pulls from context.
  *
- * Per-listing errors are handled inline with `Effect.catchAll` → alert →
+ * Per-listing errors are handled inline with `Effect.catch` → alert →
  * continue, rather than bubbling up. That's a deliberate choice: a broken
  * listing for one body should not stop the whole pipeline. Fatal failures
  * (e.g. scraping the initial listing page) still fail the body loop so the
@@ -68,8 +68,10 @@ function detectZeroResultsAnomaly(input: {
 /**
  * Effect teaching note: Schedule is Effect's policy type for deciding when to
  * retry. Schedule.exponential starts at the given base delay and doubles on
- * each retry; Schedule.compose with Schedule.recurs(n) bounds the total number
- * of attempts. Effect.retry(effect, schedule) wraps transient-failure-prone
+ * each retry; Schedule.max([exponential, Schedule.recurs(n)]) recurs only while
+ * every schedule still recurs (so recurs(n) bounds the total number of
+ * retries) and waits the longest delay, which is the exponential one because
+ * recurs has no delay. Effect.retry(effect, schedule) wraps transient-failure-prone
  * operations (network fetches, LLM calls) so that flaky upstreams don't kill
  * the whole pipeline on the first hiccup.
  *
@@ -91,9 +93,10 @@ const DEFAULT_NETWORK_RETRY: RetryPolicy = { attempts: 3, baseDelayMs: 500 };
 const DEFAULT_LLM_RETRY: RetryPolicy = { attempts: 2, baseDelayMs: 1000 };
 
 function scheduleFromPolicy(policy: RetryPolicy) {
-	return Schedule.exponential(Duration.millis(policy.baseDelayMs)).pipe(
-		Schedule.compose(Schedule.recurs(policy.attempts)),
-	);
+	return Schedule.max([
+		Schedule.exponential(Duration.millis(policy.baseDelayMs)),
+		Schedule.recurs(policy.attempts),
+	]);
 }
 
 type BodyConfig = {
@@ -221,7 +224,7 @@ function runPipelineForBody(
 		const storage = yield* StorageService;
 		const lastMeetingDate = yield* storage
 			.getMostRecentMeetingDate(body.slug)
-			.pipe(Effect.catchAll(() => Effect.succeed(null)));
+			.pipe(Effect.catch(() => Effect.succeed(null)));
 		yield* detectZeroResultsAnomaly({
 			body,
 			lastMeetingDate,
@@ -260,7 +263,7 @@ function runPipelineForBody(
 /**
  * Effect teaching note: All three source paths share the same "fetch the
  * listings or fall through to an alert" pattern. Rather than inline the
- * Effect.map + Effect.catchAll in every runXForBody function, this helper
+ * Effect.map + Effect.catch in every runXForBody function, this helper
  * takes a pre-composed fetch effect (the caller is responsible for applying
  * retry, because the retry schedule is scoped to the caller's config) and
  * returns a discriminated union the caller can switch on.
@@ -280,7 +283,7 @@ function fetchListingsOrAlert<T, E extends TaggedPipelineError>(
 > {
 	return fetchEffect.pipe(
 		Effect.map((listings) => ({ ok: true as const, listings })),
-		Effect.catchAll((error) =>
+		Effect.catch((error) =>
 			alertAndRecover(body, "scrape", error).pipe(
 				Effect.as({ ok: false as const }),
 			),
@@ -290,7 +293,7 @@ function fetchListingsOrAlert<T, E extends TaggedPipelineError>(
 
 /**
  * Effect teaching note: The second shared shape across every source path is
- * the per-item loop — iterate items, run processItem with its own catchAll
+ * the per-item loop — iterate items, run processItem with its own catch
  * to alertAndRecover so one broken item doesn't stop the body, accumulate a
  * PipelineResult, and optionally sleep between items for rate-limit
  * compliance. Pulling this into one place means a change to the per-item
@@ -323,7 +326,7 @@ function iterateWithAlertRecovery<TItem, R>(
 			const result = yield* options
 				.processItem(item)
 				.pipe(
-					Effect.catchAll((error) =>
+					Effect.catch((error) =>
 						alertAndRecover(body, listingFailureStage(error), error).pipe(
 							Effect.as({ processed: 0, errors: 1 }),
 						),
@@ -723,7 +726,7 @@ function processYouTubeVideo(
 
 		// Drama detection runs AFTER transcript storage. Failure must not
 		// regress transcript or summary persistence — those are first-class
-		// transparency artifacts. The catchAll below absorbs any error,
+		// transparency artifacts. The catch below absorbs any error,
 		// alerts the operator, and returns Effect.void so the orchestrator's
 		// tagged-error channel is unaffected.
 		yield* Effect.log("youtube.drama.start");
@@ -732,7 +735,7 @@ function processYouTubeVideo(
 			video,
 			meetingId: meeting.id,
 			transcript,
-		}).pipe(Effect.catchAll((error) => alertDramaFailure(body, error)));
+		}).pipe(Effect.catch((error) => alertDramaFailure(body, error)));
 		yield* Effect.log("youtube.drama.finish");
 
 		return { processed: 1, errors: 0 };
@@ -797,7 +800,7 @@ function alertDramaFailure(body: BodyConfig, error: LlmError | DatabaseError) {
 					errorMessage: error.message,
 				}),
 			)
-			.pipe(Effect.catchAll(() => Effect.void));
+			.pipe(Effect.catch(() => Effect.void));
 	});
 }
 
@@ -859,7 +862,7 @@ function alertAndRecover(
 			errorTag: error._tag,
 			errorMessage: error.message,
 		});
-		yield* alert.sendAlert(formatted).pipe(Effect.catchAll(() => Effect.void));
+		yield* alert.sendAlert(formatted).pipe(Effect.catch(() => Effect.void));
 	});
 }
 
@@ -912,7 +915,7 @@ function runDramaDetectForVideo(input: {
 	};
 
 	return processYouTubeVideo(input.body, input.video, config).pipe(
-		Effect.catchAll((error) =>
+		Effect.catch((error) =>
 			Effect.gen(function* () {
 				const alert = yield* AlertService;
 				yield* alert
@@ -924,7 +927,7 @@ function runDramaDetectForVideo(input: {
 							errorMessage: error.message,
 						}),
 					)
-					.pipe(Effect.catchAll(() => Effect.void));
+					.pipe(Effect.catch(() => Effect.void));
 				return { processed: 0, errors: 1 };
 			}),
 		),

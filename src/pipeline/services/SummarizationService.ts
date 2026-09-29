@@ -121,10 +121,10 @@ interface SummarizationServiceInterface {
 	): Effect.Effect<SummarizationResult, LlmError>;
 }
 
-class SummarizationService extends Context.Tag("SummarizationService")<
+class SummarizationService extends Context.Service<
 	SummarizationService,
 	SummarizationServiceInterface
->() {}
+>()("SummarizationService") {}
 
 /**
  * Injectable generator function — this is the boundary between the Effect

@@ -15,7 +15,7 @@ import { ocrPdf as defaultOcrPdf } from "./OcrExtractor.ts";
  * it. The previous `ALLOW_EMPTY_PDF_TEXT` env-var escape hatch is retired by
  * the tri-state return.
  *
- * Keeping this as a plain async function (not an Effect.Tag service) matches
+ * Keeping this as a plain async function (not a Context.Service) matches
  * the orchestrator's function-reference seam: tests and the dry-run path
  * substitute a different implementation by passing a different reference, not
  * by reshaping the dependency graph.

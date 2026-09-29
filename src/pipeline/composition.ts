@@ -27,7 +27,7 @@ import { v1 as dramaProfileV1 } from "../../evals/profiles/v1.ts";
  * Separating the composition root from cli.ts means the CLI file owns only
  * command shapes and `NodeRuntime.runMain` wiring — the layer graph, the
  * body list, and the env binding all live here where they can be read and
- * maintained without navigating past `@effect/cli` Option/Command boilerplate.
+ * maintained without navigating past `effect/cli` Flag/Command boilerplate.
  */
 
 /**

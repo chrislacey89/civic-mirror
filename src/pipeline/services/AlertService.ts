@@ -21,10 +21,10 @@ interface AlertServiceInterface {
 	sendAlert(input: AlertInput): Effect.Effect<void, NetworkError>;
 }
 
-class AlertService extends Context.Tag("AlertService")<
+class AlertService extends Context.Service<
 	AlertService,
 	AlertServiceInterface
->() {}
+>()("AlertService") {}
 
 type AlertSendFn = (input: {
 	to: string;

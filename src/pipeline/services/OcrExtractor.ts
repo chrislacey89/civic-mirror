@@ -8,7 +8,7 @@ import { getDocumentProxy, renderPageAsImage } from "unpdf";
  * when a PDF has no text layer (image-based / scanned documents).
  *
  * Effect teaching note: Like `extractPdfText`, this is a plain async function
- * rather than an Effect.Tag service — same rationale (swap-the-impl at the
+ * rather than a Context.Service — same rationale (swap-the-impl at the
  * orchestrator input boundary, no additional dependencies to inject from an
  * Effect Context). The tesseract worker lifecycle is managed with a
  * try/finally so the ~150 MB WASM instance is always torn down, even on

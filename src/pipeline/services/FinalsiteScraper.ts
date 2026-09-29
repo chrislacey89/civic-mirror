@@ -131,10 +131,10 @@ interface FinalsiteScraperInterface {
 	downloadDocument(uuid: string): Effect.Effect<ArrayBuffer, NetworkError>;
 }
 
-class FinalsiteScraper extends Context.Tag("FinalsiteScraper")<
+class FinalsiteScraper extends Context.Service<
 	FinalsiteScraper,
 	FinalsiteScraperInterface
->() {}
+>()("FinalsiteScraper") {}
 
 type FinalsiteScraperConfig = {
 	/** Base URL for the Finalsite school board page. */
