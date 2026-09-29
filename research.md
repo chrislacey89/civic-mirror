@@ -6,6 +6,8 @@
 **Confidence:** HIGH
 **Constraints from shape:** 🔒 8 governing bodies, 2-year lookback. TanStack Start SSR + Drizzle/SQLite + Effect TS pipeline + Vercel AI SDK + Shadcn. Railway deployment. Email failure alerts. Local script first, server cron later.
 
+> **Superseded in part (2026-09-29): the pipeline now runs Effect v4 (#96).** This document is a point-in-time snapshot; its Effect rows describe v3. In v4, `@effect/platform` and `@effect/cli` are consolidated into `effect` (CLI → `effect/cli` `Command`/`Flag`), every package shares one version (`effect` + `@effect/platform-node` at `4.0.0-rc.118`), and services are defined with `Context.Service` instead of `Context.Tag`. Current mappings: `.repos/effect/migration/v3-to-v4.md` upstream, and `package.json` for pinned versions.
+
 ## 📦 Version Check
 
 | Dependency | Installed | Latest | Status |

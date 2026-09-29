@@ -1,4 +1,5 @@
-import { NodeRuntime, NodeServices } from "@effect/platform-node";
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import { config as loadDotenv } from "dotenv";
 import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
@@ -207,11 +208,7 @@ const rootCommand = Command.make("pipeline", {}, () =>
 	Command.withSubcommands([runCommand, listBodiesCommand, dramaDetectCommand]),
 );
 
-const cli = Command.runWith(rootCommand, {
-	version: "0.1.0",
-});
-
-cli(process.argv.slice(2)).pipe(
+Command.run(rootCommand, { version: "0.1.0" }).pipe(
 	Effect.provide(NodeServices.layer),
 	NodeRuntime.runMain,
 );

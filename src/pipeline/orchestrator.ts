@@ -51,7 +51,7 @@ function detectZeroResultsAnomaly(input: {
 
 /**
  * Effect teaching note: The orchestrator is deliberately a plain function
- * that returns an Effect — not its own Context.Tag service. There's only one
+ * that returns an Effect — not its own Context.Service. There's only one
  * implementation, and it composes other services via their Tags, so the
  * orchestrator's "requirements" are exactly the union of all its callees'
  * Tags. You can see this in the return type: the `R` (requirements)
@@ -92,7 +92,9 @@ type RetryPolicy = {
 const DEFAULT_NETWORK_RETRY: RetryPolicy = { attempts: 3, baseDelayMs: 500 };
 const DEFAULT_LLM_RETRY: RetryPolicy = { attempts: 2, baseDelayMs: 1000 };
 
-function scheduleFromPolicy(policy: RetryPolicy) {
+function scheduleFromPolicy(
+	policy: RetryPolicy,
+): Schedule.Schedule<Duration.Duration> {
 	return Schedule.max([
 		Schedule.exponential(Duration.millis(policy.baseDelayMs)),
 		Schedule.recurs(policy.attempts),
