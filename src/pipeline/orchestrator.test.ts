@@ -495,6 +495,42 @@ describe("runPipeline", () => {
 		expect(result.errors).toBe(2);
 	});
 
+	it("retries a failing LLM call exactly `attempts` more times before giving up", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 1,
+					title: "First",
+					date: "01/01/2026",
+					downloadUrl: "https://example.com/doc/1",
+					meetingDate: null,
+					documentType: "minutes",
+				},
+			],
+			summarizationError: new Error("LLM boom"),
+		});
+
+		const program = runPipeline({
+			bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 2, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// RetryPolicy.attempts is "additional attempts beyond the first":
+		// 1 initial call + 2 retries.
+		expect(log.summarize).toHaveLength(3);
+		expect(log.store).toHaveLength(0);
+		expect(result.errors).toBe(1);
+	});
+
 	it("processes a Finalsite body: one listing per document per meeting", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
