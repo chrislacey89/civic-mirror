@@ -10,9 +10,11 @@ volatility: stable
 
 # Effect.retry with production Schedule values breaks vitest timeouts
 
+> **Updated 2026-09-29 for Effect v4 (#100).** Snippets now use v4 APIs: `Schedule.compose` has no v4 counterpart, so the bounded backoff is `Schedule.max([Schedule.exponential(...), Schedule.recurs(n)])` (recurs while both recur, waits the longer delay); `TestContext.TestContext` became `TestClock.layer()` from `effect/testing`. The lesson itself is unchanged.
+
 ## Problem
 
-Adding `Effect.retry(Schedule.exponential(...).pipe(Schedule.compose(Schedule.recurs(n))))` with production-sized values causes existing tests to hit vitest's 5-second timeout. Tests that previously passed in milliseconds suddenly take 3–7 seconds because the retry schedule actually *waits* between attempts, using real wall-clock time.
+Adding `Effect.retry(Schedule.max([Schedule.exponential(...), Schedule.recurs(n)]))` with production-sized values causes existing tests to hit vitest's 5-second timeout. Tests that previously passed in milliseconds suddenly take 3–7 seconds because the retry schedule actually *waits* between attempts, using real wall-clock time.
 
 ## Context
 
@@ -41,7 +43,7 @@ The orchestrator tests passed before the retry wrapping. After the wrapping, the
 
 ## Root Cause
 
-`Effect.retry` with `Schedule.exponential` uses real wall-clock time. There's no implicit "fast-forward" in Effect tests the way there is with `jest.useFakeTimers()` or `vi.useFakeTimers()` — you'd have to opt into `TestClock` explicitly, and even then it requires wrapping the test in an `Effect.provide(TestContext.TestContext)` block.
+`Effect.retry` with `Schedule.exponential` uses real wall-clock time. There's no implicit "fast-forward" in Effect tests the way there is with `jest.useFakeTimers()` or `vi.useFakeTimers()` — you'd have to opt into `TestClock` explicitly, and even then it requires providing `TestClock.layer()` (from `effect/testing`) and advancing time with `TestClock.adjust` — or running under `@effect/vitest`'s `it.effect`, which provides the test clock for you.
 
 Production Schedule values are *bad* test defaults. A 3-attempt exponential-500ms schedule costs 0.5 + 1 + 2 = 3.5s of wall-clock time for a single always-failing operation. A 2-attempt exponential-1s schedule costs 1 + 2 = 3s. The test suite hitting the error path twice already blows the default vitest timeout.
 
@@ -60,9 +62,10 @@ Make retry policies injectable via the pipeline input, defaulting to production 
 
 ```typescript
 // Module-level constant — can't be overridden by tests
-const networkRetry = Schedule.exponential(Duration.millis(500)).pipe(
-	Schedule.compose(Schedule.recurs(3)),
-);
+const networkRetry = Schedule.max([
+	Schedule.exponential(Duration.millis(500)),
+	Schedule.recurs(3),
+]);
 
 // Hardcoded in the orchestrator
 yield* scraper.scrapeListings(...).pipe(Effect.retry(networkRetry));
@@ -79,10 +82,13 @@ type RetryPolicy = {
 const DEFAULT_NETWORK_RETRY: RetryPolicy = { attempts: 3, baseDelayMs: 500 };
 const DEFAULT_LLM_RETRY: RetryPolicy = { attempts: 2, baseDelayMs: 1000 };
 
-function scheduleFromPolicy(policy: RetryPolicy) {
-	return Schedule.exponential(Duration.millis(policy.baseDelayMs)).pipe(
-		Schedule.compose(Schedule.recurs(policy.attempts)),
-	);
+function scheduleFromPolicy(
+	policy: RetryPolicy,
+): Schedule.Schedule<Duration.Duration> {
+	return Schedule.max([
+		Schedule.exponential(Duration.millis(policy.baseDelayMs)),
+		Schedule.recurs(policy.attempts),
+	]);
 }
 
 type RunPipelineInput = {
@@ -104,13 +110,15 @@ yield* scraper.scrapeListings(...).pipe(Effect.retry(config.networkSchedule));
 
 Tests pass `{ attempts: 0, baseDelayMs: 0 }` for both policies. `Schedule.recurs(0)` executes once with no retry, so the retry schedule is effectively a no-op and tests complete in milliseconds again.
 
+Disabling retries in every test leaves the retry *count* itself untested. Keep one test that passes `{ attempts: 2, baseDelayMs: 0 }` with an always-failing dependency and asserts exactly 3 calls — zero delay keeps it off the wall clock (`orchestrator.test.ts`, "retries a failing LLM call exactly `attempts` more times before giving up").
+
 ## Prevention
 
 **Code-level:**
 
 - Treat every `Effect.sleep` / `Effect.delay` / `Schedule.*` reference as a test-visible timing coupling. If the code is reachable by a test, the primitive must be injectable via config, not hardcoded.
 - A `grep -n 'Effect\.sleep\|Effect\.delay\|Schedule\.' src/` audit is worth running before any "this test is slow" investigation — it catches all the timing couplings at once.
-- Consider `TestClock` for more complex cases, but injection is simpler, faster to set up, and doesn't require wrapping every test in `Effect.provide(TestContext.TestContext)`.
+- Consider `TestClock` for more complex cases, but injection is simpler, faster to set up, and doesn't require providing `TestClock.layer()` and driving `TestClock.adjust` in every test.
 
 **Process-level:**
 
