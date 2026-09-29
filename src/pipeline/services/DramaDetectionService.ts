@@ -108,10 +108,10 @@ interface DramaDetectionServiceInterface {
 	): Effect.Effect<DramaAssessmentResult, LlmError>;
 }
 
-class DramaDetectionService extends Context.Tag("DramaDetectionService")<
+class DramaDetectionService extends Context.Service<
 	DramaDetectionService,
 	DramaDetectionServiceInterface
->() {}
+>()("DramaDetectionService") {}
 
 type DramaDetectionInput = {
 	sourceText: string;

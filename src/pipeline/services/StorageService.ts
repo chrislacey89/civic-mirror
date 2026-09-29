@@ -13,7 +13,7 @@ import {
 import { DatabaseError } from "#/pipeline/errors.ts";
 
 /**
- * Effect teaching note: Context.Tag creates a typed token that identifies a service
+ * Effect teaching note: Context.Service creates a typed token that identifies a service
  * in Effect's dependency injection system. The first type parameter is the tag itself
  * (for nominal typing), the second is the service interface it represents.
  * When you `yield* StorageService` inside Effect.gen, Effect knows this computation
@@ -152,10 +152,10 @@ interface StorageServiceInterface {
 	): Effect.Effect<void, DatabaseError>;
 }
 
-class StorageService extends Context.Tag("StorageService")<
+class StorageService extends Context.Service<
 	StorageService,
 	StorageServiceInterface
->() {}
+>()("StorageService") {}
 
 /**
  * Effect teaching note: Layer.succeed creates a Layer that provides a service

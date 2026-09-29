@@ -3,7 +3,7 @@ import { TranscriptionError } from "#/pipeline/errors.ts";
 
 /**
  * Effect teaching note: This module demonstrates the "multiple implementations
- * behind one Tag" pattern. TranscriptionService is a single Context.Tag with
+ * behind one Tag" pattern. TranscriptionService is a single Context.Service with
  * two possible providers: YouTubeCaptionProvider (free, instant) and
  * WhisperLocalProvider (local whisper.cpp). The fallback chain composes them
  * using Effect.catchTag — try captions first, fall back to Whisper if that fails.
@@ -28,10 +28,10 @@ interface TranscriptionServiceInterface {
 	): Effect.Effect<TranscriptResult, TranscriptionError>;
 }
 
-class TranscriptionService extends Context.Tag("TranscriptionService")<
+class TranscriptionService extends Context.Service<
 	TranscriptionService,
 	TranscriptionServiceInterface
->() {}
+>()("TranscriptionService") {}
 
 // ---------------------------------------------------------------------------
 // YouTubeCaptionProvider

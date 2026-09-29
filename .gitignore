@@ -14,9 +14,13 @@ __unconfig*
 todos.json
 .claude/.tdd-active
 .claude/.tdd-skipped
+.claude/.lfg-active
 .claude/.ralph-checked
 
 # tesseract.js downloads language traineddata on first run (~10 MB each)
 *.traineddata
 .claude/.review-stamped
 .claude/.fix-findings-active
+
+# lfg tracer artifacts
+test-results/
