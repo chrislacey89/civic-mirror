@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { Context, Effect, Layer } from "effect";
 import type { MeetingDetail } from "#/db/queries.ts";
@@ -391,26 +391,52 @@ async function storeMeetingTransaction(
 
 		const session = input.session ?? "";
 
-		// Idempotency guard: (body_id, date, session) is the natural key. If this meeting
-		// already exists, attach any documents from this call that aren't
-		// already on it (idempotent by (meetingId, sourceUrl)) and return the
-		// existing handle. The weekly ingestion cron re-sees the same eGov /
+		// Idempotency guard: (body_id, date, session) is the natural key. If
+		// this meeting already exists, attach any documents from this call that
+		// aren't already on it (idempotent by (meetingId, sourceUrl)) and return
+		// the existing handle. The weekly ingestion cron re-sees the same eGov /
 		// Finalsite listings every run; without the outer short-circuit every
 		// listing would stack duplicate meeting / summary / fiscal rows. But a
-		// sibling listing for the *same* meeting date (agenda + minutes +
-		// ordinance) should merge its document into the existing meeting
-		// rather than be dropped. See issues #37 and #27.
-		const existing = await tx
+		// sibling listing for the *same* meeting (agenda + minutes + ordinance)
+		// should merge its document into the existing meeting rather than be
+		// dropped. See issues #37 and #27.
+		const sameDay = and(
+			eq(schema.meetings.bodyId, body.id),
+			eq(schema.meetings.date, input.date),
+		);
+		const byKey = await tx
 			.select()
 			.from(schema.meetings)
-			.where(
-				and(
-					eq(schema.meetings.bodyId, body.id),
-					eq(schema.meetings.date, input.date),
-					eq(schema.meetings.session, session),
-				),
-			)
+			.where(and(sameDay, eq(schema.meetings.session, session)))
 			.get();
+
+		// A session is derived from a label the source can reword. A same-day
+		// meeting that already holds one of these documents is this meeting
+		// under an earlier label, not a second one.
+		const existing =
+			byKey ??
+			(input.documents.length === 0
+				? undefined
+				: (
+						await tx
+							.select({ meeting: schema.meetings })
+							.from(schema.meetings)
+							.innerJoin(
+								schema.documents,
+								eq(schema.documents.meetingId, schema.meetings.id),
+							)
+							.where(
+								and(
+									sameDay,
+									inArray(
+										schema.documents.sourceUrl,
+										input.documents.map((d) => d.sourceUrl),
+									),
+								),
+							)
+							.orderBy(schema.meetings.id)
+							.get()
+					)?.meeting);
 
 		if (existing) {
 			for (const doc of input.documents) {
