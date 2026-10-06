@@ -19,8 +19,9 @@ type EgovDocumentListing = {
 	date: string;
 	/**
 	 * The real meeting date in ISO YYYY-MM-DD, extracted from the title.
-	 * Null when the title has no recognizable long-form date. The listing's
-	 * `date` cell is the portal upload date, not the meeting date — see #27.
+	 * Null when the title has no recognizable date, long-form or numeric.
+	 * The listing's `date` cell is the portal upload date, not the meeting
+	 * date — see #27.
 	 */
 	meetingDate: string | null;
 	/**

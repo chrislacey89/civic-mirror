@@ -1,7 +1,7 @@
-import { Effect, Layer, Logger, References } from "effect";
+import { Clock, Duration, Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
-import { LlmError } from "#/pipeline/errors.ts";
+import { LlmError, NetworkError } from "#/pipeline/errors.ts";
 import {
 	runDramaDetectForVideo,
 	runPipeline,
@@ -64,6 +64,7 @@ function emptyCallLog(): CallLog {
 type StubConfig = {
 	log: CallLog;
 	egovListings?: EgovDocumentListing[];
+	egovScrapeError?: NetworkError;
 	finalsiteListings?: FinalsiteMeetingListing[];
 	youtubeVideos?: YouTubeVideo[];
 	summarizationResult?: SummarizationResult;
@@ -87,9 +88,11 @@ function buildStubLayers(config: StubConfig) {
 
 	const egov = Layer.succeed(EgovScraper, {
 		scrapeListings: () =>
-			Effect.sync(() => {
+			Effect.suspend(() => {
 				config.log.egovScrape += 1;
-				return config.egovListings ?? [];
+				return config.egovScrapeError
+					? Effect.fail(config.egovScrapeError)
+					: Effect.succeed(config.egovListings ?? []);
 			}),
 		downloadDocument: (url) =>
 			Effect.sync(() => {
@@ -215,6 +218,32 @@ function buildStubLayers(config: StubConfig) {
 		alert,
 		drama,
 	);
+}
+
+/**
+ * Runs `program` under a clock whose sleeps return at once, recording each
+ * requested duration in milliseconds so a test can assert on pacing without
+ * waiting for it.
+ */
+function withRecordedSleeps<A, E, R>(program: Effect.Effect<A, E, R>) {
+	const sleeps: number[] = [];
+	const effect = Clock.clockWith((live) =>
+		program.pipe(
+			Effect.provideService(Clock.Clock, {
+				currentTimeMillisUnsafe: () => live.currentTimeMillisUnsafe(),
+				currentTimeMillis: live.currentTimeMillis,
+				currentTimeNanosUnsafe: () => live.currentTimeNanosUnsafe(),
+				currentTimeNanos: live.currentTimeNanos,
+				monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
+				monotonicTimeNanos: live.monotonicTimeNanos,
+				sleep: (duration) =>
+					Effect.sync(() => {
+						sleeps.push(Duration.toMillis(duration));
+					}),
+			}),
+		),
+	);
+	return { sleeps, effect };
 }
 
 describe("runPipeline", () => {
@@ -374,6 +403,88 @@ describe("runPipeline", () => {
 		expect(result).toEqual({ processed: 1, errors: 1 });
 	});
 
+	it("spends the crawl delay only on the eGov listing it downloaded, not on one held for its date", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 42,
+					title: "Town Council Annual Report",
+					date: "03/15/2026",
+					downloadUrl: "https://example.com/doc/42",
+					meetingDate: null,
+					documentType: "minutes",
+				},
+				{
+					id: 43,
+					title: "Town Council Meeting Minutes 03-09-26",
+					date: "03/15/2026",
+					downloadUrl: "https://example.com/doc/43",
+					meetingDate: "2026-03-09",
+					documentType: "minutes",
+				},
+			],
+		});
+
+		const { sleeps, effect } = withRecordedSleeps(
+			runPipeline({
+				bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+				crawlDelayMs: 300_000,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+				dryRun: false,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		const result = await Effect.runPromise(effect);
+
+		expect(result).toEqual({ processed: 1, errors: 1 });
+		expect(log.egovDownload).toEqual(["https://example.com/doc/43"]);
+		expect(sleeps).toEqual([300_000]);
+	});
+
+	it("still spends the crawl delay on an eGov listing that was downloaded and then failed", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 43,
+					title: "Town Council Meeting Minutes 03-09-26",
+					date: "03/15/2026",
+					downloadUrl: "https://example.com/doc/43",
+					meetingDate: "2026-03-09",
+					documentType: "minutes",
+				},
+			],
+			summarizationError: new Error("LLM boom"),
+		});
+
+		const { sleeps, effect } = withRecordedSleeps(
+			runPipeline({
+				bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+				crawlDelayMs: 300_000,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+				dryRun: false,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		const result = await Effect.runPromise(effect);
+
+		// The listing failed, but only after its document was requested from
+		// the portal, so the request still has to be paced.
+		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(log.egovDownload).toEqual(["https://example.com/doc/43"]);
+		expect(log.store).toHaveLength(0);
+		expect(sleeps).toEqual([300_000]);
+	});
+
 	it("skips storage and alerts in dry-run mode but still scrapes and summarizes", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
@@ -515,6 +626,34 @@ describe("runPipeline", () => {
 		expect(log.alert.length).toBeGreaterThanOrEqual(1);
 		expect(log.alert[0].subject).toContain("summarize");
 		expect(result.errors).toBe(2);
+	});
+
+	it("alerts that the whole body was skipped when its listings cannot be fetched", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovScrapeError: new NetworkError({
+				url: "https://example.com/listings",
+				message: "portal unreachable",
+			}),
+		});
+
+		const program = runPipeline({
+			bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("portal unreachable");
+		expect(log.alert[0].body).toContain("this body was skipped");
 	});
 
 	it("retries a failing LLM call exactly `attempts` more times before giving up", async () => {
@@ -856,6 +995,45 @@ describe("runPipeline", () => {
 		expect(log.alert.some((a) => a.subject.includes("drama-detection"))).toBe(
 			true,
 		);
+	});
+
+	it("alerts that only the one video was affected when its drama detection fails", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					videoId: "abc123",
+					title: "Town Council, March 23, 2026",
+					publishedAt: "2026-03-24T00:00:00Z",
+					hasCaptions: true,
+				},
+			],
+			dramaDetectionError: new Error("Gemini API down"),
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "town-council",
+					name: "Town Council",
+					youtubePlaylistId: "PL_test",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].subject).toContain("drama-detection");
+		expect(log.alert[0].body).toContain("rest of Town Council");
+		expect(log.alert[0].body).not.toContain("this body was skipped");
 	});
 
 	it("persists an unreadable eGov PDF as a document row without summarizing", async () => {
@@ -1376,6 +1554,55 @@ describe("runPipeline stage logging", () => {
 		expect(transcribeStart?.annotations.body).toBe("school-board");
 		expect(transcribeStart?.annotations.videoId).toBe("vid-001");
 	});
+
+	it("logs a skipped month-only Finalsite listing with its date cell and meeting type", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "September 2025",
+					meetingType: "Superintendent's Contract",
+					year: 2025,
+					documents: [
+						{
+							uuid: "uuid-month-only",
+							documentType: "notice",
+							downloadUrl: "/fs/resource-manager/view/uuid-month-only",
+							fileName: "uuid-month-only.pdf",
+						},
+					],
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const skipped = findStageLog(captured, "finalsite.listing.skipped");
+		expect(skipped?.annotations).toMatchObject({
+			body: "school-board",
+			reason: "month-only date",
+			date: "September 2025",
+			meetingType: "Superintendent's Contract",
+		});
+	});
 });
 
 describe("runDramaDetectForVideo", () => {
@@ -1406,5 +1633,31 @@ describe("runDramaDetectForVideo", () => {
 		expect(log.drama).toBe(1);
 		expect(result.processed).toBe(1);
 		expect(result.errors).toBe(0);
+	});
+	it.each([
+		["drama detection", { dramaDetectionError: new Error("Gemini API down") }],
+		["summarization", { summarizationError: new Error("Gemini API down") }],
+	])("does not promise to continue with the body when %s fails for the one video", async (_stage, failure) => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({ log, ...failure });
+
+		const program = runDramaDetectForVideo({
+			body: { slug: "town-council", name: "Town Council" },
+			video: {
+				videoId: "rbb-hiring-2026-04-15",
+				title: "RBB School Board, April 15 2026",
+				publishedAt: "2026-04-15T00:00:00Z",
+				hasCaptions: true,
+			},
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("Gemini API down");
+		expect(log.alert[0].body).not.toContain("rest of Town Council");
+		expect(log.alert[0].body).toContain("only item in this run");
 	});
 });

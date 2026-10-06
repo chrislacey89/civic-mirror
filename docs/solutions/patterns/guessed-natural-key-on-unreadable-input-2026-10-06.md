@@ -53,7 +53,7 @@ Two decisions combined.
 
 ## Solution
 
-Readers return `null` for input with no readable date. The orchestrator fails the listing with `UndatedListingError` before any download, and the existing per-listing recovery alerts and continues.
+Readers return `null`, or an outcome that carries no date, for input with no readable date. The orchestrator fails the listing with `UndatedListingError` before any download, and the existing per-listing recovery alerts and continues.
 
 **Before:**
 ```typescript
@@ -79,7 +79,7 @@ On the school-board path the same hold applied, with one exception found by runn
 
 **Code-level:**
 
-- `src/pipeline/dates.test.ts`, "date readers never guess": every function exported from `src/pipeline/dates.ts` must be listed either as a date reader, with a call that hands it undated input and must return `null`, or as not a date reader. A new export fails the test until it is listed, so a new reader cannot be added without stating what it does with unreadable input.
+- `src/pipeline/dates.test.ts`, "date readers never guess": every function exported from `src/pipeline/dates.ts` must be listed either as a date reader, with a call that hands it undated input and must return `null` or an outcome that carries no date (`readFinalsiteDate` returns `{ kind: "unreadable" }`, which the test adapts to `null`), or as not a date reader. A new export fails the test until it is listed, so a new reader cannot be added without stating what it does with unreadable input.
 - Tests for a parser that feeds a key need cases in both directions: inputs it must read, and inputs it must refuse. The refusals found on this branch were a four-digit year, an ISO date, a longer hyphenated number, and an impossible day.
 - The check does not reach code that derives a key outside `dates.ts`. `processYouTubeVideo` still stores `video.publishedAt.slice(0, 10)` as the meeting date. It is latent because no configured body has a playlist.
 

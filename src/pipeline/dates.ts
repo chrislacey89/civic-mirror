@@ -34,6 +34,18 @@ export const MONTH_BY_NAME = {
 export type MonthName = keyof typeof MONTH_BY_NAME;
 
 /**
+ * The zero-padded month number for a month name in any case, or null when the
+ * word is not a month. An own-key check, so words that name inherited object
+ * properties ("constructor") are not months.
+ */
+function monthNumber(name: string): (typeof MONTH_BY_NAME)[MonthName] | null {
+	const key = name.toLowerCase();
+	return Object.hasOwn(MONTH_BY_NAME, key)
+		? MONTH_BY_NAME[key as MonthName]
+		: null;
+}
+
+/**
  * Extracts the real meeting date from a document title in the eGov portal.
  *
  * Background: the eGov listing table's date column is the *publish* date
@@ -44,6 +56,7 @@ export type MonthName = keyof typeof MONTH_BY_NAME;
  * two-digit year ("Town Council Meeting Minutes 03-23-26", "... 12-9-24").
  * The long form wins when a title carries both, because numbered documents
  * ("Ordinance 2025-14 Adopted December 22, 2025") put digit runs before it.
+ * A numeric run that is a resolution's or ordinance's own number is not read.
  *
  * Returns ISO YYYY-MM-DD on success, or null when the title has no
  * recognizable date or names a day that does not exist. See issues #27 and #115.
@@ -57,16 +70,22 @@ function extractLongFormDate(title: string): string | null {
 		/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:,\s*|\s+)(\d{4})\b/i,
 	);
 	if (!match) return null;
-	const monthKey = match[1].toLowerCase() as MonthName;
-	const month = MONTH_BY_NAME[monthKey];
+	const month = monthNumber(match[1]);
 	if (!month) return null;
 	const day = match[2].padStart(2, "0");
 	const iso = `${match[3]}-${month}-${day}`;
 	return isCalendarDate(iso) ? iso : null;
 }
 
+/**
+ * A run directly after "Resolution" or "Ordinance" (optionally "No." or "#")
+ * is that document's number, which can be date-shaped ("Resolution 01-02-26").
+ * It is passed over rather than read as the meeting date.
+ */
 function extractNumericDate(title: string): string | null {
-	const match = title.match(/(?<![\d-])(\d{1,2})-(\d{1,2})-(\d{2})(?![\d-])/);
+	const match = title.match(
+		/(?<![\d-])(?<!\b(?:resolution|ordinance)\s+(?:no\.?\s*|#\s*)?)(\d{1,2})-(\d{1,2})-(\d{2})(?![\d-])/i,
+	);
 	if (!match) return null;
 	const iso = `20${match[3]}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
 	return isCalendarDate(iso) ? iso : null;
@@ -81,29 +100,37 @@ function isCalendarDate(iso: string): boolean {
 }
 
 /**
- * Converts Finalsite "Month Day[, Year]" (e.g. "January 6, 2026") to ISO,
- * taking `year` when the label carries none. Returns null when the label is
- * not in that form, names an unknown month, or names a day that does not exist.
+ * What a Finalsite date cell says. `month-only` is a known month name and a
+ * four-digit year with no day (e.g. "September 2025"): such a row is not a
+ * dated meeting. `unreadable` is everything else the reader cannot turn into
+ * a day that exists.
  */
-export function normalizeFinalsiteDate(
+export type FinalsiteDateReading =
+	| { kind: "dated"; date: string }
+	| { kind: "month-only" }
+	| { kind: "unreadable" };
+
+/**
+ * Reads a Finalsite date cell. "Month Day[, Year]" (e.g. "January 6, 2026")
+ * becomes an ISO date, taking `year` when the label carries none.
+ */
+export function readFinalsiteDate(
 	label: string,
 	year: number,
-): string | null {
+): FinalsiteDateReading {
+	const monthOnly = label.match(/^([A-Za-z]+)\s+\d{4}$/);
+	if (monthOnly && monthNumber(monthOnly[1])) {
+		return { kind: "month-only" };
+	}
+
 	const match = label.match(/^(\w+)\s+(\d+),?\s*(\d+)?$/);
-	if (!match) return null;
-	const month = MONTH_BY_NAME[match[1].toLowerCase() as MonthName];
-	if (!month) return null;
+	if (!match) return { kind: "unreadable" };
+	const month = monthNumber(match[1]);
+	if (!month) return { kind: "unreadable" };
 	const day = match[2].padStart(2, "0");
 	const parsedYear = match[3] ? Number(match[3]) : year;
 	const iso = `${parsedYear}-${month}-${day}`;
-	return isCalendarDate(iso) ? iso : null;
-}
-
-/**
- * True when a Finalsite date cell is a known month name and a four-digit year
- * with no day (e.g. "September 2025"). Such a row is not a dated meeting.
- */
-export function isMonthOnlyFinalsiteDate(label: string): boolean {
-	const match = label.match(/^([A-Za-z]+)\s+\d{4}$/);
-	return match !== null && match[1].toLowerCase() in MONTH_BY_NAME;
+	return isCalendarDate(iso)
+		? { kind: "dated", date: iso }
+		: { kind: "unreadable" };
 }
