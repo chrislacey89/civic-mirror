@@ -34,7 +34,8 @@ export const MONTH_BY_NAME = {
 export type MonthName = keyof typeof MONTH_BY_NAME;
 
 /**
- * Extracts the real meeting date from a document title in the eGov portal.
+ * Extracts the real meeting date from an eGov document title or a CATS
+ * video title ("Ellettsville Town Council, July 14, 2026").
  *
  * Background: the eGov listing table's date column is the *publish* date
  * (when the document was uploaded to the portal), which tends to collapse
@@ -46,7 +47,8 @@ export type MonthName = keyof typeof MONTH_BY_NAME;
  * ("Ordinance 2025-14 Adopted December 22, 2025") put digit runs before it.
  *
  * Returns ISO YYYY-MM-DD on success, or null when the title has no
- * recognizable date or names a day that does not exist. See issues #27 and #115.
+ * recognizable date or names a day that does not exist. See issues #27, #115
+ * and #117.
  */
 export function extractMeetingDateFromTitle(title: string): string | null {
 	return extractLongFormDate(title) ?? extractNumericDate(title);
@@ -54,7 +56,7 @@ export function extractMeetingDateFromTitle(title: string): string | null {
 
 function extractLongFormDate(title: string): string | null {
 	const match = title.match(
-		/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:,\s*|\s+)(\d{4})\b/i,
+		/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:\s*,\s*|\s+)(\d{4})\b/i,
 	);
 	if (!match) return null;
 	const monthKey = match[1].toLowerCase() as MonthName;

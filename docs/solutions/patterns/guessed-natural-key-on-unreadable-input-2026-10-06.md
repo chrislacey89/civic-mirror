@@ -81,7 +81,7 @@ On the school-board path the same hold applied, with one exception found by runn
 
 - `src/pipeline/dates.test.ts`, "date readers never guess": every function exported from `src/pipeline/dates.ts` must be listed either as a date reader, with a call that hands it undated input and must return `null`, or as not a date reader. A new export fails the test until it is listed, so a new reader cannot be added without stating what it does with unreadable input.
 - Tests for a parser that feeds a key need cases in both directions: inputs it must read, and inputs it must refuse. The refusals found on this branch were a four-digit year, an ISO date, a longer hyphenated number, and an impossible day.
-- The check does not reach code that derives a key outside `dates.ts`. `processYouTubeVideo` still stores `video.publishedAt.slice(0, 10)` as the meeting date. It is latent because no configured body has a playlist.
+- The check does not reach code that derives a key outside `dates.ts`. `processYouTubeVideo` stored `video.publishedAt.slice(0, 10)` as the meeting date, and the `drama:detect` command defaulted `--date` to today; both were found by searching for the shape and fixed in #117.
 
 **Process-level:**
 
@@ -97,7 +97,7 @@ On the school-board path the same hold applied, with one exception found by runn
 ## Defect Classification
 
 **Origin phase:** Design error. The fallback was specified and commented; it was the wrong outcome for a key field.
-**Fix type:** Correction for the eGov and school-board paths. The YouTube path is unchanged and tracked separately.
+**Fix type:** Correction for the eGov and school-board paths. The YouTube path was corrected separately in #117.
 
 ## Key Decision
 

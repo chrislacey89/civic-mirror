@@ -107,6 +107,20 @@ describe("EgovScraper", () => {
 			).toBe("2026-01-21");
 		});
 
+		it("extracts a long-form date with a space before the comma", () => {
+			expect(
+				extractMeetingDateFromTitle(
+					"Monroe County Commissioners, February 12 , 2026",
+				),
+			).toBe("2026-02-12");
+		});
+
+		it("returns null when the day and year run together", () => {
+			expect(
+				extractMeetingDateFromTitle("Town Council Meeting March 232026"),
+			).toBeNull();
+		});
+
 		it("extracts a numeric 'MM-DD-YY' date from a minutes title", () => {
 			expect(
 				extractMeetingDateFromTitle("Town Council Meeting Minutes 03-23-26"),
