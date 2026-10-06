@@ -29,6 +29,15 @@ describe("computeSourceFingerprint", () => {
 		);
 	});
 
+	// Stored summaries carry this value and are regenerated when it differs, so a
+	// change to the hash or encoding must fail here. The literal is the SHA-256 of
+	// the sorted, de-duplicated URL list as compact JSON, computed outside the code.
+	it("keeps the fingerprint of a fixed URL list stable", () => {
+		expect(computeSourceFingerprint([VIDEO, MINUTES, VIDEO])).toBe(
+			"03b84711f2e7c7d40fa0140619d1fa11280442a4d1d0185890f2e3fd05e026b3",
+		);
+	});
+
 	it("is never the empty string that marks a summary with no recorded sources", () => {
 		expect(computeSourceFingerprint([])).not.toBe("");
 	});
