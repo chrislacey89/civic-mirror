@@ -11,9 +11,9 @@ on:
         type: boolean
         default: false
       sources:
-        description: Comma-separated source paths to run (egov, finalsite, youtube). Empty runs all.
+        description: Comma-separated source paths to run (egov, finalsite, youtube). Name youtube to run the video path. Clearing the field runs all three.
         type: string
-        default: ""
+        default: "egov,finalsite"
 
 permissions:
   contents: read
@@ -58,7 +58,8 @@ jobs:
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          # Both inputs are empty on a scheduled run.
+          # Both inputs are empty on a scheduled run (input defaults do not
+          # apply to the schedule event).
           EVENT_NAME: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry_run }}
           SOURCES: ${{ inputs.sources }}
@@ -67,10 +68,12 @@ jobs:
         run: |
           args=()
           if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
-          # The schedule leaves out the video path until the January-March 2026
-          # meetings are repaired (#115) and near-date videos are held (#137);
-          # until then it runs only on manual dispatch (sources: youtube, or
-          # empty for every source).
+          # The video path stays out of the schedule and out of a default manual
+          # run until the January-March 2026 meetings are repaired (#115) and
+          # near-date videos are held (#137). The input defaults to
+          # egov,finalsite for dispatch; the schedule sees an empty input, so it
+          # names the same sources itself. Video runs only when someone names
+          # youtube (or clears the field, which runs every source).
           if [ -n "$SOURCES" ]; then
             args+=(--sources "$SOURCES")
           elif [ "$EVENT_NAME" = "schedule" ]; then
