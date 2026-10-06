@@ -21,7 +21,19 @@ const session = flags
 	.find((f) => f.startsWith("--session="))
 	?.slice("--session=".length);
 
-if (!bodySlug || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+const unknownFlags = flags.filter(
+	(f) => f !== "--confirm" && !f.startsWith("--session="),
+);
+
+if (
+	!bodySlug ||
+	!date ||
+	!/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+	unknownFlags.length > 0
+) {
+	if (unknownFlags.length > 0) {
+		console.error(`unrecognised argument: ${unknownFlags.join(" ")}`);
+	}
 	console.error(
 		"usage: delete-meeting.ts <body-slug> <YYYY-MM-DD> [--session=<slug>] [--confirm]",
 	);
