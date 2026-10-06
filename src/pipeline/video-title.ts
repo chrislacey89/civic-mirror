@@ -1,4 +1,5 @@
 import { extractLongFormDate } from "#/pipeline/dates.ts";
+import { sessionSlug } from "#/pipeline/sources.ts";
 
 /**
  * What a playlist video's title says. `unrecognized` is every title that is
@@ -41,15 +42,8 @@ export function readVideoTitle(
 
 	// An empty session is the regular meeting's key, so a qualifier that slugs
 	// to nothing cannot be told apart from it.
-	const session = slugify(qualifier);
+	const session = sessionSlug(qualifier);
 	if (session === "") return { kind: "unrecognized" };
 
 	return { kind: "meeting", date, session, qualifier };
-}
-
-function slugify(label: string): string {
-	return label
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "");
 }

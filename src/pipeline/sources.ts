@@ -18,3 +18,17 @@ export function computeSourceFingerprint(
 	// JSON keeps the boundaries between URLs, which a joined string would lose.
 	return createHash("sha256").update(JSON.stringify(unique)).digest("hex");
 }
+
+/**
+ * The session half of a meeting's key: a meeting label lowercased, with each
+ * run of other characters collapsed to one "-" and the ends trimmed. School
+ * board rows and video titles both build it here, because a video is paired
+ * with its documents by exact session. The start time stays in a Finalsite
+ * label's slug: two hearings on one day can differ in nothing else.
+ */
+export function sessionSlug(label: string): string {
+	return label
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
+}

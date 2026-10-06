@@ -25,7 +25,7 @@ import { TranscriptionService } from "#/pipeline/services/TranscriptionService.t
 import { formatTranscriptWithTimestamps } from "#/pipeline/services/transcriptFormatting.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
-import { computeSourceFingerprint } from "#/pipeline/sources.ts";
+import { computeSourceFingerprint, sessionSlug } from "#/pipeline/sources.ts";
 import { readVideoTitle } from "#/pipeline/video-title.ts";
 
 /** Threshold (in days) beyond which the zero-results anomaly alert fires. */
@@ -615,7 +615,7 @@ function processFinalsiteListing(
 		// The session slug is part of the meeting's key, and an empty one is the
 		// value that merges every meeting on a date. A type cell that slugs to
 		// nothing is held for the operator for the same reason.
-		const session = sessionFromFinalsiteLabel(listing.meetingType);
+		const session = sessionSlug(listing.meetingType);
 		if (session === "") {
 			return yield* Effect.fail(
 				new UnsessionedListingError({
@@ -1107,19 +1107,6 @@ function meetingTypeFromFinalsiteLabel(
 	if (lower.includes("special")) return "special";
 	if (lower.includes("workshop")) return "workshop";
 	return "regular";
-}
-
-/**
- * The school board lists each meeting of a day on its own row, so the row
- * label is what tells a Board of Finance meeting from the regular meeting
- * that follows it. The start time stays in the slug: two hearings on one day
- * can differ in nothing else.
- */
-function sessionFromFinalsiteLabel(label: string): string {
-	return label
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, "-")
-		.replace(/^-+|-+$/g, "");
 }
 
 /**
