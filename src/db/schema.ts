@@ -7,6 +7,7 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type { DramaCategory, DramaLevel } from "../lib/drama-levels";
+import type { SourceDisagreement, SourceKind } from "../pipeline/sources";
 
 /**
  * Star schema with `meetings` at the center.
@@ -154,19 +155,36 @@ export const transcripts = sqliteTable(
  * LLM-generated meeting summaries. Each summary includes structured highlights
  * (JSON array of bullet-point strings) and a prose paragraph. The `model` field
  * records which LLM produced the summary for reproducibility and auditing.
+ *
+ * A meeting has at most one summary. `sourceKinds` and `sourceFingerprint`
+ * record what it was built from; a summary with no recorded sources carries
+ * `[]` and `""`, and `""` never equals a computed fingerprint.
  */
-export const summaries = sqliteTable("summaries", {
-	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-	meetingId: integer("meeting_id")
-		.notNull()
-		.references(() => meetings.id),
-	highlights: text({ mode: "json" }).notNull(), // string[]
-	prose: text().notNull(),
-	model: text().notNull(), // e.g. "gemini-2.5-flash"
-	createdAt: integer("created_at", { mode: "timestamp" }).default(
-		sql`(unixepoch())`,
-	),
-});
+export const summaries = sqliteTable(
+	"summaries",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		meetingId: integer("meeting_id")
+			.notNull()
+			.references(() => meetings.id),
+		highlights: text({ mode: "json" }).notNull(), // string[]
+		prose: text().notNull(),
+		model: text().notNull(), // e.g. "gemini-2.5-flash"
+		sourceKinds: text("source_kinds", { mode: "json" })
+			.notNull()
+			.default(sql`'[]'`)
+			.$type<SourceKind[]>(),
+		sourceFingerprint: text("source_fingerprint").notNull().default(""),
+		sourceDisagreements: text("source_disagreements", { mode: "json" })
+			.notNull()
+			.default(sql`'[]'`)
+			.$type<SourceDisagreement[]>(),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [uniqueIndex("summaries_meeting_id_unique").on(table.meetingId)],
+);
 
 /**
  * Structured spending data extracted from meeting minutes — the core value prop.

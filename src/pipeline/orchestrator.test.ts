@@ -18,6 +18,7 @@ import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
 import type {
 	Meeting,
 	MeetingInput,
+	MeetingSourceState,
 } from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import type { SummarizationResult } from "#/pipeline/services/SummarizationService.ts";
@@ -41,6 +42,7 @@ type CallLog = {
 	summarize: Array<{ sourceText: string; meetingContext: string }>;
 	store: Array<{ bodySlug: string; date: string }>;
 	storeInputs: Array<MeetingInput>;
+	transcripts: Array<{ meetingId: number; sourceUrl?: string }>;
 	alert: Array<{ subject: string; body: string }>;
 	drama: number;
 };
@@ -56,6 +58,7 @@ function emptyCallLog(): CallLog {
 		summarize: [],
 		store: [],
 		storeInputs: [],
+		transcripts: [],
 		alert: [],
 		drama: 0,
 	};
@@ -72,6 +75,15 @@ type StubConfig = {
 	storedMeeting?: Meeting;
 	lastMeetingLookup?: MeetingDetail | null;
 	mostRecentMeetingDate?: string | null;
+	/** What storage already holds for a `(date, session)`; nothing by default. */
+	meetingSourceState?: (key: {
+		date: string;
+		session: string;
+	}) => MeetingSourceState | null;
+	/** Video URLs storage already holds a transcript for. */
+	storedVideoUrls?: string[];
+	/** Replaces the storage stub, for tests that run against a real database. */
+	storage?: Layer.Layer<StorageService>;
 	dramaDetectionResult?: DramaAssessmentResult;
 	dramaDetectionError?: Error;
 };
@@ -161,10 +173,20 @@ function buildStubLayers(config: StubConfig) {
 			}),
 		getMeetingByBodyAndDate: () =>
 			Effect.sync(() => config.lastMeetingLookup ?? null),
-		storeTranscript: () => Effect.void,
+		storeTranscript: (input) =>
+			Effect.sync(() => {
+				config.log.transcripts.push({
+					meetingId: input.meetingId,
+					sourceUrl: input.sourceUrl,
+				});
+			}),
 		getMostRecentMeetingDate: () =>
 			Effect.sync(() => config.mostRecentMeetingDate ?? null),
 		storeDramaAssessment: () => Effect.void,
+		getMeetingSourceState: (key) =>
+			Effect.sync(() => config.meetingSourceState?.(key) ?? null),
+		hasTranscriptForVideo: (sourceUrl) =>
+			Effect.sync(() => (config.storedVideoUrls ?? []).includes(sourceUrl)),
 	});
 
 	const alert = Layer.succeed(AlertService, {
@@ -214,7 +236,7 @@ function buildStubLayers(config: StubConfig) {
 		youtube,
 		transcription,
 		summarization,
-		storage,
+		config.storage ?? storage,
 		alert,
 		drama,
 	);

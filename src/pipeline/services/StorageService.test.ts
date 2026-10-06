@@ -7,6 +7,7 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import { Effect } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
+import { computeSourceFingerprint } from "#/pipeline/sources.ts";
 import {
 	OCR_CONFIDENCE_MULTIPLIER,
 	StorageService,
@@ -864,6 +865,247 @@ describe("StorageService", () => {
 			expect(rows[0].level).toBe("routine");
 			// Routine auto-publishes
 			expect(rows[0].publishedAt).toBeInstanceOf(Date);
+		});
+	});
+
+	describe("summary sources", () => {
+		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+		const videoOnlyInput = {
+			bodySlug: "ellettsville-town-council",
+			date: "2025-08-25",
+			meetingType: "regular" as const,
+			documents: [],
+			summary: {
+				highlights: ["Discussed the wheel tax"],
+				prose: "The council discussed a wheel tax.",
+				model: "gemini-2.5-flash",
+				sourceKinds: ["transcript" as const],
+				sourceFingerprint: computeSourceFingerprint([VIDEO_URL]),
+			},
+		};
+
+		it("stores the source kinds and fingerprint a summary was built from", async () => {
+			const db = await createTestDb();
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeMeeting(videoOnlyInput);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			const rows = await db.select().from(schema.summaries).all();
+			expect(rows).toHaveLength(1);
+			expect(rows[0].sourceKinds).toEqual(["transcript"]);
+			expect(rows[0].sourceFingerprint).toBe(
+				computeSourceFingerprint([VIDEO_URL]),
+			);
+			expect(rows[0].sourceDisagreements).toEqual([]);
+		});
+
+		it("reads a summary written before the source columns existed as having no recorded sources", async () => {
+			// Migrate to the schema as it stood before 0007, write a summary
+			// there, then apply 0007 over it.
+			const before = fs.mkdtempSync(path.join(os.tmpdir(), "cm-migrations-"));
+			fs.cpSync("./drizzle", before, { recursive: true });
+			const journalPath = path.join(before, "meta", "_journal.json");
+			const journal = JSON.parse(fs.readFileSync(journalPath, "utf8"));
+			journal.entries = journal.entries.filter(
+				(e: { idx: number }) => e.idx < 7,
+			);
+			fs.writeFileSync(journalPath, JSON.stringify(journal));
+
+			const tmpFile = path.join(
+				os.tmpdir(),
+				`civic-mirror-test-${process.pid}-${dbCounter++}.db`,
+			);
+			tmpFiles.push(tmpFile);
+			const client = createClient({ url: `file:${tmpFile}` });
+			const db = drizzle(client, { schema });
+			await migrate(db, { migrationsFolder: before });
+			fs.rmSync(before, { recursive: true });
+
+			await client.executeMultiple(`
+				insert into governing_bodies (name, slug, type) values ('Town Council', 'tc', 'town');
+				insert into meetings (body_id, date) values (1, '2025-06-09');
+				insert into summaries (meeting_id, highlights, prose, model) values (1, '["h"]', 'p', 'm');
+			`);
+
+			await migrate(db, { migrationsFolder: "./drizzle" });
+
+			const rows = await db.select().from(schema.summaries).all();
+			expect(rows).toHaveLength(1);
+			expect(rows[0].sourceKinds).toEqual([]);
+			expect(rows[0].sourceFingerprint).toBe("");
+			expect(rows[0].sourceDisagreements).toEqual([]);
+		});
+
+		it("refuses a second summary for a meeting", async () => {
+			const db = await createTestDb();
+			const meeting = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(videoOnlyInput);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			await expect(
+				db
+					.insert(schema.summaries)
+					.values({
+						meetingId: meeting.id,
+						highlights: [],
+						prose: "a second summary",
+						model: "m",
+					})
+					.run(),
+			).rejects.toThrow();
+		});
+	});
+
+	describe("getMeetingSourceState", () => {
+		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+		const key = {
+			bodySlug: "ellettsville-town-council",
+			date: "2026-03-23",
+			session: "",
+		};
+
+		function read(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			input: { bodySlug: string; date: string; session: string },
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.getMeetingSourceState(input);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		function store(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			input: Parameters<
+				Effect.Success<typeof StorageService>["storeMeeting"]
+			>[0],
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(input);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		it("returns null when the body has no meeting on that date and session", async () => {
+			const db = await createTestDb();
+			expect(await read(db, key)).toBeNull();
+		});
+
+		it("reports a meeting built from documents, with a summary that predates source kinds", async () => {
+			const db = await createTestDb();
+			const meeting = await store(db, testMeetingInput);
+
+			expect(await read(db, key)).toEqual({
+				meetingId: meeting.id,
+				date: "2026-03-23",
+				session: "",
+				hasDocuments: true,
+				transcriptSourceUrl: null,
+				summarySourceKinds: [],
+			});
+		});
+
+		it("reports a video-only meeting with its transcript URL and summary source kinds", async () => {
+			const db = await createTestDb();
+			const meeting = await store(db, {
+				...testMeetingInput,
+				documents: [],
+				summary: {
+					...testMeetingInput.summary,
+					sourceKinds: ["transcript"],
+					sourceFingerprint: computeSourceFingerprint([VIDEO_URL]),
+				},
+			});
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeTranscript({
+						meetingId: meeting.id,
+						source: "captions",
+						rawText: "transcript",
+						sourceUrl: VIDEO_URL,
+					});
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			expect(await read(db, key)).toEqual({
+				meetingId: meeting.id,
+				date: "2026-03-23",
+				session: "",
+				hasDocuments: false,
+				transcriptSourceUrl: VIDEO_URL,
+				summarySourceKinds: ["transcript"],
+			});
+		});
+
+		it("does not report the regular meeting for another session on its date", async () => {
+			const db = await createTestDb();
+			await store(db, testMeetingInput);
+
+			expect(
+				await read(db, { ...key, session: "budget-work-session" }),
+			).toBeNull();
+		});
+
+		it("does not report another body's meeting on the same date", async () => {
+			const db = await createTestDb();
+			await db
+				.insert(schema.governingBodies)
+				.values({ name: "Plan Commission", slug: "plan", type: "town" })
+				.run();
+			await store(db, testMeetingInput);
+
+			expect(await read(db, { ...key, bodySlug: "plan" })).toBeNull();
+		});
+	});
+
+	describe("hasTranscriptForVideo", () => {
+		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+
+		function has(db: Awaited<ReturnType<typeof createTestDb>>, url: string) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.hasTranscriptForVideo(url);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		it("is true once a transcript with that source URL is stored, and false for any other URL", async () => {
+			const db = await createTestDb();
+			expect(await has(db, VIDEO_URL)).toBe(false);
+
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					const meeting = yield* storage.storeMeeting({
+						...testMeetingInput,
+						documents: [],
+					});
+					yield* storage.storeTranscript({
+						meetingId: meeting.id,
+						source: "captions",
+						rawText: "transcript",
+						sourceUrl: VIDEO_URL,
+					});
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			expect(await has(db, VIDEO_URL)).toBe(true);
+			expect(await has(db, "https://www.youtube.com/watch?v=other")).toBe(
+				false,
+			);
 		});
 	});
 });

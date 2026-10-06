@@ -11,6 +11,7 @@ import {
 	mapSumToLevel,
 } from "#/lib/drama-levels.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
+import type { SourceKind } from "#/pipeline/sources.ts";
 
 /**
  * Effect teaching note: Context.Service creates a typed token that identifies a service
@@ -53,6 +54,10 @@ type MeetingInput = {
 		highlights: string[];
 		prose: string;
 		model: string;
+		/** Which kinds of source the summary was built from. */
+		sourceKinds?: SourceKind[];
+		/** `computeSourceFingerprint` of the source URLs the summary was built from. */
+		sourceFingerprint?: string;
 	};
 	fiscalDecisions?: Array<{
 		title: string;
@@ -91,6 +96,17 @@ type TranscriptInput = {
 	rawText: string;
 	segments?: Array<{ text: string; startMs: number; durationMs: number }>;
 	sourceUrl?: string;
+};
+
+/** Which sources a stored meeting holds, and which its summary was built from. */
+type MeetingSourceState = {
+	meetingId: number;
+	date: string;
+	session: string;
+	hasDocuments: boolean;
+	transcriptSourceUrl: string | null;
+	/** Empty for a summary with no recorded sources, and for a meeting with no summary. */
+	summarySourceKinds: SourceKind[];
 };
 
 /** Minimal handle returned after a successful store — just enough to reference the meeting. */
@@ -156,6 +172,20 @@ interface StorageServiceInterface {
 	storeDramaAssessment(
 		input: StoreDramaAssessmentInput,
 	): Effect.Effect<void, DatabaseError>;
+	/**
+	 * The sources held by the body's meeting on `date` under `session`, or
+	 * null when there is no such meeting. The session is matched exactly: ""
+	 * finds only the meeting stored without one.
+	 */
+	getMeetingSourceState(input: {
+		bodySlug: string;
+		date: string;
+		session: string;
+	}): Effect.Effect<MeetingSourceState | null, DatabaseError>;
+	/** True when a stored transcript, on any meeting, came from `sourceUrl`. */
+	hasTranscriptForVideo(
+		sourceUrl: string,
+	): Effect.Effect<boolean, DatabaseError>;
 }
 
 class StorageService extends Context.Service<
@@ -272,7 +302,87 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		getMeetingSourceState: (input) =>
+			Effect.tryPromise({
+				try: () => getMeetingSourceStateQuery(db, input),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "getMeetingSourceState",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		hasTranscriptForVideo: (sourceUrl) =>
+			Effect.tryPromise({
+				try: async () => {
+					const row = await db
+						.select({ id: schema.transcripts.id })
+						.from(schema.transcripts)
+						.where(eq(schema.transcripts.sourceUrl, sourceUrl))
+						.limit(1)
+						.get();
+					return row !== undefined;
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "hasTranscriptForVideo",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 	});
+}
+
+async function getMeetingSourceStateQuery(
+	db: LibSQLDatabase<typeof schema>,
+	input: { bodySlug: string; date: string; session: string },
+): Promise<MeetingSourceState | null> {
+	const meeting = await db
+		.select({
+			id: schema.meetings.id,
+			date: schema.meetings.date,
+			session: schema.meetings.session,
+		})
+		.from(schema.meetings)
+		.innerJoin(
+			schema.governingBodies,
+			eq(schema.meetings.bodyId, schema.governingBodies.id),
+		)
+		.where(
+			and(
+				eq(schema.governingBodies.slug, input.bodySlug),
+				eq(schema.meetings.date, input.date),
+				eq(schema.meetings.session, input.session),
+			),
+		)
+		.get();
+	if (!meeting) return null;
+
+	const document = await db
+		.select({ id: schema.documents.id })
+		.from(schema.documents)
+		.where(eq(schema.documents.meetingId, meeting.id))
+		.limit(1)
+		.get();
+	const transcript = await db
+		.select({ sourceUrl: schema.transcripts.sourceUrl })
+		.from(schema.transcripts)
+		.where(eq(schema.transcripts.meetingId, meeting.id))
+		.orderBy(schema.transcripts.id)
+		.limit(1)
+		.get();
+	const summary = await db
+		.select({ sourceKinds: schema.summaries.sourceKinds })
+		.from(schema.summaries)
+		.where(eq(schema.summaries.meetingId, meeting.id))
+		.get();
+
+	return {
+		meetingId: meeting.id,
+		date: meeting.date,
+		session: meeting.session,
+		hasDocuments: document !== undefined,
+		transcriptSourceUrl: transcript?.sourceUrl ?? null,
+		summarySourceKinds: summary?.sourceKinds ?? [],
+	};
 }
 
 /**
@@ -500,6 +610,8 @@ async function storeMeetingTransaction(
 					highlights: input.summary.highlights,
 					prose: input.summary.prose,
 					model: input.summary.model,
+					sourceKinds: input.summary.sourceKinds ?? [],
+					sourceFingerprint: input.summary.sourceFingerprint ?? "",
 				})
 				.run();
 		}
@@ -558,5 +670,6 @@ export type {
 	ExtractionMethod,
 	Meeting,
 	MeetingInput,
+	MeetingSourceState,
 	StoreDramaAssessmentInput,
 };
