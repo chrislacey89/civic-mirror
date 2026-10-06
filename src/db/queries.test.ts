@@ -842,6 +842,36 @@ describe("meetings that share a date", () => {
 		expect(result?.session).toBe("regular-meeting");
 		expect(result?.summary?.prose).toBe("prose of regular-meeting");
 	});
+	it("getMeetingByBodyAndDateQuery with no session returns the earliest stored on a multi-session date", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSession(db, body.id, "2026-01-20", "regular-meeting");
+		await seedSession(db, body.id, "2026-01-20", "executive-session");
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-01-20",
+		);
+
+		expect(result?.session).toBe("regular-meeting");
+	});
+
+	it("getMeetingByBodyAndDateQuery with no session prefers the empty session", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSession(db, body.id, "2026-01-20", "regular-meeting");
+		await seedSession(db, body.id, "2026-01-20", "");
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-01-20",
+		);
+
+		expect(result?.session).toBe("");
+	});
+
 	it("list queries carry each meeting's session so a link can name it", async () => {
 		const db = await createTestDb();
 		const body = await seedBody(db);

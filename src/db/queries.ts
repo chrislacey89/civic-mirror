@@ -606,7 +606,7 @@ export async function getMeetingByBodyAndDateQuery(
 
 	// With no session named, a date that holds one meeting resolves to it, so
 	// the plain /meetings/<body>/<date> URL keeps working. On a date with
-	// several, the empty session sorts first, then the earliest stored.
+	// several, the empty session wins, then the earliest stored (lowest id).
 	const meeting = await db
 		.select()
 		.from(schema.meetings)
@@ -619,7 +619,7 @@ export async function getMeetingByBodyAndDateQuery(
 					: eq(schema.meetings.session, session),
 			),
 		)
-		.orderBy(schema.meetings.session, schema.meetings.id)
+		.orderBy(desc(sql`${schema.meetings.session} = ''`), schema.meetings.id)
 		.get();
 
 	if (!meeting) return null;
