@@ -1,6 +1,7 @@
 import { Clock, Duration, Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
+import * as schema from "#/db/schema.ts";
 import { LlmError, NetworkError } from "#/pipeline/errors.ts";
 import {
 	runDramaDetectForVideo,
@@ -20,12 +21,17 @@ import type {
 	MeetingInput,
 	MeetingSourceState,
 } from "#/pipeline/services/StorageService.ts";
-import { StorageService } from "#/pipeline/services/StorageService.ts";
+import {
+	StorageService,
+	StorageServiceLive,
+} from "#/pipeline/services/StorageService.ts";
 import type { SummarizationResult } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
+import { computeSourceFingerprint } from "#/pipeline/sources.ts";
+import { createMigratedTestDb } from "#/pipeline/test-db.ts";
 
 /**
  * Test helpers — build stub Effect Layers for each service. Each stub records
@@ -1095,7 +1101,7 @@ describe("runPipeline", () => {
 			bodies: [
 				{
 					slug: "town-council",
-					name: "Town Council",
+					name: "Ellettsville Town Council",
 					youtubePlaylistId: "PL_test",
 				},
 			],
@@ -1136,7 +1142,7 @@ describe("runPipeline", () => {
 			bodies: [
 				{
 					slug: "town-council",
-					name: "Town Council",
+					name: "Ellettsville Town Council",
 					youtubePlaylistId: "PL_test",
 				},
 			],
@@ -1537,6 +1543,443 @@ function findStageLog(
 	return captured.find((c) => c.message.some((m) => m === tag));
 }
 
+describe("runPipeline video path", () => {
+	const TOWN_COUNCIL = {
+		slug: "ellettsville-town-council",
+		name: "Ellettsville Town Council",
+		youtubePlaylistId: "PL_test",
+		youtubeTitlePrefix: "Ellettsville Town Council",
+		youtubeSince: "2025-05-27",
+	};
+	const REGULAR: YouTubeVideo = {
+		videoId: "regular",
+		title: "Ellettsville Town Council, August 25, 2025",
+		publishedAt: "2025-08-27T00:00:00Z",
+		hasCaptions: true,
+	};
+	const WORK_SESSION: YouTubeVideo = {
+		videoId: "work",
+		title: "Ellettsville Town Council Budget Work Session, August 25, 2025",
+		publishedAt: "2025-08-27T00:00:00Z",
+		hasCaptions: true,
+	};
+	const url = (videoId: string) => `https://www.youtube.com/watch?v=${videoId}`;
+
+	function run(layers: ReturnType<typeof buildStubLayers>, youtubeDelayMs = 0) {
+		return runPipeline({
+			bodies: [TOWN_COUNCIL],
+			crawlDelayMs: 0,
+			youtubeDelayMs,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+	}
+
+	it("stores a video with no existing meeting as a transcript-only meeting with a drama assessment", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({ log, youtubeVideos: [REGULAR] });
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(result).toEqual({ processed: 1, errors: 0 });
+		expect(log.storeInputs).toHaveLength(1);
+		expect(log.storeInputs[0]).toMatchObject({
+			bodySlug: "ellettsville-town-council",
+			date: "2025-08-25",
+			session: "",
+			documents: [],
+		});
+		expect(log.storeInputs[0].summary?.sourceKinds).toEqual(["transcript"]);
+		expect(log.storeInputs[0].summary?.sourceFingerprint).toBe(
+			computeSourceFingerprint([url("regular")]),
+		);
+		expect(log.transcripts).toEqual([
+			{ meetingId: 1, sourceUrl: url("regular") },
+		]);
+		expect(log.drama).toBe(1);
+	});
+
+	it("stores a qualified title under the qualifier's session", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({ log, youtubeVideos: [WORK_SESSION] });
+
+		await Effect.runPromise(run(layers));
+
+		expect(log.storeInputs.map((i) => [i.date, i.session])).toEqual([
+			["2025-08-25", "budget-work-session"],
+		]);
+	});
+
+	it("fails a video titled for another body without transcribing or storing it, and continues", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					...REGULAR,
+					videoId: "plan",
+					title: "Ellettsville Plan Commission, August 25, 2025",
+				},
+				REGULAR,
+			],
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.transcribe).toEqual(["regular"]);
+		expect(log.storeInputs.map((i) => i.date)).toEqual(["2025-08-25"]);
+		expect(log.transcripts.map((t) => t.sourceUrl)).toEqual([url("regular")]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain(
+			"Ellettsville Plan Commission, August 25, 2025",
+		);
+		expect(result).toEqual({ processed: 1, errors: 1 });
+	});
+
+	it("fails a video whose title carries only a numeric date without transcribing it", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{ ...REGULAR, title: "Ellettsville Town Council, 08-25-25" },
+			],
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.transcribe).toEqual([]);
+		expect(log.store).toEqual([]);
+		expect(log.alert).toHaveLength(1);
+		expect(result).toEqual({ processed: 0, errors: 1 });
+	});
+
+	it("ignores a video dated before youtubeSince and takes one dated on it", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					...REGULAR,
+					videoId: "day-before",
+					title: "Ellettsville Town Council, May 26, 2025",
+				},
+				{
+					...REGULAR,
+					videoId: "first-day",
+					title: "Ellettsville Town Council, May 27, 2025",
+				},
+			],
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.transcribe).toEqual(["first-day"]);
+		expect(log.alert).toEqual([]);
+		expect(result).toEqual({ processed: 1, errors: 0 });
+	});
+
+	it("skips a video whose URL is already on a stored transcript before transcribing", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR, WORK_SESSION],
+			storedVideoUrls: [url("regular")],
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.transcribe).toEqual(["work"]);
+		expect(log.storeInputs.map((i) => i.session)).toEqual([
+			"budget-work-session",
+		]);
+		expect(result).toEqual({ processed: 1, errors: 0 });
+	});
+
+	it("defers a video whose meeting already has documents: no transcription, no write, one log line", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR, WORK_SESSION],
+			meetingSourceState: (key) =>
+				key.session === ""
+					? {
+							meetingId: 7,
+							date: key.date,
+							session: "",
+							hasDocuments: true,
+							transcriptSourceUrl: null,
+							summarySourceKinds: [],
+						}
+					: null,
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const result = await Effect.runPromise(
+			run(layers).pipe(Effect.provide(loggerLayer)),
+		);
+
+		// The regular meeting has minutes; the work session beside it does not.
+		expect(log.transcribe).toEqual(["work"]);
+		expect(log.summarize).toHaveLength(1);
+		expect(log.storeInputs.map((i) => i.session)).toEqual([
+			"budget-work-session",
+		]);
+		expect(log.transcripts.map((t) => t.sourceUrl)).toEqual([url("work")]);
+		expect(log.alert).toEqual([]);
+		expect(result).toEqual({ processed: 1, errors: 0 });
+
+		const deferred = captured.filter((c) =>
+			c.message.includes("youtube.video.deferred"),
+		);
+		expect(deferred).toHaveLength(1);
+		expect(deferred[0].annotations.videoId).toBe("regular");
+		expect(deferred[0].annotations.meetingId).toBe(7);
+	});
+
+	it("defers a second video for a meeting that already holds another video's transcript", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [{ ...REGULAR, videoId: "reupload" }],
+			meetingSourceState: (key) => ({
+				meetingId: 7,
+				date: key.date,
+				session: key.session,
+				hasDocuments: false,
+				transcriptSourceUrl: url("regular"),
+				summarySourceKinds: ["transcript"],
+			}),
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.transcribe).toEqual([]);
+		expect(log.store).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
+	});
+
+	it("paces only the videos it transcribes", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					...REGULAR,
+					videoId: "old",
+					title: "Ellettsville Town Council, January 13, 2025",
+				},
+				{ ...REGULAR, videoId: "stored" },
+				WORK_SESSION,
+			],
+			storedVideoUrls: [url("stored")],
+		});
+		const { sleeps, effect } = withRecordedSleeps(run(layers, 2000));
+
+		await Effect.runPromise(effect);
+
+		expect(log.transcribe).toEqual(["work"]);
+		expect(sleeps).toEqual([2000]);
+	});
+
+	describe("source selection", () => {
+		const BOTH = { ...TOWN_COUNCIL, egovSearchType: "12" };
+		const egovListing: EgovDocumentListing = {
+			id: 1,
+			title: "Town Council Meeting Minutes August 11, 2025",
+			date: "08/12/2025",
+			downloadUrl: "https://example.com/doc/1",
+			meetingDate: "2025-08-11",
+			documentType: "minutes",
+		};
+
+		function runSources(
+			log: CallLog,
+			sources?: Array<"egov" | "finalsite" | "youtube">,
+		) {
+			return runPipeline({
+				bodies: [BOTH],
+				crawlDelayMs: 0,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({ text: "minutes", method: "text-layer" }),
+				dryRun: false,
+				...(sources ? { sources } : {}),
+			}).pipe(
+				Effect.provide(
+					buildStubLayers({
+						log,
+						egovListings: [egovListing],
+						youtubeVideos: [REGULAR],
+					}),
+				),
+			);
+		}
+
+		it("runs only the video path when sources is youtube", async () => {
+			const log = emptyCallLog();
+
+			const result = await Effect.runPromise(runSources(log, ["youtube"]));
+
+			expect(log.egovScrape).toBe(0);
+			expect(log.egovDownload).toEqual([]);
+			expect(log.transcribe).toEqual(["regular"]);
+			expect(result).toEqual({ processed: 1, errors: 0 });
+		});
+
+		it("leaves the video path out when sources is egov", async () => {
+			const log = emptyCallLog();
+
+			await Effect.runPromise(runSources(log, ["egov"]));
+
+			expect(log.egovScrape).toBe(1);
+			expect(log.youtubeList).toEqual([]);
+			expect(log.transcribe).toEqual([]);
+		});
+
+		it("runs every path the body has when sources is omitted", async () => {
+			const log = emptyCallLog();
+
+			const result = await Effect.runPromise(runSources(log));
+
+			expect(log.egovScrape).toBe(1);
+			expect(log.youtubeList).toEqual(["PL_test"]);
+			expect(result).toEqual({ processed: 2, errors: 0 });
+		});
+	});
+
+	describe("against a real database", () => {
+		async function setup() {
+			const db = await createMigratedTestDb();
+			await db
+				.insert(schema.governingBodies)
+				.values({
+					name: TOWN_COUNCIL.name,
+					slug: TOWN_COUNCIL.slug,
+					type: "town",
+				})
+				.run();
+			const counts = async () => ({
+				meetings: (await db.select().from(schema.meetings).all()).length,
+				summaries: (await db.select().from(schema.summaries).all()).length,
+				transcripts: (await db.select().from(schema.transcripts).all()).length,
+				drama: (await db.select().from(schema.dramaAssessments).all()).length,
+			});
+			return { db, counts };
+		}
+
+		it("stores the regular and work-session videos of one date as two meetings", async () => {
+			const { db } = await setup();
+			const log = emptyCallLog();
+			const layers = buildStubLayers({
+				log,
+				youtubeVideos: [REGULAR, WORK_SESSION],
+				storage: StorageServiceLive(db),
+			});
+
+			const result = await Effect.runPromise(run(layers));
+
+			expect(result).toEqual({ processed: 2, errors: 0 });
+			const meetings = await db.select().from(schema.meetings).all();
+			expect(meetings.map((m) => [m.date, m.session]).sort()).toEqual([
+				["2025-08-25", ""],
+				["2025-08-25", "budget-work-session"],
+			]);
+			const transcripts = await db.select().from(schema.transcripts).all();
+			expect(transcripts.map((t) => [t.meetingId, t.sourceUrl]).sort()).toEqual(
+				[
+					[meetings.find((m) => m.session === "")?.id, url("regular")],
+					[meetings.find((m) => m.session !== "")?.id, url("work")],
+				].sort(),
+			);
+			const summaries = await db.select().from(schema.summaries).all();
+			expect(summaries.map((s) => s.sourceKinds)).toEqual([
+				["transcript"],
+				["transcript"],
+			]);
+			expect(
+				await db.select().from(schema.dramaAssessments).all(),
+			).toHaveLength(2);
+		});
+
+		it("makes zero transcribe and zero summarize calls on a second run over the same playlist", async () => {
+			const { db, counts } = await setup();
+			const videos = [REGULAR, WORK_SESSION];
+
+			const first = emptyCallLog();
+			await Effect.runPromise(
+				run(
+					buildStubLayers({
+						log: first,
+						youtubeVideos: videos,
+						storage: StorageServiceLive(db),
+					}),
+				),
+			);
+			expect(first.transcribe).toEqual(["regular", "work"]);
+			const afterFirst = await counts();
+
+			const second = emptyCallLog();
+			const result = await Effect.runPromise(
+				run(
+					buildStubLayers({
+						log: second,
+						youtubeVideos: videos,
+						storage: StorageServiceLive(db),
+					}),
+				),
+			);
+
+			expect(second.youtubeList).toEqual(["PL_test"]);
+			expect(second.transcribe).toEqual([]);
+			expect(second.summarize).toEqual([]);
+			expect(second.drama).toBe(0);
+			expect(result).toEqual({ processed: 0, errors: 0 });
+			expect(await counts()).toEqual(afterFirst);
+		});
+
+		it("leaves a meeting stored from minutes untouched when its video appears", async () => {
+			const { db, counts } = await setup();
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeMeeting({
+						bodySlug: TOWN_COUNCIL.slug,
+						date: "2025-08-25",
+						meetingType: "regular",
+						documents: [
+							{
+								sourceUrl: "https://example.com/minutes.pdf",
+								rawText: "Minutes of the meeting.",
+								documentType: "minutes",
+								extractionMethod: "text-layer",
+							},
+						],
+						summary: { highlights: ["h"], prose: "p", model: "m" },
+					});
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+			const before = await counts();
+
+			const log = emptyCallLog();
+			await Effect.runPromise(
+				run(
+					buildStubLayers({
+						log,
+						youtubeVideos: [REGULAR],
+						storage: StorageServiceLive(db),
+					}),
+				),
+			);
+
+			expect(log.transcribe).toEqual([]);
+			expect(await counts()).toEqual(before);
+		});
+	});
+});
+
 describe("runPipeline stage logging", () => {
 	it("emits a download.start stage log with body and url annotations during egov processing", async () => {
 		const log = emptyCallLog();
@@ -1718,7 +2161,7 @@ describe("runPipeline stage logging", () => {
 			youtubeVideos: [
 				{
 					videoId: "vid-001",
-					title: "School Board April 15 2026",
+					title: "School Board, April 15, 2026",
 					publishedAt: "2026-04-15T00:00:00Z",
 					hasCaptions: true,
 				},

@@ -1,9 +1,6 @@
 import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
-import {
-	extractMeetingDateFromTitle,
-	readFinalsiteDate,
-} from "#/pipeline/dates.ts";
+import { readFinalsiteDate } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
 	type AlertScope,
@@ -28,6 +25,8 @@ import { TranscriptionService } from "#/pipeline/services/TranscriptionService.t
 import { formatTranscriptWithTimestamps } from "#/pipeline/services/transcriptFormatting.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
+import { computeSourceFingerprint } from "#/pipeline/sources.ts";
+import { readVideoTitle } from "#/pipeline/video-title.ts";
 
 /** Threshold (in days) beyond which the zero-results anomaly alert fires. */
 const ZERO_RESULTS_THRESHOLD_DAYS = 30;
@@ -121,7 +120,18 @@ type BodyConfig = {
 	finalsiteUrl?: string;
 	/** YouTube playlist ID for the body's meeting recordings. */
 	youtubePlaylistId?: string;
+	/**
+	 * What a playlist title must start with to be this body's recording, e.g.
+	 * "Ellettsville Town Council". Defaults to `name`.
+	 */
+	youtubeTitlePrefix?: string;
+	/** ISO date; playlist videos dated earlier are ignored. */
+	youtubeSince?: string;
 };
+
+/** The source paths a run can be limited to. */
+const PIPELINE_SOURCES = ["egov", "finalsite", "youtube"] as const;
+type PipelineSource = (typeof PIPELINE_SOURCES)[number];
 
 type RunPipelineInput = {
 	bodies: BodyConfig[];
@@ -147,6 +157,8 @@ type RunPipelineInput = {
 	llmRetry?: RetryPolicy;
 	/** Current time used for zero-results anomaly detection. Defaults to new Date(). */
 	now?: Date;
+	/** Source paths to run. Defaults to all of them. */
+	sources?: readonly PipelineSource[];
 };
 
 /**
@@ -159,11 +171,24 @@ type ResolvedConfig = RunPipelineInput & {
 	llmSchedule: ReturnType<typeof scheduleFromPolicy>;
 	youtubeDelayMs: number;
 	now: Date;
+	enabledSources: ReadonlySet<PipelineSource>;
 };
 
 type PipelineResult = {
 	processed: number;
 	errors: number;
+};
+
+/**
+ * One item's result. `requested: false` marks an item settled without a
+ * request to its source, which the per-item delay has no reason to pace.
+ */
+type ItemResult = PipelineResult & { requested?: false };
+
+const SETTLED_WITHOUT_REQUEST: ItemResult = {
+	processed: 0,
+	errors: 0,
+	requested: false,
 };
 
 /**
@@ -192,6 +217,7 @@ function runPipeline(
 		llmSchedule: scheduleFromPolicy(input.llmRetry ?? DEFAULT_LLM_RETRY),
 		youtubeDelayMs: input.youtubeDelayMs ?? 2000,
 		now: input.now ?? new Date(),
+		enabledSources: new Set(input.sources ?? PIPELINE_SOURCES),
 	};
 
 	return Effect.gen(function* () {
@@ -240,19 +266,19 @@ function runPipelineForBody(
 		let processed = 0;
 		let errors = 0;
 
-		if (body.egovSearchType) {
+		if (body.egovSearchType && config.enabledSources.has("egov")) {
 			const egovResult = yield* runEgovForBody(body, config);
 			processed += egovResult.processed;
 			errors += egovResult.errors;
 		}
 
-		if (body.finalsiteUrl) {
+		if (body.finalsiteUrl && config.enabledSources.has("finalsite")) {
 			const finalsiteResult = yield* runFinalsiteForBody(body, config);
 			processed += finalsiteResult.processed;
 			errors += finalsiteResult.errors;
 		}
 
-		if (body.youtubePlaylistId) {
+		if (body.youtubePlaylistId && config.enabledSources.has("youtube")) {
 			const youtubeResult = yield* runYouTubeForBody(body, config);
 			processed += youtubeResult.processed;
 			errors += youtubeResult.errors;
@@ -317,7 +343,7 @@ function iterateWithAlertRecovery<TItem, R>(
 	options: {
 		processItem: (
 			item: TItem,
-		) => Effect.Effect<PipelineResult, TaggedPipelineError, R>;
+		) => Effect.Effect<ItemResult, TaggedPipelineError, R>;
 		delayBetweenItemsMs: number;
 		shouldProcess?: (item: TItem) => boolean;
 	},
@@ -330,7 +356,10 @@ function iterateWithAlertRecovery<TItem, R>(
 			if (options.shouldProcess && !options.shouldProcess(item)) continue;
 
 			const outcome = yield* options.processItem(item).pipe(
-				Effect.map((result) => ({ result, requested: true })),
+				Effect.map((result) => ({
+					result,
+					requested: result.requested !== false,
+				})),
 				Effect.catch((error) =>
 					alertAndRecover(body, listingFailureStage(error), error, "item").pipe(
 						Effect.as({
@@ -345,7 +374,8 @@ function iterateWithAlertRecovery<TItem, R>(
 			errors += outcome.result.errors;
 
 			// The delay paces requests to the source. A listing held for its
-			// date fails before any request is made, so it has nothing to pace.
+			// date, or settled from what storage already holds, made no request
+			// and has nothing to pace.
 			if (options.delayBetweenItemsMs > 0 && outcome.requested) {
 				yield* Effect.sleep(Duration.millis(options.delayBetweenItemsMs));
 			}
@@ -717,34 +747,109 @@ function runYouTubeForBody(
 		if (!videosResult.ok) return { processed: 0, errors: 1 };
 
 		return yield* iterateWithAlertRecovery(body, videosResult.listings, {
-			processItem: (video) => {
-				// The publish date is the day the recording reached the playlist,
-				// which trails the meeting and is shared by videos posted together.
-				// A title with no readable date is held for the operator rather
-				// than filed under it.
-				const meetingDate = extractMeetingDateFromTitle(video.title);
-				if (meetingDate === null) {
-					return Effect.fail(
-						new UndatedListingError({
-							title: video.title,
-							uploadDate: video.publishedAt.slice(0, 10),
-						}),
-					);
-				}
-				return processYouTubeVideo(body, video, meetingDate, config);
-			},
+			processItem: (video) => processPlaylistVideo(body, video, config),
 			delayBetweenItemsMs: config.youtubeDelayMs,
 		});
 	});
 }
 
+function videoUrl(videoId: string): string {
+	return `https://www.youtube.com/watch?v=${videoId}`;
+}
+
+/**
+ * Decides what one playlist entry is before anything is fetched for it. The
+ * playlist is listed in full on every run, so every outcome short of
+ * transcription has to be reached from the title and storage alone.
+ */
+function processPlaylistVideo(
+	body: BodyConfig,
+	video: YouTubeVideo,
+	config: ResolvedConfig,
+): Effect.Effect<
+	ItemResult,
+	TaggedPipelineError,
+	| TranscriptionService
+	| SummarizationService
+	| StorageService
+	| DramaDetectionService
+	| AlertService
+> {
+	return Effect.gen(function* () {
+		// The publish date is the day the recording reached the playlist, which
+		// trails the meeting and is shared by videos posted together, and a
+		// playlist can carry another body's recording. A title that is not this
+		// body's dated meeting is held for the operator rather than filed.
+		const titlePrefix = body.youtubeTitlePrefix ?? body.name;
+		const reading = readVideoTitle(video.title, titlePrefix);
+		if (reading.kind === "unrecognized") {
+			return yield* Effect.fail(
+				new UndatedListingError({
+					title: video.title,
+					uploadDate: video.publishedAt.slice(0, 10),
+					expectedForm: `${titlePrefix}[ qualifier], Month D, YYYY`,
+				}),
+			);
+		}
+
+		if (body.youtubeSince && reading.date < body.youtubeSince) {
+			return SETTLED_WITHOUT_REQUEST;
+		}
+
+		const storage = yield* StorageService;
+		if (yield* storage.hasTranscriptForVideo(videoUrl(video.videoId))) {
+			return SETTLED_WITHOUT_REQUEST;
+		}
+
+		// A meeting that already has documents or another video's transcript
+		// has a summary this video was not part of. Storing would attach the
+		// transcript without changing that summary, so the video is left for
+		// the run that can combine them.
+		const existing = yield* storage.getMeetingSourceState({
+			bodySlug: body.slug,
+			date: reading.date,
+			session: reading.session,
+		});
+		if (
+			existing &&
+			(existing.hasDocuments || existing.transcriptSourceUrl !== null)
+		) {
+			yield* Effect.log("youtube.video.deferred").pipe(
+				Effect.annotateLogs({
+					meetingId: existing.meetingId,
+					date: reading.date,
+					session: reading.session,
+					reason: existing.hasDocuments
+						? "meeting-has-documents"
+						: "meeting-has-transcript",
+				}),
+			);
+			return SETTLED_WITHOUT_REQUEST;
+		}
+
+		return yield* processYouTubeVideo(
+			body,
+			video,
+			{
+				date: reading.date,
+				session: reading.session,
+				meetingType: meetingTypeFromFinalsiteLabel(reading.qualifier ?? ""),
+			},
+			config,
+		);
+	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
+}
+
 /** What processing one video needs, whether it came from a playlist or the operator. */
 type VideoRef = Pick<YouTubeVideo, "videoId" | "title">;
+
+/** The meeting a video is filed under. */
+type VideoMeeting = Pick<MeetingInput, "date" | "session" | "meetingType">;
 
 function processYouTubeVideo(
 	body: BodyConfig,
 	video: VideoRef,
-	meetingDate: string,
+	videoMeeting: VideoMeeting,
 	config: ResolvedConfig,
 	dramaAlertScope: "item" | "sole-item" = "item",
 ): Effect.Effect<
@@ -780,15 +885,20 @@ function processYouTubeVideo(
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
+		const sourceUrl = videoUrl(video.videoId);
+
 		const meeting = yield* storage.storeMeeting({
 			bodySlug: body.slug,
-			date: meetingDate,
-			meetingType: "regular",
+			date: videoMeeting.date,
+			session: videoMeeting.session,
+			meetingType: videoMeeting.meetingType,
 			documents: [],
 			summary: {
 				highlights: summary.highlights,
 				prose: summary.prose,
 				model: summary.model,
+				sourceKinds: ["transcript"],
+				sourceFingerprint: computeSourceFingerprint([sourceUrl]),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
@@ -799,7 +909,7 @@ function processYouTubeVideo(
 			source: transcript.source,
 			rawText: transcript.rawText,
 			segments: transcript.segments,
-			sourceUrl: `https://www.youtube.com/watch?v=${video.videoId}`,
+			sourceUrl,
 		});
 
 		// Drama detection runs AFTER transcript storage. Failure must not
@@ -911,9 +1021,17 @@ class PipelineExtractError {
 class UndatedListingError {
 	readonly _tag = "UndatedListingError";
 	readonly message: string;
-	constructor(input: { title: string; uploadDate: string | null }) {
+	constructor(input: {
+		title: string;
+		uploadDate: string | null;
+		/** The form the title had to take, when the source has a single one. */
+		expectedForm?: string;
+	}) {
 		const uploaded = input.uploadDate ? ` (uploaded ${input.uploadDate})` : "";
-		this.message = `No meeting date could be read from "${input.title}"${uploaded}. The listing was not ingested.`;
+		const expected = input.expectedForm
+			? ` Expected the form "${input.expectedForm}".`
+			: "";
+		this.message = `No meeting date could be read from "${input.title}"${uploaded}.${expected} The listing was not ingested.`;
 	}
 }
 
@@ -1038,12 +1156,13 @@ function runDramaDetectForVideo(input: {
 		),
 		llmSchedule: scheduleFromPolicy(input.llmRetry ?? DEFAULT_LLM_RETRY),
 		now: input.now ?? new Date(),
+		enabledSources: new Set(PIPELINE_SOURCES),
 	};
 
 	return processYouTubeVideo(
 		input.body,
 		input.video,
-		input.meetingDate,
+		{ date: input.meetingDate, session: "", meetingType: "regular" },
 		config,
 		"sole-item",
 	).pipe(
@@ -1067,5 +1186,11 @@ function runDramaDetectForVideo(input: {
 	);
 }
 
-export { runDramaDetectForVideo, runPipeline };
-export type { BodyConfig, RunPipelineInput, PipelineResult, RetryPolicy };
+export { PIPELINE_SOURCES, runDramaDetectForVideo, runPipeline };
+export type {
+	BodyConfig,
+	PipelineSource,
+	RunPipelineInput,
+	PipelineResult,
+	RetryPolicy,
+};
