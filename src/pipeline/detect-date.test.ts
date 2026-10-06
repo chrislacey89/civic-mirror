@@ -1,5 +1,6 @@
 import { Option } from "effect";
 import { describe, expect, it } from "vitest";
+import { extractMeetingDateFromTitle } from "#/pipeline/dates.ts";
 import { resolveDetectMeeting } from "#/pipeline/detect-date.ts";
 
 const none = Option.none<string>();
@@ -46,6 +47,8 @@ describe("resolveDetectMeeting", () => {
 			title: none,
 		});
 		expect(resolved.title).toBe("Manual drama:detect 1-2-26abcde");
+		// The reader must still see a date in this title, or the null below proves nothing.
+		expect(extractMeetingDateFromTitle(resolved.title)).toBe("2026-01-02");
 		expect(resolved.meetingDate).toBeNull();
 	});
 });
