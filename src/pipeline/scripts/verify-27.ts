@@ -24,9 +24,9 @@ for (const r of meetings.rows) {
 }
 
 const dupes = await client.execute(`
-	SELECT body_id, date, COUNT(*) c
+	SELECT body_id, date, session, COUNT(*) c
 	FROM meetings
-	GROUP BY body_id, date
+	GROUP BY body_id, date, session
 	HAVING COUNT(*) > 1
 `);
 console.log(`duplicates: ${dupes.rows.length}`);

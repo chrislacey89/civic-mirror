@@ -375,6 +375,7 @@ function SpendingRoute() {
 										key={`${d.title}-${d.date}-${d.bodySlug}`}
 										to="/meetings/$bodySlug/$date"
 										params={{ bodySlug: d.bodySlug, date: d.date }}
+										search={d.session ? { session: d.session } : {}}
 										className={`grid grid-cols-[minmax(0,1fr)_120px_120px_100px] items-center gap-2 px-4 py-3 no-underline hover:bg-[var(--paper-alt)] ${
 											i < data.decisions.length - 1
 												? "border-b border-dotted border-[var(--rule-dot)]"

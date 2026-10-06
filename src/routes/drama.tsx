@@ -90,6 +90,7 @@ function DramaPage() {
 								key={m.id}
 								to="/meetings/$bodySlug/$date"
 								params={{ bodySlug: m.bodySlug, date: m.date }}
+								search={m.session ? { session: m.session } : {}}
 								className="grid grid-cols-[64px_1fr] gap-4 border-b border-dotted border-[var(--rule-dot)] py-4 no-underline hover:bg-[var(--paper-alt)]"
 							>
 								<div className="mono border-r border-[var(--rule-soft)] pr-3 text-right">
