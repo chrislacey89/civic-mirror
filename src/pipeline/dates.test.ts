@@ -75,7 +75,7 @@ describe("extractMeetingDateFromTitle", () => {
 
 	it("returns null for a numeric run that is not a calendar date", () => {
 		expect(
-			extractMeetingDateFromTitle("Town Council Resolution 13-45-26"),
+			extractMeetingDateFromTitle("Town Council Meeting Minutes 13-45-26"),
 		).toBeNull();
 		expect(
 			extractMeetingDateFromTitle("Town Council Meeting Minutes 02-30-26"),
@@ -111,6 +111,28 @@ describe("extractMeetingDateFromTitle", () => {
 		expect(
 			extractMeetingDateFromTitle("Town Council Resolution 2026-01-02-26"),
 		).toBeNull();
+	});
+
+	it("returns null for a date-shaped number that follows a document-number word", () => {
+		expect(
+			extractMeetingDateFromTitle("Town Council Resolution 01-02-26 Minutes"),
+		).toBeNull();
+	});
+
+	it.each([
+		"Town Council Ordinance No. 01-02-26",
+		"Town Council Resolution #01-02-26",
+		"Town Council RESOLUTION NO 01-02-26",
+	])("returns null for the numbered document %j", (title) => {
+		expect(extractMeetingDateFromTitle(title)).toBeNull();
+	});
+
+	it("reads a numeric date that follows a document number", () => {
+		expect(
+			extractMeetingDateFromTitle(
+				"Town Council Resolution 01-02-26 Adopted 03-23-26",
+			),
+		).toBe("2026-03-23");
 	});
 });
 

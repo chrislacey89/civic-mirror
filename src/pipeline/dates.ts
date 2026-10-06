@@ -56,6 +56,7 @@ function monthNumber(name: string): (typeof MONTH_BY_NAME)[MonthName] | null {
  * two-digit year ("Town Council Meeting Minutes 03-23-26", "... 12-9-24").
  * The long form wins when a title carries both, because numbered documents
  * ("Ordinance 2025-14 Adopted December 22, 2025") put digit runs before it.
+ * A numeric run that is a resolution's or ordinance's own number is not read.
  *
  * Returns ISO YYYY-MM-DD on success, or null when the title has no
  * recognizable date or names a day that does not exist. See issues #27 and #115.
@@ -76,8 +77,15 @@ function extractLongFormDate(title: string): string | null {
 	return isCalendarDate(iso) ? iso : null;
 }
 
+/**
+ * A run directly after "Resolution" or "Ordinance" (optionally "No." or "#")
+ * is that document's number, which can be date-shaped ("Resolution 01-02-26").
+ * It is passed over rather than read as the meeting date.
+ */
 function extractNumericDate(title: string): string | null {
-	const match = title.match(/(?<![\d-])(\d{1,2})-(\d{1,2})-(\d{2})(?![\d-])/);
+	const match = title.match(
+		/(?<![\d-])(?<!\b(?:resolution|ordinance)\s+(?:no\.?\s*|#\s*)?)(\d{1,2})-(\d{1,2})-(\d{2})(?![\d-])/i,
+	);
 	if (!match) return null;
 	const iso = `20${match[3]}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
 	return isCalendarDate(iso) ? iso : null;
