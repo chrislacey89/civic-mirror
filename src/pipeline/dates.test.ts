@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as dates from "#/pipeline/dates.ts";
 import {
+	extractLongFormDate,
 	extractMeetingDateFromTitle,
 	readFinalsiteDate,
 } from "#/pipeline/dates.ts";
@@ -200,6 +201,7 @@ describe("readFinalsiteDate", () => {
  */
 describe("date readers never guess", () => {
 	const undatedCalls: Record<string, () => string | null> = {
+		extractLongFormDate: () => extractLongFormDate("Town Council 03-23-26"),
 		extractMeetingDateFromTitle: () =>
 			extractMeetingDateFromTitle("Town Council Annual Report"),
 		readFinalsiteDate: () => {

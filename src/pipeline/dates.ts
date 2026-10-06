@@ -67,8 +67,12 @@ export function extractMeetingDateFromTitle(title: string): string | null {
 	return extractLongFormDate(title) ?? extractNumericDate(title);
 }
 
-function extractLongFormDate(title: string): string | null {
-	const match = title.match(
+/**
+ * Reads the first "Month D, YYYY" in `text` (the comma is optional). Returns
+ * null when there is none or it names a day that does not exist.
+ */
+export function extractLongFormDate(text: string): string | null {
+	const match = text.match(
 		/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:\s*,\s*|\s+)(\d{4})\b/i,
 	);
 	if (!match) return null;
