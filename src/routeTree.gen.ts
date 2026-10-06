@@ -9,22 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SpendingRouteImport } from './routes/spending'
-import { Route as DramaRouteImport } from './routes/drama'
-import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AboutRouteImport } from './routes/about'
+import { Route as DramaRouteImport } from './routes/drama'
+import { Route as SpendingRouteImport } from './routes/spending'
 import { Route as BodiesIndexRouteImport } from './routes/bodies/index'
 import { Route as BodiesBodySlugRouteImport } from './routes/bodies/$bodySlug'
 import { Route as MeetingsBodySlugDateRouteImport } from './routes/meetings/$bodySlug/$date'
 
-const SpendingRoute = SpendingRouteImport.update({
-  id: '/spending',
-  path: '/spending',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DramaRoute = DramaRouteImport.update({
-  id: '/drama',
-  path: '/drama',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -32,9 +27,14 @@ const AboutRoute = AboutRouteImport.update({
   path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const DramaRoute = DramaRouteImport.update({
+  id: '/drama',
+  path: '/drama',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SpendingRoute = SpendingRouteImport.update({
+  id: '/spending',
+  path: '/spending',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BodiesIndexRoute = BodiesIndexRouteImport.update({
@@ -123,18 +123,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/spending': {
-      id: '/spending'
-      path: '/spending'
-      fullPath: '/spending'
-      preLoaderRoute: typeof SpendingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/drama': {
-      id: '/drama'
-      path: '/drama'
-      fullPath: '/drama'
-      preLoaderRoute: typeof DramaRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -144,11 +137,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/drama': {
+      id: '/drama'
+      path: '/drama'
+      fullPath: '/drama'
+      preLoaderRoute: typeof DramaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/spending': {
+      id: '/spending'
+      path: '/spending'
+      fullPath: '/spending'
+      preLoaderRoute: typeof SpendingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/bodies/': {
