@@ -89,8 +89,9 @@ describe("TranscriptionService", () => {
 				),
 			);
 
-			const exit = await Effect.runPromiseExit(program);
-			expect(JSON.stringify(exit)).toContain("TranscriptionError");
+			const error = await Effect.runPromise(Effect.flip(program));
+			expect(error._tag).toBe("TranscriptionError");
+			expect(error.message).toBe("Captions came back empty");
 		});
 	});
 
