@@ -42,8 +42,13 @@ export const governingBodies = sqliteTable("governing_bodies", {
 });
 
 /**
- * A single meeting session. The composite of (bodyId, date) is the natural key
- * used for lookups — e.g. "Ellettsville Town Council on 2026-03-23."
+ * A single meeting session. The composite of (bodyId, date, session) is the
+ * natural key — e.g. "Ellettsville Town Council on 2026-03-23."
+ *
+ * `session` tells apart meetings a body holds on the same day (a Board of
+ * Finance meeting before the regular meeting). It is a slug of the source's
+ * own row label, and the empty string for sources that list one document per
+ * row, where rows sharing a date are parts of one meeting.
  */
 export const meetings = sqliteTable(
 	"meetings",
@@ -53,16 +58,21 @@ export const meetings = sqliteTable(
 			.notNull()
 			.references(() => governingBodies.id),
 		date: text().notNull(), // ISO date string YYYY-MM-DD
+		session: text().notNull().default(""),
 		meetingType: text("meeting_type").notNull().default("regular"), // "regular" | "special" | "workshop"
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
 	},
 	(table) => [
-		// (bodyId, date) is the natural key — see block comment above. The unique
-		// index turns that into a DB-enforced invariant so the weekly ingestion
-		// cron can't silently produce duplicate meeting rows on re-run.
-		uniqueIndex("meetings_body_id_date_unique").on(table.bodyId, table.date),
+		// (bodyId, date, session) is the natural key — see block comment above.
+		// The unique index turns that into a DB-enforced invariant so the weekly
+		// ingestion cron can't silently produce duplicate meeting rows on re-run.
+		uniqueIndex("meetings_body_id_date_session_unique").on(
+			table.bodyId,
+			table.date,
+			table.session,
+		),
 	],
 );
 

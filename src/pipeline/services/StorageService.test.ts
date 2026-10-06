@@ -388,6 +388,48 @@ describe("StorageService", () => {
 				testMeetingInput.budgetDiscussions.length,
 			);
 		});
+
+		it("stores two sessions on one date as two meetings, each with its own summary", async () => {
+			const db = await createTestDb();
+			const layer = StorageServiceLive(db);
+
+			const session = (name: string, docId: string) => ({
+				bodySlug: "ellettsville-town-council",
+				date: "2026-01-20",
+				session: name,
+				meetingType: "regular" as const,
+				documents: [
+					{
+						sourceUrl: `/fs/resource-manager/view/${docId}`,
+						rawText: `Minutes of the ${name}.`,
+						documentType: "minutes" as const,
+						extractionMethod: "text-layer" as const,
+					},
+				],
+				summary: {
+					highlights: [`${name} highlight`],
+					prose: `${name} prose`,
+					model: "gemini-2.5-flash",
+				},
+			});
+
+			const [finance, regular] = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return [
+						yield* storage.storeMeeting(session("board-of-finance", "uuid-a")),
+						yield* storage.storeMeeting(session("regular-meeting", "uuid-b")),
+					];
+				}).pipe(Effect.provide(layer)),
+			);
+
+			expect(regular.id).not.toBe(finance.id);
+			const summaries = await db.select().from(schema.summaries).all();
+			expect(summaries.map((s) => s.prose).sort()).toEqual([
+				"board-of-finance prose",
+				"regular-meeting prose",
+			]);
+		});
 	});
 
 	describe("getMeetingByBodyAndDate", () => {

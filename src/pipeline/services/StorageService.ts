@@ -30,6 +30,12 @@ type ExtractionMethod = "text-layer" | "ocr" | "unreadable";
 type MeetingInput = {
 	bodySlug: string;
 	date: string;
+	/**
+	 * Which of the body's meetings on `date` this is. Omit it for a source
+	 * whose rows are single documents of one meeting; calls that share a date
+	 * and a session are stored as one meeting.
+	 */
+	session?: string;
 	meetingType: "regular" | "special" | "workshop";
 	documents: Array<{
 		sourceUrl: string;
@@ -383,7 +389,9 @@ async function storeMeetingTransaction(
 			throw new Error(`Governing body not found: ${input.bodySlug}`);
 		}
 
-		// Idempotency guard: (body_id, date) is the natural key. If this meeting
+		const session = input.session ?? "";
+
+		// Idempotency guard: (body_id, date, session) is the natural key. If this meeting
 		// already exists, attach any documents from this call that aren't
 		// already on it (idempotent by (meetingId, sourceUrl)) and return the
 		// existing handle. The weekly ingestion cron re-sees the same eGov /
@@ -399,6 +407,7 @@ async function storeMeetingTransaction(
 				and(
 					eq(schema.meetings.bodyId, body.id),
 					eq(schema.meetings.date, input.date),
+					eq(schema.meetings.session, session),
 				),
 			)
 			.get();
@@ -436,6 +445,7 @@ async function storeMeetingTransaction(
 			.values({
 				bodyId: body.id,
 				date: input.date,
+				session,
 				meetingType: input.meetingType,
 			})
 			.returning()
