@@ -721,9 +721,12 @@ function runYouTubeForBody(
 	});
 }
 
+/** What processing one video needs, whether it came from a playlist or the operator. */
+type VideoRef = Pick<YouTubeVideo, "videoId" | "title">;
+
 function processYouTubeVideo(
 	body: BodyConfig,
-	video: YouTubeVideo,
+	video: VideoRef,
 	meetingDate: string,
 	config: ResolvedConfig,
 ): Effect.Effect<
@@ -801,7 +804,7 @@ function processYouTubeVideo(
 
 function runDramaDetection(input: {
 	body: BodyConfig;
-	video: YouTubeVideo;
+	video: VideoRef;
 	meetingId: number;
 	transcript: TranscriptResult;
 }) {
@@ -961,7 +964,8 @@ function meetingTypeFromFinalsiteLabel(
  */
 function runDramaDetectForVideo(input: {
 	body: BodyConfig;
-	video: YouTubeVideo;
+	video: VideoRef;
+	meetingDate: string;
 	networkRetry?: RetryPolicy;
 	llmRetry?: RetryPolicy;
 	now?: Date;
@@ -990,7 +994,7 @@ function runDramaDetectForVideo(input: {
 	return processYouTubeVideo(
 		input.body,
 		input.video,
-		input.video.publishedAt.slice(0, 10),
+		input.meetingDate,
 		config,
 	).pipe(
 		Effect.catch((error) =>

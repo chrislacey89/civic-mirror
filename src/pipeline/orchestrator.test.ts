@@ -1474,9 +1474,8 @@ describe("runDramaDetectForVideo", () => {
 			video: {
 				videoId: "rbb-hiring-2026-04-15",
 				title: "RBB School Board, April 15 2026",
-				publishedAt: "2026-04-15T00:00:00Z",
-				hasCaptions: true,
 			},
+			meetingDate: "2026-04-15",
 			networkRetry: { attempts: 0, baseDelayMs: 0 },
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
 		}).pipe(Effect.provide(layers));
@@ -1492,5 +1491,22 @@ describe("runDramaDetectForVideo", () => {
 		expect(log.drama).toBe(1);
 		expect(result.processed).toBe(1);
 		expect(result.errors).toBe(0);
+	});
+
+	it("files the video under the meeting date the operator gave", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({ log });
+
+		const program = runDramaDetectForVideo({
+			body: { slug: "town-council", name: "Town Council" },
+			video: { videoId: "abc123", title: "Manual drama:detect abc123" },
+			meetingDate: "2026-04-15",
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		expect(log.store.map((s) => s.date)).toEqual(["2026-04-15"]);
 	});
 });
