@@ -62,6 +62,19 @@ describe("AlertService", () => {
 			expect(alert.body).not.toContain("this body was skipped");
 			expect(alert.body).toContain("rest of Plan Commission");
 		});
+
+		it("promises no further work for a failure in a run of one item", () => {
+			const alert = formatPipelineErrorAlert({
+				stage: "drama-detection",
+				bodyName: "Plan Commission",
+				errorTag: "LlmError",
+				errorMessage: "quota exceeded",
+				scope: "sole-item",
+			});
+
+			expect(alert.body).not.toContain("will continue");
+			expect(alert.body).toContain("only item in this run");
+		});
 	});
 
 	describe("AlertServiceLive", () => {

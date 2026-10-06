@@ -1558,4 +1558,30 @@ describe("runDramaDetectForVideo", () => {
 		expect(result.processed).toBe(1);
 		expect(result.errors).toBe(0);
 	});
+	it.each([
+		["drama detection", { dramaDetectionError: new Error("Gemini API down") }],
+		["summarization", { summarizationError: new Error("Gemini API down") }],
+	])("does not promise to continue with the body when %s fails for the one video", async (_stage, failure) => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({ log, ...failure });
+
+		const program = runDramaDetectForVideo({
+			body: { slug: "town-council", name: "Town Council" },
+			video: {
+				videoId: "rbb-hiring-2026-04-15",
+				title: "RBB School Board, April 15 2026",
+				publishedAt: "2026-04-15T00:00:00Z",
+				hasCaptions: true,
+			},
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("Gemini API down");
+		expect(log.alert[0].body).not.toContain("rest of Town Council");
+		expect(log.alert[0].body).toContain("only item in this run");
+	});
 });

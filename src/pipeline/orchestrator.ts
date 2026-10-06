@@ -3,6 +3,7 @@ import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import { readFinalsiteDate } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
+	type AlertScope,
 	AlertService,
 	formatPipelineErrorAlert,
 	formatZeroResultsAlert,
@@ -709,6 +710,7 @@ function processYouTubeVideo(
 	body: BodyConfig,
 	video: YouTubeVideo,
 	config: ResolvedConfig,
+	dramaAlertScope: "item" | "sole-item" = "item",
 ): Effect.Effect<
 	PipelineResult,
 	TaggedPipelineError,
@@ -775,7 +777,9 @@ function processYouTubeVideo(
 			video,
 			meetingId: meeting.id,
 			transcript,
-		}).pipe(Effect.catch((error) => alertDramaFailure(body, error)));
+		}).pipe(
+			Effect.catch((error) => alertDramaFailure(body, error, dramaAlertScope)),
+		);
 		yield* Effect.log("youtube.drama.finish");
 
 		return { processed: 1, errors: 0 };
@@ -828,7 +832,11 @@ function runDramaDetection(input: {
 	});
 }
 
-function alertDramaFailure(body: BodyConfig, error: LlmError | DatabaseError) {
+function alertDramaFailure(
+	body: BodyConfig,
+	error: LlmError | DatabaseError,
+	scope: AlertScope,
+) {
 	return Effect.gen(function* () {
 		const alert = yield* AlertService;
 		yield* alert
@@ -838,7 +846,7 @@ function alertDramaFailure(body: BodyConfig, error: LlmError | DatabaseError) {
 					bodyName: body.name,
 					errorTag: error._tag,
 					errorMessage: error.message,
-					scope: "item",
+					scope,
 				}),
 			)
 			.pipe(Effect.catch(() => Effect.void));
@@ -907,7 +915,7 @@ function alertAndRecover(
 	body: BodyConfig,
 	stage: string,
 	error: TaggedPipelineError,
-	scope: "body" | "item",
+	scope: AlertScope,
 ): Effect.Effect<void, never, AlertService> {
 	return Effect.gen(function* () {
 		const alert = yield* AlertService;
@@ -970,7 +978,7 @@ function runDramaDetectForVideo(input: {
 		now: input.now ?? new Date(),
 	};
 
-	return processYouTubeVideo(input.body, input.video, config).pipe(
+	return processYouTubeVideo(input.body, input.video, config, "sole-item").pipe(
 		Effect.catch((error) =>
 			Effect.gen(function* () {
 				const alert = yield* AlertService;
@@ -981,7 +989,7 @@ function runDramaDetectForVideo(input: {
 							bodyName: input.body.name,
 							errorTag: error._tag,
 							errorMessage: error.message,
-							scope: "item",
+							scope: "sole-item",
 						}),
 					)
 					.pipe(Effect.catch(() => Effect.void));
