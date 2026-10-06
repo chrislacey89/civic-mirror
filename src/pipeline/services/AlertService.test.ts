@@ -29,12 +29,38 @@ describe("AlertService", () => {
 				bodyName: "Plan Commission",
 				errorTag: "LlmError",
 				errorMessage: "quota exceeded",
+				scope: "item",
 			});
 
 			expect(alert.subject).toContain("summarize");
 			expect(alert.body).toContain("Plan Commission");
 			expect(alert.body).toContain("LlmError");
 			expect(alert.body).toContain("quota exceeded");
+		});
+
+		it("says the whole body was skipped for a body-scoped failure", () => {
+			const alert = formatPipelineErrorAlert({
+				stage: "scrape",
+				bodyName: "Plan Commission",
+				errorTag: "NetworkError",
+				errorMessage: "timeout",
+				scope: "body",
+			});
+
+			expect(alert.body).toContain("this body was skipped");
+		});
+
+		it("says only one item was affected for an item-scoped failure", () => {
+			const alert = formatPipelineErrorAlert({
+				stage: "date",
+				bodyName: "Plan Commission",
+				errorTag: "UndatedListingError",
+				errorMessage: "no date",
+				scope: "item",
+			});
+
+			expect(alert.body).not.toContain("this body was skipped");
+			expect(alert.body).toContain("rest of Plan Commission");
 		});
 	});
 

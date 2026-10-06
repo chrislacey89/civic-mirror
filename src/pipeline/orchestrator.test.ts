@@ -316,13 +316,18 @@ describe("runPipeline", () => {
 
 		const storedDates = log.store.map((s) => s.date).sort();
 		expect(storedDates).toEqual(["2025-12-08", "2025-12-22"]);
+		// The summarizer is told the meeting date too, not the upload date.
+		expect(log.summarize.map((s) => s.meetingContext)).toEqual([
+			"Body, 2025-12-22",
+			"Body, 2025-12-08",
+		]);
 		// Propagates documentType from the listing into the stored MeetingInput.
 		for (const stored of log.storeInputs) {
 			expect(stored.documents[0].documentType).toBe("minutes");
 		}
 	});
 
-	it("falls back to the publish date when the title has no extractable meetingDate", async () => {
+	it("holds an eGov listing whose title has no readable date and alerts instead of filing it under the upload date", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
 			log,
@@ -333,6 +338,14 @@ describe("runPipeline", () => {
 					date: "03/15/2026",
 					downloadUrl: "https://example.com/doc/42",
 					meetingDate: null,
+					documentType: "minutes",
+				},
+				{
+					id: 43,
+					title: "Town Council Meeting Minutes 03-09-26",
+					date: "03/15/2026",
+					downloadUrl: "https://example.com/doc/43",
+					meetingDate: "2026-03-09",
 					documentType: "minutes",
 				},
 			],
@@ -348,8 +361,17 @@ describe("runPipeline", () => {
 			dryRun: false,
 		}).pipe(Effect.provide(layers));
 
-		await Effect.runPromise(program);
-		expect(log.store[0].date).toBe("2026-03-15");
+		const result = await Effect.runPromise(program);
+
+		// The undated listing is never downloaded, summarized or stored; the
+		// dated one behind it still goes through.
+		expect(log.egovDownload).toEqual(["https://example.com/doc/43"]);
+		expect(log.store.map((s) => s.date)).toEqual(["2026-03-09"]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("Town Council Annual Report");
+		expect(log.alert[0].body).toContain("03/15/2026");
+		expect(log.alert[0].body).not.toContain("this body was skipped");
+		expect(result).toEqual({ processed: 1, errors: 1 });
 	});
 
 	it("skips storage and alerts in dry-run mode but still scrapes and summarizes", async () => {
@@ -362,7 +384,7 @@ describe("runPipeline", () => {
 					title: "Meeting",
 					date: "01/01/2026",
 					downloadUrl: "https://example.com/doc/1",
-					meetingDate: null,
+					meetingDate: "2026-01-01",
 					documentType: "minutes",
 				},
 			],
@@ -461,7 +483,7 @@ describe("runPipeline", () => {
 					title: "First",
 					date: "01/01/2026",
 					downloadUrl: "https://example.com/doc/1",
-					meetingDate: null,
+					meetingDate: "2026-01-01",
 					documentType: "minutes",
 				},
 				{
@@ -469,7 +491,7 @@ describe("runPipeline", () => {
 					title: "Second",
 					date: "01/02/2026",
 					downloadUrl: "https://example.com/doc/2",
-					meetingDate: null,
+					meetingDate: "2026-01-02",
 					documentType: "minutes",
 				},
 			],
@@ -505,7 +527,7 @@ describe("runPipeline", () => {
 					title: "First",
 					date: "01/01/2026",
 					downloadUrl: "https://example.com/doc/1",
-					meetingDate: null,
+					meetingDate: "2026-01-01",
 					documentType: "minutes",
 				},
 			],
@@ -583,6 +605,107 @@ describe("runPipeline", () => {
 		expect(log.store).toHaveLength(1);
 		expect(log.store[0].bodySlug).toBe("school-board");
 		expect(result.processed).toBe(1);
+	});
+
+	it("holds a Finalsite listing whose date cell is unreadable and alerts instead of filing it under a guessed date", async () => {
+		const log = emptyCallLog();
+		const doc = (uuid: string) => ({
+			uuid,
+			documentType: "minutes" as const,
+			downloadUrl: `/fs/resource-manager/view/${uuid}`,
+			fileName: `${uuid}.pdf`,
+		});
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "Sept 8, 2025",
+					meetingType: "Regular Meeting",
+					year: 2025,
+					documents: [doc("uuid-undated")],
+				},
+				{
+					date: "January 20, 2026",
+					meetingType: "Regular Meeting",
+					year: 2026,
+					documents: [doc("uuid-dated")],
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		expect(log.finalsiteDownload).toEqual(["uuid-dated"]);
+		expect(log.store.map((s) => s.date)).toEqual(["2026-01-20"]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("Sept 8, 2025");
+		expect(result).toEqual({ processed: 1, errors: 1 });
+	});
+
+	it("skips a Finalsite listing whose date cell is a month and year without alerting", async () => {
+		const log = emptyCallLog();
+		const doc = (uuid: string) => ({
+			uuid,
+			documentType: "notice" as const,
+			downloadUrl: `/fs/resource-manager/view/${uuid}`,
+			fileName: `${uuid}.pdf`,
+		});
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "September 2025",
+					meetingType: "Superintendent's Contract",
+					year: 2025,
+					documents: [doc("uuid-month-only")],
+				},
+				{
+					date: "January 20, 2026",
+					meetingType: "Regular Meeting",
+					year: 2026,
+					documents: [doc("uuid-dated")],
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		expect(log.finalsiteDownload).toEqual(["uuid-dated"]);
+		expect(log.store.map((s) => s.date)).toEqual(["2026-01-20"]);
+		expect(log.alert).toHaveLength(0);
+		expect(result).toEqual({ processed: 1, errors: 0 });
 	});
 
 	it("sends a zero-results alert when the body's last meeting is more than 30 days old", async () => {
@@ -745,7 +868,7 @@ describe("runPipeline", () => {
 					title: "Scanned 2024 Minutes",
 					date: "05/13/2024",
 					downloadUrl: "https://example.com/doc/scanned-42",
-					meetingDate: null,
+					meetingDate: "2024-05-13",
 					documentType: "minutes",
 				},
 			],
@@ -797,7 +920,7 @@ describe("runPipeline", () => {
 					title: "Scanned minutes that OCR could read",
 					date: "06/11/2024",
 					downloadUrl: "https://example.com/doc/ocr-99",
-					meetingDate: null,
+					meetingDate: "2024-06-11",
 					documentType: "minutes",
 				},
 			],
