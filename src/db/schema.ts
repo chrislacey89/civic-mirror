@@ -142,7 +142,7 @@ export const transcripts = sqliteTable(
 	(table) => [
 		// (meetingId, source) is the natural key — a meeting can have at most one
 		// captions transcript and one whisper transcript. Enforcing uniqueness at
-		// the DB level matches the pattern on meetings(body_id, date); see #37.
+		// the DB level matches the pattern on meetings(body_id, date, session); see #37.
 		uniqueIndex("transcripts_meeting_id_source_unique").on(
 			table.meetingId,
 			table.source,
