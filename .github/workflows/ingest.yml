@@ -5,6 +5,15 @@ on:
     # Every Sunday at 06:00 UTC
     - cron: "0 6 * * 0"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run every stage except storage and alerts
+        type: boolean
+        default: false
+      sources:
+        description: Comma-separated source paths to run (egov, finalsite, youtube). Empty runs all.
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -49,4 +58,13 @@ jobs:
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        run: pnpm run pipeline:run
+          # Both are empty on a scheduled run, which then takes no flags.
+          DRY_RUN: ${{ inputs.dry_run }}
+          SOURCES: ${{ inputs.sources }}
+        # `pipeline:run`, not `pipeline:dry`: a dry run from here still keeps
+        # the eGov crawl delay.
+        run: |
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          if [ -n "$SOURCES" ]; then args+=(--sources "$SOURCES"); fi
+          pnpm run pipeline:run "${args[@]}"

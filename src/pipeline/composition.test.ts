@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { requireEnv } from "#/pipeline/composition.ts";
+import { parseSourcesFlag, requireEnv } from "#/pipeline/composition.ts";
 
 const TOUCHED = ["CM_TEST_PRIMARY", "CM_TEST_ALIAS"] as const;
 
@@ -41,5 +41,25 @@ describe("requireEnv", () => {
 		expect(() => requireEnv("CM_TEST_PRIMARY")).toThrow(
 			/Missing required environment variable: CM_TEST_PRIMARY\./,
 		);
+	});
+});
+
+describe("parseSourcesFlag", () => {
+	it("reads a comma-separated list, ignoring spaces and repeats", () => {
+		expect(parseSourcesFlag("youtube, egov,youtube")).toEqual({
+			ok: true,
+			sources: ["youtube", "egov"],
+		});
+	});
+
+	it("names every entry that is not a source path", () => {
+		expect(parseSourcesFlag("youtube,vimeo,pdf")).toEqual({
+			ok: false,
+			unknown: ["vimeo", "pdf"],
+		});
+	});
+
+	it("refuses a list with nothing in it", () => {
+		expect(parseSourcesFlag(" , ")).toEqual({ ok: false, unknown: [] });
 	});
 });

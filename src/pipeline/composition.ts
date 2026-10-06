@@ -4,6 +4,10 @@ import { Layer } from "effect";
 import { Resend } from "resend";
 import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
+import {
+	PIPELINE_SOURCES,
+	type PipelineSource,
+} from "#/pipeline/orchestrator.ts";
 import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
 import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionService.ts";
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
@@ -50,6 +54,10 @@ type BodyConfigEntry = {
 	egovTitlePattern?: RegExp;
 	finalsiteUrl?: string;
 	youtubePlaylistId?: string;
+	/** What a playlist title must start with to be this body's recording. */
+	youtubeTitlePrefix?: string;
+	/** ISO date; playlist videos dated earlier are ignored. */
+	youtubeSince?: string;
 };
 
 /**
@@ -64,6 +72,11 @@ const DEFAULT_BODIES: BodyConfigEntry[] = [
 		name: "Ellettsville Town Council",
 		egovSearchType: "12",
 		egovTitlePattern: /^Town Council/i,
+		// The body's own CATS playlist. The start date is the first meeting
+		// whose video is taken; earlier recordings in the playlist are ignored.
+		youtubePlaylistId: "PLLKIocQNuYstrABBQ0PL_J-B_op4n6Mxo",
+		youtubeTitlePrefix: "Ellettsville Town Council",
+		youtubeSince: "2025-05-27",
 	},
 	{
 		slug: "ellettsville-plan-commission",
@@ -105,6 +118,33 @@ function requireEnv(name: string, ...aliases: string[]): string {
 	throw new Error(
 		`Missing required environment variable: ${[name, ...aliases].join(" or ")}. Set it in .env.local or the shell.`,
 	);
+}
+
+type SourcesFlagReading =
+	| { ok: true; sources: PipelineSource[] }
+	| { ok: false; unknown: string[] };
+
+/**
+ * Reads the `--sources` value, a comma-separated list of source paths. A
+ * list with an unknown entry, or with no entries, is refused whole; `unknown`
+ * names the entries that are not source paths.
+ */
+function parseSourcesFlag(raw: string): SourcesFlagReading {
+	const entries = [
+		...new Set(
+			raw
+				.split(",")
+				.map((entry) => entry.trim().toLowerCase())
+				.filter((entry) => entry !== ""),
+		),
+	];
+	const isSource = (entry: string): entry is PipelineSource =>
+		(PIPELINE_SOURCES as readonly string[]).includes(entry);
+	const sources = entries.filter(isSource);
+	if (sources.length === 0 || sources.length !== entries.length) {
+		return { ok: false, unknown: entries.filter((e) => !isSource(e)) };
+	}
+	return { ok: true, sources };
 }
 
 type BuildLayersInput = { dryRun: boolean };
@@ -212,6 +252,7 @@ function buildProductionLayers(input: BuildLayersInput) {
 export {
 	DEFAULT_BODIES,
 	extractPdfText,
+	parseSourcesFlag,
 	readEnv,
 	requireEnv,
 	buildProductionLayers,
