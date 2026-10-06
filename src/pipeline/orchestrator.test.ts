@@ -606,6 +606,57 @@ describe("runPipeline", () => {
 		expect(result.processed).toBe(1);
 	});
 
+	it("holds a Finalsite listing whose date cell is unreadable and alerts instead of filing it under a guessed date", async () => {
+		const log = emptyCallLog();
+		const doc = (uuid: string) => ({
+			uuid,
+			documentType: "minutes" as const,
+			downloadUrl: `/fs/resource-manager/view/${uuid}`,
+			fileName: `${uuid}.pdf`,
+		});
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "Sept 8, 2025",
+					meetingType: "Regular Meeting",
+					year: 2025,
+					documents: [doc("uuid-undated")],
+				},
+				{
+					date: "January 20, 2026",
+					meetingType: "Regular Meeting",
+					year: 2026,
+					documents: [doc("uuid-dated")],
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		expect(log.finalsiteDownload).toEqual(["uuid-dated"]);
+		expect(log.store.map((s) => s.date)).toEqual(["2026-01-20"]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("Sept 8, 2025");
+		expect(result).toEqual({ processed: 1, errors: 1 });
+	});
+
 	it("sends a zero-results alert when the body's last meeting is more than 30 days old", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({

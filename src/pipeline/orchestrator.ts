@@ -547,6 +547,18 @@ function processFinalsiteListing(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
+		// A date cell the parser cannot read is held for the operator rather
+		// than filed under a guessed date, which would merge distinct meetings.
+		const meetingDate = normalizeFinalsiteDate(listing.date, listing.year);
+		if (meetingDate === null) {
+			return yield* Effect.fail(
+				new UndatedListingError({
+					title: `${listing.meetingType} (${listing.date})`,
+					uploadDate: null,
+				}),
+			);
+		}
+
 		const documents: MeetingInput["documents"] = [];
 		let combinedText = "";
 
@@ -598,7 +610,7 @@ function processFinalsiteListing(
 
 			yield* storage.storeMeeting({
 				bodySlug: body.slug,
-				date: normalizeFinalsiteDate(listing.date, listing.year),
+				date: meetingDate,
 				meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
 				documents,
 			});
@@ -619,7 +631,7 @@ function processFinalsiteListing(
 
 		yield* storage.storeMeeting({
 			bodySlug: body.slug,
-			date: normalizeFinalsiteDate(listing.date, listing.year),
+			date: meetingDate,
 			meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
 			documents,
 			summary: {
@@ -831,12 +843,13 @@ class PipelineExtractError {
 	}
 }
 
-/** An eGov listing whose title carries no date the parser can read. */
+/** A listing whose title or date cell carries no date the parser can read. */
 class UndatedListingError {
 	readonly _tag = "UndatedListingError";
 	readonly message: string;
-	constructor(input: { title: string; uploadDate: string }) {
-		this.message = `No meeting date could be read from the title "${input.title}" (uploaded ${input.uploadDate}). The listing was not ingested.`;
+	constructor(input: { title: string; uploadDate: string | null }) {
+		const uploaded = input.uploadDate ? ` (uploaded ${input.uploadDate})` : "";
+		this.message = `No meeting date could be read from "${input.title}"${uploaded}. The listing was not ingested.`;
 	}
 }
 

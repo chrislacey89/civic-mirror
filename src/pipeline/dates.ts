@@ -80,13 +80,21 @@ function isCalendarDate(iso: string): boolean {
 	);
 }
 
-/** Converts Finalsite "Month Day, Year" (e.g. "January 6, 2026") to ISO. */
-export function normalizeFinalsiteDate(label: string, year: number): string {
+/**
+ * Converts Finalsite "Month Day[, Year]" (e.g. "January 6, 2026") to ISO,
+ * taking `year` when the label carries none. Returns null when the label is
+ * not in that form, names an unknown month, or names a day that does not exist.
+ */
+export function normalizeFinalsiteDate(
+	label: string,
+	year: number,
+): string | null {
 	const match = label.match(/^(\w+)\s+(\d+),?\s*(\d+)?$/);
-	if (!match) return `${year}-01-01`;
-	const monthName = match[1].toLowerCase() as MonthName;
+	if (!match) return null;
+	const month = MONTH_BY_NAME[match[1].toLowerCase() as MonthName];
+	if (!month) return null;
 	const day = match[2].padStart(2, "0");
 	const parsedYear = match[3] ? Number(match[3]) : year;
-	const month = MONTH_BY_NAME[monthName] ?? "01";
-	return `${parsedYear}-${month}-${day}`;
+	const iso = `${parsedYear}-${month}-${day}`;
+	return isCalendarDate(iso) ? iso : null;
 }
