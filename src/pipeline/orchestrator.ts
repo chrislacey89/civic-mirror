@@ -286,7 +286,7 @@ function fetchListingsOrAlert<T, E extends TaggedPipelineError>(
 	return fetchEffect.pipe(
 		Effect.map((listings) => ({ ok: true as const, listings })),
 		Effect.catch((error) =>
-			alertAndRecover(body, "scrape", error).pipe(
+			alertAndRecover(body, "scrape", error, "body").pipe(
 				Effect.as({ ok: false as const }),
 			),
 		),
@@ -329,9 +329,12 @@ function iterateWithAlertRecovery<TItem, R>(
 				.processItem(item)
 				.pipe(
 					Effect.catch((error) =>
-						alertAndRecover(body, listingFailureStage(error), error).pipe(
-							Effect.as({ processed: 0, errors: 1 }),
-						),
+						alertAndRecover(
+							body,
+							listingFailureStage(error),
+							error,
+							"item",
+						).pipe(Effect.as({ processed: 0, errors: 1 })),
 					),
 				);
 
@@ -819,6 +822,7 @@ function alertDramaFailure(body: BodyConfig, error: LlmError | DatabaseError) {
 					bodyName: body.name,
 					errorTag: error._tag,
 					errorMessage: error.message,
+					scope: "item",
 				}),
 			)
 			.pipe(Effect.catch(() => Effect.void));
@@ -887,6 +891,7 @@ function alertAndRecover(
 	body: BodyConfig,
 	stage: string,
 	error: TaggedPipelineError,
+	scope: "body" | "item",
 ): Effect.Effect<void, never, AlertService> {
 	return Effect.gen(function* () {
 		const alert = yield* AlertService;
@@ -895,6 +900,7 @@ function alertAndRecover(
 			bodyName: body.name,
 			errorTag: error._tag,
 			errorMessage: error.message,
+			scope,
 		});
 		yield* alert.sendAlert(formatted).pipe(Effect.catch(() => Effect.void));
 	});
@@ -959,6 +965,7 @@ function runDramaDetectForVideo(input: {
 							bodyName: input.body.name,
 							errorTag: error._tag,
 							errorMessage: error.message,
+							scope: "item",
 						}),
 					)
 					.pipe(Effect.catch(() => Effect.void));

@@ -370,6 +370,7 @@ describe("runPipeline", () => {
 		expect(log.alert).toHaveLength(1);
 		expect(log.alert[0].body).toContain("Town Council Annual Report");
 		expect(log.alert[0].body).toContain("03/15/2026");
+		expect(log.alert[0].body).not.toContain("this body was skipped");
 		expect(result).toEqual({ processed: 1, errors: 1 });
 	});
 

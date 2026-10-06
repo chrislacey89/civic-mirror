@@ -100,7 +100,13 @@ function formatPipelineErrorAlert(input: {
 	bodyName: string;
 	errorTag: string;
 	errorMessage: string;
+	/** `body` when the failure skips the whole body, `item` when it affects one listing, video, or meeting. */
+	scope: "body" | "item";
 }): AlertInput {
+	const closing =
+		input.scope === "body"
+			? "The pipeline will continue with other bodies; this body was skipped."
+			: `The pipeline will continue with the rest of ${input.bodyName}; only the failing item was affected.`;
 	return {
 		subject: `[Civic Mirror] ${input.stage} failed for ${input.bodyName}`,
 		body: [
@@ -109,7 +115,7 @@ function formatPipelineErrorAlert(input: {
 			`Error: ${input.errorTag}`,
 			`Message: ${input.errorMessage}`,
 			"",
-			"The pipeline will continue with other bodies; this body was skipped.",
+			closing,
 		].join("\n"),
 	};
 }
