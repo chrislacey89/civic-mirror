@@ -158,6 +158,17 @@ describe("EgovScraper", () => {
 				extractMeetingDateFromTitle("Town Council Meeting Minutes 2011-10-12"),
 			).toBeNull();
 		});
+
+		it("returns null for a date-shaped run that continues into a longer hyphenated number", () => {
+			// Trailing hyphen guard: 03-23-26 followed by -1 is a numbered item.
+			expect(
+				extractMeetingDateFromTitle("Town Council Meeting Minutes 03-23-26-1"),
+			).toBeNull();
+			// Leading hyphen guard: 01-02-26 preceded by 2026- is a numbered item.
+			expect(
+				extractMeetingDateFromTitle("Town Council Resolution 2026-01-02-26"),
+			).toBeNull();
+		});
 	});
 
 	describe("parseEgovListingHtml", () => {
