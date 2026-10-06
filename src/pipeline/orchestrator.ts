@@ -325,23 +325,24 @@ function iterateWithAlertRecovery<TItem, R>(
 		for (const item of items) {
 			if (options.shouldProcess && !options.shouldProcess(item)) continue;
 
-			const result = yield* options
-				.processItem(item)
-				.pipe(
-					Effect.catch((error) =>
-						alertAndRecover(
-							body,
-							listingFailureStage(error),
-							error,
-							"item",
-						).pipe(Effect.as({ processed: 0, errors: 1 })),
+			const outcome = yield* options.processItem(item).pipe(
+				Effect.map((result) => ({ result, requested: true })),
+				Effect.catch((error) =>
+					alertAndRecover(body, listingFailureStage(error), error, "item").pipe(
+						Effect.as({
+							result: { processed: 0, errors: 1 },
+							requested: error._tag !== "UndatedListingError",
+						}),
 					),
-				);
+				),
+			);
 
-			processed += result.processed;
-			errors += result.errors;
+			processed += outcome.result.processed;
+			errors += outcome.result.errors;
 
-			if (options.delayBetweenItemsMs > 0) {
+			// The delay paces requests to the source. A listing held for its
+			// date fails before any request is made, so it has nothing to pace.
+			if (options.delayBetweenItemsMs > 0 && outcome.requested) {
 				yield* Effect.sleep(Duration.millis(options.delayBetweenItemsMs));
 			}
 		}

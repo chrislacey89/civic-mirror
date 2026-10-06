@@ -1,4 +1,4 @@
-import { Effect, Layer, Logger, References } from "effect";
+import { Clock, Duration, Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import { LlmError } from "#/pipeline/errors.ts";
@@ -217,6 +217,32 @@ function buildStubLayers(config: StubConfig) {
 	);
 }
 
+/**
+ * Runs `program` under a clock whose sleeps return at once, recording each
+ * requested duration in milliseconds so a test can assert on pacing without
+ * waiting for it.
+ */
+function withRecordedSleeps<A, E, R>(program: Effect.Effect<A, E, R>) {
+	const sleeps: number[] = [];
+	const effect = Clock.clockWith((live) =>
+		program.pipe(
+			Effect.provideService(Clock.Clock, {
+				currentTimeMillisUnsafe: () => live.currentTimeMillisUnsafe(),
+				currentTimeMillis: live.currentTimeMillis,
+				currentTimeNanosUnsafe: () => live.currentTimeNanosUnsafe(),
+				currentTimeNanos: live.currentTimeNanos,
+				monotonicTimeNanosUnsafe: () => live.monotonicTimeNanosUnsafe(),
+				monotonicTimeNanos: live.monotonicTimeNanos,
+				sleep: (duration) =>
+					Effect.sync(() => {
+						sleeps.push(Duration.toMillis(duration));
+					}),
+			}),
+		),
+	);
+	return { sleeps, effect };
+}
+
 describe("runPipeline", () => {
 	it("processes an eGov body end to end, storing one meeting per listing", async () => {
 		const log = emptyCallLog();
@@ -372,6 +398,49 @@ describe("runPipeline", () => {
 		expect(log.alert[0].body).toContain("03/15/2026");
 		expect(log.alert[0].body).not.toContain("this body was skipped");
 		expect(result).toEqual({ processed: 1, errors: 1 });
+	});
+
+	it("spends the crawl delay only on the eGov listing it downloaded, not on one held for its date", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 42,
+					title: "Town Council Annual Report",
+					date: "03/15/2026",
+					downloadUrl: "https://example.com/doc/42",
+					meetingDate: null,
+					documentType: "minutes",
+				},
+				{
+					id: 43,
+					title: "Town Council Meeting Minutes 03-09-26",
+					date: "03/15/2026",
+					downloadUrl: "https://example.com/doc/43",
+					meetingDate: "2026-03-09",
+					documentType: "minutes",
+				},
+			],
+		});
+
+		const { sleeps, effect } = withRecordedSleeps(
+			runPipeline({
+				bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+				crawlDelayMs: 300_000,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+				dryRun: false,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		const result = await Effect.runPromise(effect);
+
+		expect(result).toEqual({ processed: 1, errors: 1 });
+		expect(log.egovDownload).toEqual(["https://example.com/doc/43"]);
+		expect(sleeps).toEqual([300_000]);
 	});
 
 	it("skips storage and alerts in dry-run mode but still scrapes and summarizes", async () => {
