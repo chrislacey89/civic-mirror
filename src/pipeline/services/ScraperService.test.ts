@@ -99,6 +99,14 @@ describe("EgovScraper", () => {
 			).toBe("2026-01-06");
 		});
 
+		it("extracts a long-form date with no space after the comma", () => {
+			expect(
+				extractMeetingDateFromTitle(
+					"Reorganization Board Meeting January 21,2026 Minutes Approved",
+				),
+			).toBe("2026-01-21");
+		});
+
 		it("extracts a numeric 'MM-DD-YY' date from a minutes title", () => {
 			expect(
 				extractMeetingDateFromTitle("Town Council Meeting Minutes 03-23-26"),

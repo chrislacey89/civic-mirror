@@ -54,7 +54,7 @@ export function extractMeetingDateFromTitle(title: string): string | null {
 
 function extractLongFormDate(title: string): string | null {
 	const match = title.match(
-		/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),?\s+(\d{4})\b/i,
+		/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:,\s*|\s+)(\d{4})\b/i,
 	);
 	if (!match) return null;
 	const monthKey = match[1].toLowerCase() as MonthName;
