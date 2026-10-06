@@ -607,12 +607,12 @@ describe("runPipeline", () => {
 		expect(result.processed).toBe(1);
 	});
 
-	it("stores two Finalsite rows that share a date under sessions slugged from their labels", async () => {
+	it("stores two same-named Finalsite rows that share a date under sessions told apart by start time", async () => {
 		const log = emptyCallLog();
 		const row = (meetingType: string, uuid: string) => ({
-			date: "January 20, 2026",
+			date: "September 21, 2020",
 			meetingType,
-			year: 2026,
+			year: 2020,
 			documents: [
 				{
 					uuid,
@@ -625,8 +625,8 @@ describe("runPipeline", () => {
 		const layers = buildStubLayers({
 			log,
 			finalsiteListings: [
-				row("Board of Finance Meeting 6:00 PM", "uuid-finance"),
-				row("Regular Meeting 6:10 PM", "uuid-regular"),
+				row("Public Hearing 4:00 PM", "uuid-afternoon"),
+				row("Public Hearing 7:00 PM", "uuid-evening"),
 			],
 		});
 
@@ -652,9 +652,10 @@ describe("runPipeline", () => {
 		);
 
 		expect(log.storeInputs.map((i) => [i.date, i.session])).toEqual([
-			["2026-01-20", "board-of-finance-meeting-6-00-pm"],
-			["2026-01-20", "regular-meeting-6-10-pm"],
+			["2020-09-21", "public-hearing-4-00-pm"],
+			["2020-09-21", "public-hearing-7-00-pm"],
 		]);
+		expect(log.storeInputs[0].session).not.toBe(log.storeInputs[1].session);
 	});
 
 	it("holds a Finalsite listing whose date cell is unreadable and alerts instead of filing it under a guessed date", async () => {
