@@ -959,7 +959,13 @@ describe("StorageService", () => {
 						model: "m",
 					})
 					.run(),
-			).rejects.toThrow();
+			).rejects.toMatchObject({
+				// DrizzleQueryError wraps the driver error; the constraint detail is on `cause`.
+				cause: {
+					extendedCode: "SQLITE_CONSTRAINT_UNIQUE",
+					message: expect.stringContaining("summaries.meeting_id"),
+				},
+			});
 		});
 	});
 
