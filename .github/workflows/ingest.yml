@@ -58,7 +58,8 @@ jobs:
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          # Both are empty on a scheduled run, which then takes no flags.
+          # Both inputs are empty on a scheduled run.
+          EVENT_NAME: ${{ github.event_name }}
           DRY_RUN: ${{ inputs.dry_run }}
           SOURCES: ${{ inputs.sources }}
         # `pipeline:run`, not `pipeline:dry`: a dry run from here still keeps
@@ -66,5 +67,13 @@ jobs:
         run: |
           args=()
           if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
-          if [ -n "$SOURCES" ]; then args+=(--sources "$SOURCES"); fi
+          # The schedule leaves out the video path until the January-March 2026
+          # meetings are repaired (#115) and near-date videos are held (#137);
+          # until then it runs only on manual dispatch (sources: youtube, or
+          # empty for every source).
+          if [ -n "$SOURCES" ]; then
+            args+=(--sources "$SOURCES")
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            args+=(--sources egov,finalsite)
+          fi
           pnpm run pipeline:run "${args[@]}"
