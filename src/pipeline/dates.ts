@@ -5,7 +5,7 @@
  * `meetings.date` column. External sources give us various formats —
  * eGov uses MM/DD/YYYY in its listing table cells; Finalsite uses long-form
  * "Month Day, Year"; document titles embed the real meeting date in
- * long form ("December 22, 2025"). Keeping every converter and the month
+ * long form ("December 22, 2025") or numeric form ("03-23-26"). Keeping every converter and the month
  * lookup in one module eliminates the drift that used to happen when two
  * files carried their own MONTHS map.
  */
@@ -39,14 +39,20 @@ export type MonthName = keyof typeof MONTH_BY_NAME;
  * Background: the eGov listing table's date column is the *publish* date
  * (when the document was uploaded to the portal), which tends to collapse
  * to the day staff posted a batch — not the meeting date itself. The
- * authoritative meeting date is embedded in the title, e.g.
- * "Town Council Meeting Minutes December 22, 2025".
+ * authoritative meeting date is embedded in the title, in one of two forms:
+ * long ("Town Council Meeting Minutes December 22, 2025") or numeric with a
+ * two-digit year ("Town Council Meeting Minutes 03-23-26", "... 12-9-24").
+ * The long form wins when a title carries both, because numbered documents
+ * ("Ordinance 2025-14 Adopted December 22, 2025") put digit runs before it.
  *
  * Returns ISO YYYY-MM-DD on success, or null when the title has no
- * recognizable long-form date. Callers decide whether a null means "skip
- * the row" or "fall back to publish date." See issue #27.
+ * recognizable date. See issues #27 and #115.
  */
 export function extractMeetingDateFromTitle(title: string): string | null {
+	return extractLongFormDate(title) ?? extractNumericDate(title);
+}
+
+function extractLongFormDate(title: string): string | null {
 	const match = title.match(
 		/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2}),?\s+(\d{4})\b/i,
 	);
@@ -57,6 +63,21 @@ export function extractMeetingDateFromTitle(title: string): string | null {
 	const day = match[2].padStart(2, "0");
 	const year = match[3];
 	return `${year}-${month}-${day}`;
+}
+
+function extractNumericDate(title: string): string | null {
+	const match = title.match(/(?<![\d-])(\d{1,2})-(\d{1,2})-(\d{2})(?![\d-])/);
+	if (!match) return null;
+	const iso = `20${match[3]}-${match[1].padStart(2, "0")}-${match[2].padStart(2, "0")}`;
+	return isCalendarDate(iso) ? iso : null;
+}
+
+/** True when an ISO `YYYY-MM-DD` string names a day that exists. */
+function isCalendarDate(iso: string): boolean {
+	const parsed = new Date(`${iso}T00:00:00Z`);
+	return (
+		!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === iso
+	);
 }
 
 /** Converts eGov "MM/DD/YYYY" (listing cell publish date) to ISO "YYYY-MM-DD". */

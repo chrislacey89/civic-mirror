@@ -98,6 +98,38 @@ describe("EgovScraper", () => {
 				extractMeetingDateFromTitle("Town Council Meeting january 6, 2026"),
 			).toBe("2026-01-06");
 		});
+
+		it("extracts a numeric 'MM-DD-YY' date from a minutes title", () => {
+			expect(
+				extractMeetingDateFromTitle("Town Council Meeting Minutes 03-23-26"),
+			).toBe("2026-03-23");
+		});
+
+		it("extracts a numeric date with a one-digit month or day", () => {
+			expect(
+				extractMeetingDateFromTitle("Town Council Meeting Minutes 12-9-24"),
+			).toBe("2024-12-09");
+			expect(
+				extractMeetingDateFromTitle("Town Council Meeting Minutes 8-26-24"),
+			).toBe("2024-08-26");
+		});
+
+		it("prefers the long-form date when a title carries both forms", () => {
+			expect(
+				extractMeetingDateFromTitle(
+					"Resolution 10-12-25 Adopted December 22, 2025",
+				),
+			).toBe("2025-12-22");
+		});
+
+		it("returns null for a numeric run that is not a calendar date", () => {
+			expect(
+				extractMeetingDateFromTitle("Town Council Resolution 13-45-26"),
+			).toBeNull();
+			expect(
+				extractMeetingDateFromTitle("Town Council Meeting Minutes 02-30-26"),
+			).toBeNull();
+		});
 	});
 
 	describe("parseEgovListingHtml", () => {
