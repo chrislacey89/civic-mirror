@@ -12,7 +12,7 @@ volatility: evergreen
 
 ## Problem
 
-A parser that cannot read a field which forms part of a record's natural key must not substitute a plausible value for it. Meetings are unique on `(body_id, date)`. When the date could not be read, the pipeline filled in another date, and every record that hit the same fallback collapsed into one. Nothing failed: `errors=0`, a meeting page rendered, and five summaries were dropped.
+A parser that cannot read a field which forms part of a record's natural key must not substitute a plausible value for it. Meetings were unique on `(body_id, date)` at the time (the key has since gained `session`; see `natural-key-narrower-than-source-record-2026-10-06.md`). When the date could not be read, the pipeline filled in another date, and every record that hit the same fallback collapsed into one. Nothing failed: `errors=0`, a meeting page rendered, and five summaries were dropped.
 
 A second problem appears when the guess is replaced with "hold the row and alert". If a source serves a permanently unreadable row on every run, the new alert fires forever.
 
@@ -82,6 +82,7 @@ On the school-board path the same hold applied, with one exception found by runn
 - `src/pipeline/dates.test.ts`, "date readers never guess": every function exported from `src/pipeline/dates.ts` must be listed either as a date reader, with a call that hands it undated input and must return `null`, or as not a date reader. A new export fails the test until it is listed, so a new reader cannot be added without stating what it does with unreadable input.
 - Tests for a parser that feeds a key need cases in both directions: inputs it must read, and inputs it must refuse. The refusals found on this branch were a four-digit year, an ISO date, a longer hyphenated number, and an impossible day.
 - The check does not reach code that derives a key outside `dates.ts`. `processYouTubeVideo` still stores `video.publishedAt.slice(0, 10)` as the meeting date. It is latent because no configured body has a playlist.
+- The school-board session slug is a second key field derived outside `dates.ts` (`sessionFromFinalsiteLabel` in `orchestrator.ts`). Its refusal case is covered by an orchestrator test, not by this one.
 
 **Process-level:**
 
