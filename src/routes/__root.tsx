@@ -9,6 +9,7 @@ import { TanStackRouterDevtoolsPanel } from "@tanstack/react-router-devtools";
 import Footer from "../components/Footer";
 import Header from "../components/Header";
 import TanStackQueryDevtools from "../integrations/tanstack-query/devtools";
+import { getHeadIconLinks } from "../lib/icon-inventory";
 import appCss from "../styles.css?url";
 
 interface MyRouterContext {
@@ -30,11 +31,20 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 			{
 				title: "Civic Mirror — The Ledger",
 			},
+			{
+				name: "theme-color",
+				content: "#1a1a1a",
+			},
 		],
 		links: [
 			{
 				rel: "stylesheet",
 				href: appCss,
+			},
+			...getHeadIconLinks(),
+			{
+				rel: "manifest",
+				href: "/manifest.json",
 			},
 		],
 	}),
