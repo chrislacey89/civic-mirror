@@ -630,6 +630,7 @@ function processFinalsiteListing(
 			yield* storage.storeMeeting({
 				bodySlug: body.slug,
 				date: meetingDate,
+				session: sessionFromFinalsiteLabel(listing.meetingType),
 				meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
 				documents,
 			});
@@ -651,6 +652,7 @@ function processFinalsiteListing(
 		yield* storage.storeMeeting({
 			bodySlug: body.slug,
 			date: meetingDate,
+			session: sessionFromFinalsiteLabel(listing.meetingType),
 			meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
 			documents,
 			summary: {
@@ -933,6 +935,19 @@ function meetingTypeFromFinalsiteLabel(
 	if (lower.includes("special")) return "special";
 	if (lower.includes("workshop")) return "workshop";
 	return "regular";
+}
+
+/**
+ * The school board lists each meeting of a day on its own row, so the row
+ * label is what tells a Board of Finance meeting from the regular meeting
+ * that follows it. The start time stays in the slug: two hearings on one day
+ * can differ in nothing else.
+ */
+function sessionFromFinalsiteLabel(label: string): string {
+	return label
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
 }
 
 /**

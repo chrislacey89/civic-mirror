@@ -607,6 +607,56 @@ describe("runPipeline", () => {
 		expect(result.processed).toBe(1);
 	});
 
+	it("stores two Finalsite rows that share a date under sessions slugged from their labels", async () => {
+		const log = emptyCallLog();
+		const row = (meetingType: string, uuid: string) => ({
+			date: "January 20, 2026",
+			meetingType,
+			year: 2026,
+			documents: [
+				{
+					uuid,
+					documentType: "minutes" as const,
+					downloadUrl: `/fs/resource-manager/view/${uuid}`,
+					fileName: `${uuid}.pdf`,
+				},
+			],
+		});
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				row("Board of Finance Meeting 6:00 PM", "uuid-finance"),
+				row("Regular Meeting 6:10 PM", "uuid-regular"),
+			],
+		});
+
+		await Effect.runPromise(
+			runPipeline({
+				bodies: [
+					{
+						slug: "school-board",
+						name: "School Board",
+						finalsiteUrl: "https://example.com/school-board",
+					},
+				],
+				crawlDelayMs: 0,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({
+					text: "school board text",
+					method: "text-layer",
+				}),
+				dryRun: false,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(log.storeInputs.map((i) => [i.date, i.session])).toEqual([
+			["2026-01-20", "board-of-finance-meeting-6-00-pm"],
+			["2026-01-20", "regular-meeting-6-10-pm"],
+		]);
+	});
+
 	it("holds a Finalsite listing whose date cell is unreadable and alerts instead of filing it under a guessed date", async () => {
 		const log = emptyCallLog();
 		const doc = (uuid: string) => ({
