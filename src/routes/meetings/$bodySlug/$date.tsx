@@ -6,6 +6,7 @@ import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
  * Meeting detail page — the end of the tracer bullet.
  *
  * Route: `/meetings/:bodySlug/:date` (e.g. `/meetings/ellettsville-town-council/2026-03-23`)
+ * A body that meets more than once on a date is told apart by `?session=`.
  *
  * Three render branches keyed on `meeting.extractionMethod`:
  *   - `text-layer`: full Ledger layout (highlights, summary, receipts table)
@@ -13,9 +14,18 @@ import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
  *   - `unreadable`: status card + source PDF links only (no generated content)
  */
 export const Route = createFileRoute("/meetings/$bodySlug/$date")({
-	loader: ({ params }) =>
+	validateSearch: (search: Record<string, unknown>): { session?: string } =>
+		typeof search.session === "string" && search.session !== ""
+			? { session: search.session }
+			: {},
+	loaderDeps: ({ search }) => ({ session: search.session }),
+	loader: ({ params, deps }) =>
 		getMeetingByBodyAndDate({
-			data: { bodySlug: params.bodySlug, date: params.date },
+			data: {
+				bodySlug: params.bodySlug,
+				date: params.date,
+				session: deps.session,
+			},
 		}),
 	head: ({ loaderData }) => ({
 		meta: [

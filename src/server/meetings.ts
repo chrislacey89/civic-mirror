@@ -17,9 +17,16 @@ import {
 export const getMeetingByBodyAndDate = createServerFn({
 	method: "GET",
 })
-	.inputValidator((input: { bodySlug: string; date: string }) => input)
+	.inputValidator(
+		(input: { bodySlug: string; date: string; session?: string }) => input,
+	)
 	.handler(async ({ data }) => {
-		return await getMeetingByBodyAndDateQuery(db, data.bodySlug, data.date);
+		return await getMeetingByBodyAndDateQuery(
+			db,
+			data.bodySlug,
+			data.date,
+			data.session,
+		);
 	});
 
 export const listRecentMeetings = createServerFn({

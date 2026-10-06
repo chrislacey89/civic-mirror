@@ -43,6 +43,13 @@
       "when": 1777599361108,
       "tag": "0005_superb_spacker_dave",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791312087241,
+      "tag": "0006_meetings_session",
+      "breakpoints": true
     }
   ]
 }

@@ -582,6 +582,18 @@ function processFinalsiteListing(
 		}
 		const meetingDate = reading.date;
 
+		// The session slug is part of the meeting's key, and an empty one is the
+		// value that merges every meeting on a date. A type cell that slugs to
+		// nothing is held for the operator for the same reason.
+		const session = sessionFromFinalsiteLabel(listing.meetingType);
+		if (session === "") {
+			return yield* Effect.fail(
+				new UnsessionedListingError({
+					title: `${listing.meetingType} (${listing.date})`,
+				}),
+			);
+		}
+
 		const documents: MeetingInput["documents"] = [];
 		let combinedText = "";
 
@@ -634,6 +646,7 @@ function processFinalsiteListing(
 			yield* storage.storeMeeting({
 				bodySlug: body.slug,
 				date: meetingDate,
+				session,
 				meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
 				documents,
 			});
@@ -655,6 +668,7 @@ function processFinalsiteListing(
 		yield* storage.storeMeeting({
 			bodySlug: body.slug,
 			date: meetingDate,
+			session,
 			meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
 			documents,
 			summary: {
@@ -903,6 +917,15 @@ class UndatedListingError {
 	}
 }
 
+/** A listing whose type cell has no letters or digits to name its session. */
+class UnsessionedListingError {
+	readonly _tag = "UnsessionedListingError";
+	readonly message: string;
+	constructor(input: { title: string }) {
+		this.message = `No session could be read from the type cell of "${input.title}". The listing was not ingested.`;
+	}
+}
+
 type TaggedPipelineError =
 	| { readonly _tag: "NetworkError"; readonly message: string }
 	| { readonly _tag: "ParseError"; readonly message: string }
@@ -910,7 +933,8 @@ type TaggedPipelineError =
 	| { readonly _tag: "LlmError"; readonly message: string }
 	| { readonly _tag: "DatabaseError"; readonly message: string }
 	| PipelineExtractError
-	| UndatedListingError;
+	| UndatedListingError
+	| UnsessionedListingError;
 
 function listingFailureStage(error: TaggedPipelineError): string {
 	switch (error._tag) {
@@ -922,6 +946,8 @@ function listingFailureStage(error: TaggedPipelineError): string {
 			return "extract";
 		case "UndatedListingError":
 			return "date";
+		case "UnsessionedListingError":
+			return "session";
 		case "TranscriptionError":
 			return "transcribe";
 		case "LlmError":
@@ -963,6 +989,19 @@ function meetingTypeFromFinalsiteLabel(
 	if (lower.includes("special")) return "special";
 	if (lower.includes("workshop")) return "workshop";
 	return "regular";
+}
+
+/**
+ * The school board lists each meeting of a day on its own row, so the row
+ * label is what tells a Board of Finance meeting from the regular meeting
+ * that follows it. The start time stays in the slug: two hearings on one day
+ * can differ in nothing else.
+ */
+function sessionFromFinalsiteLabel(label: string): string {
+	return label
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.replace(/^-+|-+$/g, "");
 }
 
 /**
