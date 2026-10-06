@@ -1,7 +1,7 @@
 import { Clock, Duration, Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
-import { LlmError } from "#/pipeline/errors.ts";
+import { LlmError, NetworkError } from "#/pipeline/errors.ts";
 import {
 	runDramaDetectForVideo,
 	runPipeline,
@@ -64,6 +64,7 @@ function emptyCallLog(): CallLog {
 type StubConfig = {
 	log: CallLog;
 	egovListings?: EgovDocumentListing[];
+	egovScrapeError?: NetworkError;
 	finalsiteListings?: FinalsiteMeetingListing[];
 	youtubeVideos?: YouTubeVideo[];
 	summarizationResult?: SummarizationResult;
@@ -87,9 +88,11 @@ function buildStubLayers(config: StubConfig) {
 
 	const egov = Layer.succeed(EgovScraper, {
 		scrapeListings: () =>
-			Effect.sync(() => {
+			Effect.suspend(() => {
 				config.log.egovScrape += 1;
-				return config.egovListings ?? [];
+				return config.egovScrapeError
+					? Effect.fail(config.egovScrapeError)
+					: Effect.succeed(config.egovListings ?? []);
 			}),
 		downloadDocument: (url) =>
 			Effect.sync(() => {
@@ -586,6 +589,34 @@ describe("runPipeline", () => {
 		expect(result.errors).toBe(2);
 	});
 
+	it("alerts that the whole body was skipped when its listings cannot be fetched", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovScrapeError: new NetworkError({
+				url: "https://example.com/listings",
+				message: "portal unreachable",
+			}),
+		});
+
+		const program = runPipeline({
+			bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("portal unreachable");
+		expect(log.alert[0].body).toContain("this body was skipped");
+	});
+
 	it("retries a failing LLM call exactly `attempts` more times before giving up", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
@@ -921,10 +952,12 @@ describe("runPipeline", () => {
 		expect(log.store).toHaveLength(1);
 		expect(result.processed).toBe(1);
 		expect(result.errors).toBe(0);
-		// Operator was alerted to the drama failure.
-		expect(log.alert.some((a) => a.subject.includes("drama-detection"))).toBe(
-			true,
-		);
+		// Operator was alerted to the drama failure, as a failure of this one
+		// video rather than of the body.
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].subject).toContain("drama-detection");
+		expect(log.alert[0].body).toContain("rest of Town Council");
+		expect(log.alert[0].body).not.toContain("this body was skipped");
 	});
 
 	it("persists an unreadable eGov PDF as a document row without summarizing", async () => {
