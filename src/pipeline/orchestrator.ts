@@ -1,6 +1,9 @@
 import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
-import { readFinalsiteDate } from "#/pipeline/dates.ts";
+import {
+	extractMeetingDateFromTitle,
+	readFinalsiteDate,
+} from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
 	type AlertScope,
@@ -700,15 +703,34 @@ function runYouTubeForBody(
 		if (!videosResult.ok) return { processed: 0, errors: 1 };
 
 		return yield* iterateWithAlertRecovery(body, videosResult.listings, {
-			processItem: (video) => processYouTubeVideo(body, video, config),
+			processItem: (video) => {
+				// The publish date is the day the recording reached the playlist,
+				// which trails the meeting and is shared by videos posted together.
+				// A title with no readable date is held for the operator rather
+				// than filed under it.
+				const meetingDate = extractMeetingDateFromTitle(video.title);
+				if (meetingDate === null) {
+					return Effect.fail(
+						new UndatedListingError({
+							title: video.title,
+							uploadDate: video.publishedAt.slice(0, 10),
+						}),
+					);
+				}
+				return processYouTubeVideo(body, video, meetingDate, config);
+			},
 			delayBetweenItemsMs: config.youtubeDelayMs,
 		});
 	});
 }
 
+/** What processing one video needs, whether it came from a playlist or the operator. */
+type VideoRef = Pick<YouTubeVideo, "videoId" | "title">;
+
 function processYouTubeVideo(
 	body: BodyConfig,
-	video: YouTubeVideo,
+	video: VideoRef,
+	meetingDate: string,
 	config: ResolvedConfig,
 	dramaAlertScope: "item" | "sole-item" = "item",
 ): Effect.Effect<
@@ -746,7 +768,7 @@ function processYouTubeVideo(
 
 		const meeting = yield* storage.storeMeeting({
 			bodySlug: body.slug,
-			date: video.publishedAt.slice(0, 10),
+			date: meetingDate,
 			meetingType: "regular",
 			documents: [],
 			summary: {
@@ -788,7 +810,7 @@ function processYouTubeVideo(
 
 function runDramaDetection(input: {
 	body: BodyConfig;
-	video: YouTubeVideo;
+	video: VideoRef;
 	meetingId: number;
 	transcript: TranscriptResult;
 }) {
@@ -952,7 +974,8 @@ function meetingTypeFromFinalsiteLabel(
  */
 function runDramaDetectForVideo(input: {
 	body: BodyConfig;
-	video: YouTubeVideo;
+	video: VideoRef;
+	meetingDate: string;
 	networkRetry?: RetryPolicy;
 	llmRetry?: RetryPolicy;
 	now?: Date;
@@ -978,7 +1001,13 @@ function runDramaDetectForVideo(input: {
 		now: input.now ?? new Date(),
 	};
 
-	return processYouTubeVideo(input.body, input.video, config, "sole-item").pipe(
+	return processYouTubeVideo(
+		input.body,
+		input.video,
+		input.meetingDate,
+		config,
+		"sole-item",
+	).pipe(
 		Effect.catch((error) =>
 			Effect.gen(function* () {
 				const alert = yield* AlertService;

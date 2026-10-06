@@ -11,6 +11,7 @@ import {
 	DEFAULT_BODIES,
 	extractPdfText,
 } from "#/pipeline/composition.ts";
+import { resolveDetectMeeting } from "#/pipeline/detect-date.ts";
 import {
 	runDramaDetectForVideo,
 	runPipeline,
@@ -124,7 +125,7 @@ const detectTitle = Flag.String("title").pipe(
 const detectDate = Flag.String("date").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"ISO date (YYYY-MM-DD) recorded as the meeting date (defaults to today).",
+		"ISO date (YYYY-MM-DD) recorded as the meeting date. Required unless --title carries the date.",
 	),
 );
 
@@ -146,13 +147,16 @@ const dramaDetectCommand = Command.make(
 				return;
 			}
 
-			const resolvedTitle = Option.getOrElse(
-				title,
-				() => `Manual drama:detect ${videoId}`,
-			);
-			const resolvedDate = Option.getOrElse(date, () =>
-				new Date().toISOString().slice(0, 10),
-			);
+			// The meeting date is half of the meeting's key, so a run with no
+			// date to read stops here instead of filing the video under today.
+			const { title: resolvedTitle, meetingDate: resolvedDate } =
+				resolveDetectMeeting({ videoId, date, title });
+			if (resolvedDate === null) {
+				yield* Console.error(
+					"No meeting date: pass --date YYYY-MM-DD, or a --title that carries the date.",
+				);
+				return;
+			}
 
 			yield* Console.log(
 				`[drama:detect] body=${bodySlug} videoId=${videoId} date=${resolvedDate}`,
@@ -168,12 +172,8 @@ const dramaDetectCommand = Command.make(
 
 			const result = yield* runDramaDetectForVideo({
 				body,
-				video: {
-					videoId,
-					title: resolvedTitle,
-					publishedAt: `${resolvedDate}T00:00:00Z`,
-					hasCaptions: true,
-				},
+				video: { videoId, title: resolvedTitle },
+				meetingDate: resolvedDate,
 			}).pipe(Effect.provide(layers));
 
 			yield* Console.log(
