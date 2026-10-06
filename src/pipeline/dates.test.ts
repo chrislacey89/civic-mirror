@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import * as dates from "#/pipeline/dates.ts";
 import {
+	extractMeetingDateFromTitle,
 	isMonthOnlyFinalsiteDate,
 	normalizeFinalsiteDate,
 } from "#/pipeline/dates.ts";
@@ -46,5 +48,37 @@ describe("isMonthOnlyFinalsiteDate", () => {
 		"TBD",
 	])("does not recognise %j", (label) => {
 		expect(isMonthOnlyFinalsiteDate(label)).toBe(false);
+	});
+});
+
+/**
+ * A meeting's date is half of its natural key, so a reader that substitutes a
+ * plausible date for input it cannot read merges distinct meetings silently.
+ * Every function this module exports is listed here: a date reader with the
+ * call that hands it undated input, anything else by name. A new export fails
+ * the first test until it is added to one of the two lists.
+ */
+describe("date readers never guess", () => {
+	const undatedCalls: Record<string, () => string | null> = {
+		extractMeetingDateFromTitle: () =>
+			extractMeetingDateFromTitle("Town Council Annual Report"),
+		normalizeFinalsiteDate: () => normalizeFinalsiteDate("TBD", 2026),
+	};
+	const notDateReaders = ["isMonthOnlyFinalsiteDate"];
+
+	it("lists every function the module exports", () => {
+		const exported = Object.entries(dates)
+			.filter(([, value]) => typeof value === "function")
+			.map(([name]) => name)
+			.sort();
+		expect(exported).toEqual(
+			[...Object.keys(undatedCalls), ...notDateReaders].sort(),
+		);
+	});
+
+	it.each(
+		Object.entries(undatedCalls),
+	)("%s returns null for input that carries no date", (_name, call) => {
+		expect(call()).toBeNull();
 	});
 });
