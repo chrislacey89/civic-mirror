@@ -29,7 +29,7 @@
   "dependencies": {
     "@ai-sdk/google": "^3.0.60",
     "@ai-sdk/moonshotai": "^2.0.16",
-    "@effect/platform-node": "4.0.0-rc.118",
+    "@effect/platform-node": "4.0.1",
     "@libsql/client": "^0.17.3",
     "@napi-rs/canvas": "^0.1.97",
     "@tailwindcss/vite": "^4.1.18",
@@ -46,7 +46,7 @@
     "clsx": "^2.1.1",
     "drizzle-kit": "^0.31.9",
     "drizzle-orm": "^0.45.1",
-    "effect": "4.0.0-rc.118",
+    "effect": "4.0.1",
     "lucide-react": "^0.577.0",
     "nitro": "3.0.260311-beta",
     "react": "^19.2.0",
