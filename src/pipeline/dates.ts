@@ -46,7 +46,7 @@ export type MonthName = keyof typeof MONTH_BY_NAME;
  * ("Ordinance 2025-14 Adopted December 22, 2025") put digit runs before it.
  *
  * Returns ISO YYYY-MM-DD on success, or null when the title has no
- * recognizable date. See issues #27 and #115.
+ * recognizable date or names a day that does not exist. See issues #27 and #115.
  */
 export function extractMeetingDateFromTitle(title: string): string | null {
 	return extractLongFormDate(title) ?? extractNumericDate(title);
@@ -61,8 +61,8 @@ function extractLongFormDate(title: string): string | null {
 	const month = MONTH_BY_NAME[monthKey];
 	if (!month) return null;
 	const day = match[2].padStart(2, "0");
-	const year = match[3];
-	return `${year}-${month}-${day}`;
+	const iso = `${match[3]}-${month}-${day}`;
+	return isCalendarDate(iso) ? iso : null;
 }
 
 function extractNumericDate(title: string): string | null {

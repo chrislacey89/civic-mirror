@@ -139,6 +139,14 @@ describe("EgovScraper", () => {
 			).toBeNull();
 		});
 
+		it("returns null for a long-form date naming a day that does not exist", () => {
+			expect(
+				extractMeetingDateFromTitle(
+					"Town Council Meeting Minutes February 30, 2026",
+				),
+			).toBeNull();
+		});
+
 		it("returns null for a four-digit-year numeric date instead of reading it as 2020", () => {
 			expect(
 				extractMeetingDateFromTitle("Town Council Meeting Minutes 03-23-2026"),
