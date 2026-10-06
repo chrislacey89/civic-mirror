@@ -11,6 +11,7 @@ import {
 	getBodyWithStatsBySlugQuery,
 	getMeetingByBodyAndDateQuery,
 	listBodiesWithStatsQuery,
+	listFiscalDecisionsQuery,
 	listGoverningBodiesQuery,
 	listNotableFiscalDecisionsQuery,
 	listRecentMeetingsQuery,
@@ -787,5 +788,76 @@ describe("aggregateFiscalByCategoryForBodyQuery", () => {
 		expect(
 			await aggregateFiscalByCategoryForBodyQuery(db, "no-such-body"),
 		).toEqual([]);
+	});
+});
+
+describe("meetings that share a date", () => {
+	async function seedSession(
+		db: Awaited<ReturnType<typeof createTestDb>>,
+		bodyId: number,
+		date: string,
+		session: string,
+	) {
+		const meeting = await db
+			.insert(schema.meetings)
+			.values({ bodyId, date, session, meetingType: "regular" })
+			.returning()
+			.get();
+		await db
+			.insert(schema.summaries)
+			.values({
+				meetingId: meeting.id,
+				highlights: [],
+				prose: `prose of ${session || "the only session"}`,
+				model: "gemini-2.5-flash",
+			})
+			.run();
+		await db
+			.insert(schema.fiscalDecisions)
+			.values({
+				meetingId: meeting.id,
+				title: `decision of ${session}`,
+				description: "",
+				amount: 1000,
+				originalAmount: "$1,000",
+				status: "approved",
+			})
+			.run();
+		return meeting;
+	}
+
+	it("getMeetingByBodyAndDateQuery returns the session asked for", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSession(db, body.id, "2026-01-20", "board-of-finance");
+		await seedSession(db, body.id, "2026-01-20", "regular-meeting");
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-01-20",
+			"regular-meeting",
+		);
+
+		expect(result?.session).toBe("regular-meeting");
+		expect(result?.summary?.prose).toBe("prose of regular-meeting");
+	});
+	it("list queries carry each meeting's session so a link can name it", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSession(db, body.id, "2026-01-20", "board-of-finance");
+		await seedSession(db, body.id, "2026-01-20", "regular-meeting");
+
+		const cards = await listRecentMeetingsQuery(db);
+		expect(cards.map((c) => c.session).sort()).toEqual([
+			"board-of-finance",
+			"regular-meeting",
+		]);
+
+		const decisions = await listFiscalDecisionsQuery(db);
+		expect(decisions.map((d) => [d.title, d.session]).sort()).toEqual([
+			["decision of board-of-finance", "board-of-finance"],
+			["decision of regular-meeting", "regular-meeting"],
+		]);
 	});
 });
