@@ -1376,6 +1376,55 @@ describe("runPipeline stage logging", () => {
 		expect(transcribeStart?.annotations.body).toBe("school-board");
 		expect(transcribeStart?.annotations.videoId).toBe("vid-001");
 	});
+
+	it("logs a skipped month-only Finalsite listing with its date cell and meeting type", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			finalsiteListings: [
+				{
+					date: "September 2025",
+					meetingType: "Superintendent's Contract",
+					year: 2025,
+					documents: [
+						{
+							uuid: "uuid-month-only",
+							documentType: "notice",
+							downloadUrl: "/fs/resource-manager/view/uuid-month-only",
+							fileName: "uuid-month-only.pdf",
+						},
+					],
+				},
+			],
+		});
+		const { captured, layer: loggerLayer } = buildLogCapture();
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "school-board",
+					name: "School Board",
+					finalsiteUrl: "https://example.com/school-board",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers), Effect.provide(loggerLayer));
+
+		await Effect.runPromise(program);
+
+		const skipped = findStageLog(captured, "finalsite.listing.skipped");
+		expect(skipped?.annotations).toMatchObject({
+			body: "school-board",
+			reason: "month-only date",
+			date: "September 2025",
+			meetingType: "Superintendent's Contract",
+		});
+	});
 });
 
 describe("runDramaDetectForVideo", () => {
