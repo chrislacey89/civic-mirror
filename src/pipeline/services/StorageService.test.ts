@@ -388,6 +388,87 @@ describe("StorageService", () => {
 				testMeetingInput.budgetDiscussions.length,
 			);
 		});
+
+		it("stores two sessions on one date as two meetings, each with its own summary", async () => {
+			const db = await createTestDb();
+			const layer = StorageServiceLive(db);
+
+			const session = (name: string, docId: string) => ({
+				bodySlug: "ellettsville-town-council",
+				date: "2026-01-20",
+				session: name,
+				meetingType: "regular" as const,
+				documents: [
+					{
+						sourceUrl: `/fs/resource-manager/view/${docId}`,
+						rawText: `Minutes of the ${name}.`,
+						documentType: "minutes" as const,
+						extractionMethod: "text-layer" as const,
+					},
+				],
+				summary: {
+					highlights: [`${name} highlight`],
+					prose: `${name} prose`,
+					model: "gemini-2.5-flash",
+				},
+			});
+
+			const [finance, regular] = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return [
+						yield* storage.storeMeeting(session("board-of-finance", "uuid-a")),
+						yield* storage.storeMeeting(session("regular-meeting", "uuid-b")),
+					];
+				}).pipe(Effect.provide(layer)),
+			);
+
+			expect(regular.id).not.toBe(finance.id);
+			const summaries = await db.select().from(schema.summaries).all();
+			expect(summaries.map((s) => s.prose).sort()).toEqual([
+				"board-of-finance prose",
+				"regular-meeting prose",
+			]);
+		});
+
+		it("reuses a same-day meeting that already holds one of the documents, whatever its session", async () => {
+			const db = await createTestDb();
+			const layer = StorageServiceLive(db);
+
+			const doc = (id: string) => ({
+				sourceUrl: `/fs/resource-manager/view/${id}`,
+				rawText: `Text of ${id}.`,
+				documentType: "minutes" as const,
+				extractionMethod: "text-layer" as const,
+			});
+			const base = {
+				bodySlug: "ellettsville-town-council",
+				date: "2026-04-21",
+				meetingType: "regular" as const,
+			};
+
+			const [first, relabelled] = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return [
+						yield* storage.storeMeeting({
+							...base,
+							session: "regular-meeting-6-00-pm",
+							documents: [doc("uuid-agenda")],
+						}),
+						yield* storage.storeMeeting({
+							...base,
+							session: "regular-meeting-6-30-pm",
+							documents: [doc("uuid-agenda"), doc("uuid-minutes")],
+						}),
+					];
+				}).pipe(Effect.provide(layer)),
+			);
+
+			expect(relabelled.id).toBe(first.id);
+			expect(await db.select().from(schema.meetings).all()).toHaveLength(1);
+			expect(await db.select().from(schema.documents).all()).toHaveLength(2);
+		});
 	});
 
 	describe("getMeetingByBodyAndDate", () => {

@@ -164,6 +164,7 @@ function BodyProfilePage() {
 								key={m.id}
 								to="/meetings/$bodySlug/$date"
 								params={{ bodySlug: m.bodySlug, date: m.date }}
+								search={m.session ? { session: m.session } : {}}
 								className={`block py-4 no-underline hover:bg-[var(--paper-alt)] ${
 									i < meetings.length - 1
 										? "border-b border-dotted border-[var(--rule-dot)]"
