@@ -28,7 +28,7 @@ PR #38 introduced `uniqueIndex("meetings_body_id_date_unique")` and `uniqueIndex
 - Foreign-key-referenced tables accumulate duplicates too — same meeting cited in two separate `summaries` rows, same ordinance linked from two `documents` rows
 - Dashboards that aggregate across the table (e.g. spending-per-month sums) inflate by the duplication factor
 - Dry-run / `processed=N errors=0` reports look fine because inserts aren't failing — they're succeeding too often
-- `SELECT bodyId, date, COUNT(*) FROM meetings GROUP BY bodyId, date HAVING COUNT(*) > 1` returns rows after a second run; this is the canonical verification query for any ingestion fix in this shape
+- `SELECT body_id, date, session, COUNT(*) FROM meetings GROUP BY body_id, date, session HAVING COUNT(*) > 1` returns rows after a second run; this is the canonical verification query for any ingestion fix in this shape. Group on the whole key: since PR #122 the meetings key includes `session`, and grouping on `(body_id, date)` alone reports legitimate same-day meetings as duplicates (see `natural-key-narrower-than-source-record-2026-10-06.md`)
 
 ## Root Cause
 
