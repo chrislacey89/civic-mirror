@@ -446,6 +446,45 @@ describe("runPipeline", () => {
 		expect(sleeps).toEqual([300_000]);
 	});
 
+	it("still spends the crawl delay on an eGov listing that was downloaded and then failed", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 43,
+					title: "Town Council Meeting Minutes 03-09-26",
+					date: "03/15/2026",
+					downloadUrl: "https://example.com/doc/43",
+					meetingDate: "2026-03-09",
+					documentType: "minutes",
+				},
+			],
+			summarizationError: new Error("LLM boom"),
+		});
+
+		const { sleeps, effect } = withRecordedSleeps(
+			runPipeline({
+				bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+				crawlDelayMs: 300_000,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({ text: "text", method: "text-layer" }),
+				dryRun: false,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		const result = await Effect.runPromise(effect);
+
+		// The listing failed, but only after its document was requested from
+		// the portal, so the request still has to be paced.
+		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(log.egovDownload).toEqual(["https://example.com/doc/43"]);
+		expect(log.store).toHaveLength(0);
+		expect(sleeps).toEqual([300_000]);
+	});
+
 	it("skips storage and alerts in dry-run mode but still scrapes and summarizes", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
