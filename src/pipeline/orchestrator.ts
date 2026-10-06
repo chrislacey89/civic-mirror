@@ -1,9 +1,6 @@
 import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
-import {
-	isMonthOnlyFinalsiteDate,
-	normalizeFinalsiteDate,
-} from "#/pipeline/dates.ts";
+import { readFinalsiteDate } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
 	AlertService,
@@ -553,9 +550,11 @@ function processFinalsiteListing(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
+		const reading = readFinalsiteDate(listing.date, listing.year);
+
 		// A month-and-year cell with no day is not a dated meeting; skip it
 		// without storing, downloading, or alerting.
-		if (isMonthOnlyFinalsiteDate(listing.date)) {
+		if (reading.kind === "month-only") {
 			yield* Effect.log("finalsite.listing.skipped").pipe(
 				Effect.annotateLogs({
 					reason: "month-only date",
@@ -568,8 +567,7 @@ function processFinalsiteListing(
 
 		// A date cell the parser cannot read is held for the operator rather
 		// than filed under a guessed date, which would merge distinct meetings.
-		const meetingDate = normalizeFinalsiteDate(listing.date, listing.year);
-		if (meetingDate === null) {
+		if (reading.kind === "unreadable") {
 			return yield* Effect.fail(
 				new UndatedListingError({
 					title: `${listing.meetingType} (${listing.date})`,
@@ -577,6 +575,7 @@ function processFinalsiteListing(
 				}),
 			);
 		}
+		const meetingDate = reading.date;
 
 		const documents: MeetingInput["documents"] = [];
 		let combinedText = "";
