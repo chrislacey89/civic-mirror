@@ -1,6 +1,6 @@
 import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
-import { normalizeEgovDate, normalizeFinalsiteDate } from "#/pipeline/dates.ts";
+import { normalizeFinalsiteDate } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
 	AlertService,
@@ -400,6 +400,20 @@ function processEgovListing(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
+		// The listing cell is the upload date, which collapses to the day staff
+		// posted a batch. Filing a meeting under it merges distinct meetings
+		// onto a date none of them took place, so a title with no readable
+		// date is held for the operator rather than guessed at.
+		const meetingDate = listing.meetingDate;
+		if (meetingDate === null) {
+			return yield* Effect.fail(
+				new UndatedListingError({
+					title: listing.title,
+					uploadDate: listing.date,
+				}),
+			);
+		}
+
 		yield* Effect.log("egov.download.start");
 		const bytes = yield* scraper
 			.downloadDocument(listing.downloadUrl)
@@ -419,13 +433,6 @@ function processEgovListing(
 		yield* Effect.log("egov.extract.finish").pipe(
 			Effect.annotateLogs({ method: extraction.method }),
 		);
-
-		// Meeting date comes from the title when present — the eGov listing cell
-		// is the publish/upload date, which collapses to the day staff posted a
-		// batch and would cause distinct meetings to merge. Fall back to the
-		// publish date only when the title has no extractable long-form date
-		// (rare; annual reports and similar). See #27.
-		const meetingDate = listing.meetingDate ?? normalizeEgovDate(listing.date);
 
 		// Unreadable branch: persist the document row so the meeting appears in
 		// listings with a link to the PDF, but skip summarization + fiscal
@@ -456,7 +463,7 @@ function processEgovListing(
 		const summary = yield* summarizer
 			.summarize({
 				sourceText: extraction.text,
-				meetingContext: `${body.name}, ${listing.date}`,
+				meetingContext: `${body.name}, ${meetingDate}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
 		yield* Effect.log("egov.summarize.finish");
@@ -824,13 +831,23 @@ class PipelineExtractError {
 	}
 }
 
+/** An eGov listing whose title carries no date the parser can read. */
+class UndatedListingError {
+	readonly _tag = "UndatedListingError";
+	readonly message: string;
+	constructor(input: { title: string; uploadDate: string }) {
+		this.message = `No meeting date could be read from the title "${input.title}" (uploaded ${input.uploadDate}). The listing was not ingested.`;
+	}
+}
+
 type TaggedPipelineError =
 	| { readonly _tag: "NetworkError"; readonly message: string }
 	| { readonly _tag: "ParseError"; readonly message: string }
 	| { readonly _tag: "TranscriptionError"; readonly message: string }
 	| { readonly _tag: "LlmError"; readonly message: string }
 	| { readonly _tag: "DatabaseError"; readonly message: string }
-	| PipelineExtractError;
+	| PipelineExtractError
+	| UndatedListingError;
 
 function listingFailureStage(error: TaggedPipelineError): string {
 	switch (error._tag) {
@@ -840,6 +857,8 @@ function listingFailureStage(error: TaggedPipelineError): string {
 			return "extract";
 		case "PipelineExtractError":
 			return "extract";
+		case "UndatedListingError":
+			return "date";
 		case "TranscriptionError":
 			return "transcribe";
 		case "LlmError":

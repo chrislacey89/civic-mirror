@@ -5,9 +5,9 @@
  * `meetings.date` column. External sources give us various formats —
  * eGov uses MM/DD/YYYY in its listing table cells; Finalsite uses long-form
  * "Month Day, Year"; document titles embed the real meeting date in
- * long form ("December 22, 2025") or numeric form ("03-23-26"). Keeping every converter and the month
- * lookup in one module eliminates the drift that used to happen when two
- * files carried their own MONTHS map.
+ * long form ("December 22, 2025") or numeric form ("03-23-26"). Keeping
+ * every converter and the month lookup in one module eliminates the drift
+ * that used to happen when two files carried their own MONTHS map.
  */
 
 /**
@@ -78,14 +78,6 @@ function isCalendarDate(iso: string): boolean {
 	return (
 		!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === iso
 	);
-}
-
-/** Converts eGov "MM/DD/YYYY" (listing cell publish date) to ISO "YYYY-MM-DD". */
-export function normalizeEgovDate(mmddyyyy: string): string {
-	const parts = mmddyyyy.split("/");
-	if (parts.length !== 3) return mmddyyyy;
-	const [month, day, year] = parts;
-	return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
 }
 
 /** Converts Finalsite "Month Day, Year" (e.g. "January 6, 2026") to ISO. */
