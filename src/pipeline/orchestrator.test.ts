@@ -815,6 +815,92 @@ describe("runPipeline", () => {
 		expect(result.processed).toBe(1);
 	});
 
+	it("stores a YouTube video under the date in its title, not its publish date", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					videoId: "abc123",
+					title: "Ellettsville Town Council, July 14, 2026",
+					publishedAt: "2026-07-16T13:05:00Z",
+					hasCaptions: true,
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "town-council",
+					name: "Town Council",
+					youtubePlaylistId: "PL_test",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
+		expect(log.store.map((s) => s.date)).toEqual(["2026-07-14"]);
+	});
+
+	it("holds and alerts on a YouTube video whose title has no readable date", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					videoId: "undated",
+					title: "Ellettsville Town Council Special Session",
+					publishedAt: "2026-07-16T13:05:00Z",
+					hasCaptions: true,
+				},
+				{
+					videoId: "dated",
+					title: "Ellettsville Town Council, July 14, 2026",
+					publishedAt: "2026-07-16T13:05:00Z",
+					hasCaptions: true,
+				},
+			],
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "town-council",
+					name: "Town Council",
+					youtubePlaylistId: "PL_test",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// The undated video is never transcribed, summarized or stored; the
+		// dated one behind it still goes through.
+		expect(log.transcribe).toEqual(["dated"]);
+		expect(log.summarize).toHaveLength(1);
+		expect(log.store.map((s) => s.date)).toEqual(["2026-07-14"]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain(
+			"Ellettsville Town Council Special Session",
+		);
+		expect(log.alert[0].body).toContain("2026-07-16");
+		expect(result).toEqual({ processed: 1, errors: 1 });
+	});
+
 	it("does not block transcript storage when drama detection fails", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({

@@ -1,6 +1,7 @@
 import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import {
+	extractMeetingDateFromTitle,
 	isMonthOnlyFinalsiteDate,
 	normalizeFinalsiteDate,
 } from "#/pipeline/dates.ts";
@@ -699,7 +700,22 @@ function runYouTubeForBody(
 		if (!videosResult.ok) return { processed: 0, errors: 1 };
 
 		return yield* iterateWithAlertRecovery(body, videosResult.listings, {
-			processItem: (video) => processYouTubeVideo(body, video, config),
+			processItem: (video) => {
+				// The publish date is the day the recording reached the playlist,
+				// which trails the meeting and is shared by videos posted together.
+				// A title with no readable date is held for the operator rather
+				// than filed under it.
+				const meetingDate = extractMeetingDateFromTitle(video.title);
+				if (meetingDate === null) {
+					return Effect.fail(
+						new UndatedListingError({
+							title: video.title,
+							uploadDate: video.publishedAt.slice(0, 10),
+						}),
+					);
+				}
+				return processYouTubeVideo(body, video, meetingDate, config);
+			},
 			delayBetweenItemsMs: config.youtubeDelayMs,
 		});
 	});
@@ -708,6 +724,7 @@ function runYouTubeForBody(
 function processYouTubeVideo(
 	body: BodyConfig,
 	video: YouTubeVideo,
+	meetingDate: string,
 	config: ResolvedConfig,
 ): Effect.Effect<
 	PipelineResult,
@@ -744,7 +761,7 @@ function processYouTubeVideo(
 
 		const meeting = yield* storage.storeMeeting({
 			bodySlug: body.slug,
-			date: video.publishedAt.slice(0, 10),
+			date: meetingDate,
 			meetingType: "regular",
 			documents: [],
 			summary: {
@@ -970,7 +987,12 @@ function runDramaDetectForVideo(input: {
 		now: input.now ?? new Date(),
 	};
 
-	return processYouTubeVideo(input.body, input.video, config).pipe(
+	return processYouTubeVideo(
+		input.body,
+		input.video,
+		input.video.publishedAt.slice(0, 10),
+		config,
+	).pipe(
 		Effect.catch((error) =>
 			Effect.gen(function* () {
 				const alert = yield* AlertService;
