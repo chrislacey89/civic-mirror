@@ -3,10 +3,8 @@
  *
  *   pnpm tsx src/pipeline/scripts/delete-meeting.ts <body-slug> <YYYY-MM-DD>
  *   pnpm tsx src/pipeline/scripts/delete-meeting.ts <body-slug> <YYYY-MM-DD> --confirm
- *   pnpm tsx src/pipeline/scripts/delete-meeting.ts <body-slug> <YYYY-MM-DD> --session=<slug>
  *
- * A date that holds several sessions lists them and stops until --session
- * names one. Without --confirm it only reports what it would delete. With --confirm it
+ * Without --confirm it only reports what it would delete. With --confirm it
  * deletes in one transaction, children first. Reads DATABASE_URL only, like
  * the other scripts in this directory.
  */
@@ -17,25 +15,10 @@ config({ path: [".env.local", ".env"] });
 
 const [bodySlug, date, ...flags] = process.argv.slice(2);
 const confirm = flags.includes("--confirm");
-const session = flags
-	.find((f) => f.startsWith("--session="))
-	?.slice("--session=".length);
 
-const unknownFlags = flags.filter(
-	(f) => f !== "--confirm" && !f.startsWith("--session="),
-);
-
-if (
-	!bodySlug ||
-	!date ||
-	!/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-	unknownFlags.length > 0
-) {
-	if (unknownFlags.length > 0) {
-		console.error(`unrecognised argument: ${unknownFlags.join(" ")}`);
-	}
+if (!bodySlug || !date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
 	console.error(
-		"usage: delete-meeting.ts <body-slug> <YYYY-MM-DD> [--session=<slug>] [--confirm]",
+		"usage: delete-meeting.ts <body-slug> <YYYY-MM-DD> [--confirm]",
 	);
 	process.exit(2);
 }
@@ -47,12 +30,10 @@ if (!url) throw new Error("DATABASE_URL not set");
 const client = createClient({ url, ...(authToken ? { authToken } : {}) });
 
 const found = await client.execute({
-	sql: `SELECT m.id, m.session FROM meetings m
+	sql: `SELECT m.id FROM meetings m
 		JOIN governing_bodies gb ON gb.id = m.body_id
-		WHERE gb.slug = ? AND m.date = ?
-			AND (? IS NULL OR m.session = ?)
-		ORDER BY m.id`,
-	args: [bodySlug, date, session ?? null, session ?? null],
+		WHERE gb.slug = ? AND m.date = ?`,
+	args: [bodySlug, date],
 });
 
 if (found.rows.length === 0) {
@@ -60,20 +41,9 @@ if (found.rows.length === 0) {
 	process.exit(0);
 }
 
-if (found.rows.length > 1) {
-	console.error(`${bodySlug} has ${found.rows.length} sessions on ${date}:`);
-	for (const row of found.rows) {
-		console.error(`  id=${row.id} --session=${row.session}`);
-	}
-	console.error("re-run with --session=<slug> to pick one.");
-	process.exit(2);
-}
-
 const meetingId = Number(found.rows[0].id);
 console.log(`target: ${url.replace(/\?.*$/, "")}`);
-console.log(
-	`meeting id=${meetingId} body=${bodySlug} date=${date} session=${JSON.stringify(found.rows[0].session)}`,
-);
+console.log(`meeting id=${meetingId} body=${bodySlug} date=${date}`);
 
 // Children first: every table here holds a foreign key to the one after it
 // or to meetings, and SQLite refuses the parent delete while they exist.

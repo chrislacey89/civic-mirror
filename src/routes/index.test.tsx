@@ -19,7 +19,6 @@ const populatedData = {
 		{
 			id: 1,
 			date: "2026-03-23",
-			session: "",
 			meetingType: "regular" as const,
 			bodyName: "Ellettsville Town Council",
 			bodySlug: "ellettsville-town-council",
@@ -59,7 +58,6 @@ const populatedData = {
 			bodyName: "Ellettsville Town Council",
 			bodySlug: "ellettsville-town-council",
 			date: "2026-03-23",
-			session: "",
 		},
 	],
 };

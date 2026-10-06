@@ -8,7 +8,6 @@ afterEach(cleanup);
 const baseMeeting = {
 	id: 1,
 	date: "2026-03-23",
-	session: "",
 	meetingType: "regular" as const,
 	bodyName: "Ellettsville Town Council",
 	bodySlug: "ellettsville-town-council",
@@ -47,18 +46,6 @@ describe("MeetingCard", () => {
 		const link = screen.getByRole("link");
 		expect(link.getAttribute("href")).toBe(
 			"/meetings/ellettsville-town-council/2026-03-23",
-		);
-	});
-
-	it("names the session in the link when the meeting has one", () => {
-		render(
-			<MeetingCard
-				meeting={{ ...baseMeeting, session: "regular-meeting-6-00-pm" }}
-			/>,
-		);
-
-		expect(screen.getByRole("link").getAttribute("href")).toBe(
-			"/meetings/ellettsville-town-council/2026-03-23?session=regular-meeting-6-00-pm",
 		);
 	});
 

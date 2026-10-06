@@ -26,11 +26,7 @@ export function MeetingCard({ meeting }: { meeting: MeetingCardData }) {
 	return (
 		<article className="paper-card flex h-full flex-col p-5">
 			<a
-				href={`/meetings/${meeting.bodySlug}/${meeting.date}${
-					meeting.session
-						? `?session=${encodeURIComponent(meeting.session)}`
-						: ""
-				}`}
+				href={`/meetings/${meeting.bodySlug}/${meeting.date}`}
 				className="flex h-full flex-col no-underline"
 			>
 				<div className="mono mb-3 flex flex-wrap justify-between gap-2 text-[10px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">

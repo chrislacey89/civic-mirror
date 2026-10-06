@@ -44,7 +44,6 @@ function parseFiscalStatus(raw: string): FiscalStatus {
 export type MeetingCardData = {
 	id: number;
 	date: string;
-	session: string;
 	meetingType: MeetingType;
 	bodyName: string;
 	bodySlug: string;
@@ -91,7 +90,6 @@ export type FiscalDecisionRow = {
 	bodyName: string;
 	bodySlug: string;
 	date: string;
-	session: string;
 };
 
 export type GoverningBodySummary = {
@@ -176,7 +174,6 @@ export async function listRecentMeetingsQuery(
 		result.push({
 			id: m.id,
 			date: m.date,
-			session: m.session,
 			meetingType: parseMeetingType(m.meetingType),
 			bodyName: body.name,
 			bodySlug: body.slug,
@@ -351,7 +348,6 @@ export async function listFiscalDecisionsQuery(
 			bodyName: schema.governingBodies.name,
 			bodySlug: schema.governingBodies.slug,
 			date: schema.meetings.date,
-			session: schema.meetings.session,
 		})
 		.from(schema.fiscalDecisions)
 		.innerJoin(
@@ -374,7 +370,6 @@ export async function listFiscalDecisionsQuery(
 		bodyName: r.bodyName,
 		bodySlug: r.bodySlug,
 		date: r.date,
-		session: r.session,
 	}));
 }
 
@@ -561,8 +556,6 @@ export type FiscalDecisionDetail = {
 export type MeetingDetail = {
 	id: number;
 	date: string;
-	/** Which of the body's meetings on `date` this is; empty when there is one. */
-	session: string;
 	meetingType: MeetingType;
 	bodyName: string;
 	bodySlug: string;
@@ -594,7 +587,6 @@ export async function getMeetingByBodyAndDateQuery(
 	db: LibSQLDatabase<typeof schema>,
 	slug: string,
 	date: string,
-	session?: string,
 ): Promise<MeetingDetail | null> {
 	const body = await db
 		.select()
@@ -604,22 +596,12 @@ export async function getMeetingByBodyAndDateQuery(
 
 	if (!body) return null;
 
-	// With no session named, a date that holds one meeting resolves to it, so
-	// the plain /meetings/<body>/<date> URL keeps working. On a date with
-	// several, the empty session wins, then the earliest stored (lowest id).
 	const meeting = await db
 		.select()
 		.from(schema.meetings)
 		.where(
-			and(
-				eq(schema.meetings.bodyId, body.id),
-				eq(schema.meetings.date, date),
-				session === undefined
-					? undefined
-					: eq(schema.meetings.session, session),
-			),
+			and(eq(schema.meetings.bodyId, body.id), eq(schema.meetings.date, date)),
 		)
-		.orderBy(desc(sql`${schema.meetings.session} = ''`), schema.meetings.id)
 		.get();
 
 	if (!meeting) return null;
@@ -656,7 +638,6 @@ export async function getMeetingByBodyAndDateQuery(
 	return {
 		id: meeting.id,
 		date: meeting.date,
-		session: meeting.session,
 		meetingType: parseMeetingType(meeting.meetingType),
 		bodyName: body.name,
 		bodySlug: body.slug,
