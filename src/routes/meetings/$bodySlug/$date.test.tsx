@@ -10,7 +10,6 @@ function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
 	return {
 		id: 1,
 		date: "2026-03-23",
-		session: "",
 		meetingType: "regular",
 		bodyName: "Ellettsville Town Council",
 		bodySlug: "ellettsville-town-council",
