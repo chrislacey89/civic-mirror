@@ -5,6 +5,7 @@ import { Resend } from "resend";
 import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
 import {
+	type BodyConfig,
 	PIPELINE_SOURCES,
 	type PipelineSource,
 } from "#/pipeline/orchestrator.ts";
@@ -35,38 +36,12 @@ import { v1 as dramaProfileV1 } from "../../evals/profiles/v1.ts";
  */
 
 /**
- * A governing-body entry in the hardcoded list. Exactly one source field
- * should be present per body — the union is kept open-ended here rather
- * than via a discriminated union because bodies may eventually aggregate
- * multiple sources (e.g. a body with both an eGov listing and a YouTube
- * playlist).
- */
-type BodyConfigEntry = {
-	slug: string;
-	name: string;
-	egovSearchType?: string;
-	/**
-	 * Required for any body sharing an `egovSearchType` with another body. The
-	 * eGov document-center page at searchType=12 returns every "minutes" row
-	 * from the portal regardless of which body produced it, so the orchestrator
-	 * uses this pattern to drop rows that belong to a sibling. See #35.
-	 */
-	egovTitlePattern?: RegExp;
-	finalsiteUrl?: string;
-	youtubePlaylistId?: string;
-	/** What a playlist title must start with to be this body's recording. */
-	youtubeTitlePrefix?: string;
-	/** ISO date; playlist videos dated earlier are ignored. */
-	youtubeSince?: string;
-};
-
-/**
  * Hardcoded governing body list for this initial CLI. Later iterations should
  * read this from the `governing_bodies` table so adding a body is a DB insert,
  * not a code change — but for the first end-to-end run, hardcoding keeps the
  * slice small.
  */
-const DEFAULT_BODIES: BodyConfigEntry[] = [
+const DEFAULT_BODIES: BodyConfig[] = [
 	{
 		slug: "ellettsville-town-council",
 		name: "Ellettsville Town Council",
@@ -261,4 +236,4 @@ export {
 	requireEnv,
 	buildProductionLayers,
 };
-export type { BodyConfigEntry, BuildLayersInput };
+export type { BuildLayersInput };
