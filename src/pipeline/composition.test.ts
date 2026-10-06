@@ -1,6 +1,22 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { Effect } from "effect";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { parseSourcesFlag, requireEnv } from "#/pipeline/composition.ts";
+import {
+	buildProductionLayers,
+	parseSourcesFlag,
+	requireEnv,
+} from "#/pipeline/composition.ts";
+import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
+
+const { fetchTranscript, execFileSync } = vi.hoisted(() => ({
+	fetchTranscript: vi.fn(),
+	execFileSync: vi.fn(),
+}));
+
+vi.mock("youtube-transcript", () => ({
+	YoutubeTranscript: { fetchTranscript },
+}));
+vi.mock("node:child_process", () => ({ execFileSync }));
 
 const TOUCHED = ["CM_TEST_PRIMARY", "CM_TEST_ALIAS"] as const;
 
@@ -61,5 +77,24 @@ describe("parseSourcesFlag", () => {
 
 	it("refuses a list with nothing in it", () => {
 		expect(parseSourcesFlag(" , ")).toEqual({ ok: false, unknown: [] });
+	});
+});
+
+describe("buildProductionLayers transcription", () => {
+	it("surfaces a caption failure without falling back to Whisper", async () => {
+		vi.stubEnv("DATABASE_URL", "file::memory:");
+		fetchTranscript.mockRejectedValue(new Error("captions blocked"));
+
+		const layers = buildProductionLayers({ dryRun: true });
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const transcription = yield* TranscriptionService;
+				return yield* Effect.flip(transcription.transcribe("abc123"));
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(result.message).toBe("captions blocked");
+		expect(execFileSync).not.toHaveBeenCalled();
+		vi.unstubAllEnvs();
 	});
 });

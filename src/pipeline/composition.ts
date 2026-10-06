@@ -17,7 +17,7 @@ import { extractPdfText } from "#/pipeline/services/PdfExtractor.ts";
 import { EgovScraperLive } from "#/pipeline/services/ScraperService.ts";
 import { StorageServiceLive } from "#/pipeline/services/StorageService.ts";
 import { SummarizationServiceLive } from "#/pipeline/services/SummarizationService.ts";
-import { TranscriptionServiceLive } from "#/pipeline/services/TranscriptionService.ts";
+import { YouTubeCaptionProviderLive } from "#/pipeline/services/TranscriptionService.ts";
 import { YouTubeScraperLive } from "#/pipeline/services/YouTubeScraper.ts";
 import { v1 as dramaProfileV1 } from "../../evals/profiles/v1.ts";
 
@@ -191,7 +191,11 @@ function buildProductionLayers(input: BuildLayersInput) {
 		apiKey: readEnv("YOUTUBE_API_KEY") ?? "missing-key",
 	});
 
-	const transcription = TranscriptionServiceLive();
+	// Captions only: a caption failure surfaces as that failure. The Whisper
+	// fallback in TranscriptionServiceLive shells out to yt-dlp/ffmpeg, which
+	// is out of scope for the pipeline (and would mask a blocked fetch as a
+	// spawn error).
+	const transcription = YouTubeCaptionProviderLive();
 
 	const summarization = SummarizationServiceLive({
 		model: geminiModelId,
