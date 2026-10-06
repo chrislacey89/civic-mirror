@@ -2,11 +2,11 @@ import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import {
 	extractMeetingDateFromTitle,
-	isMonthOnlyFinalsiteDate,
-	normalizeFinalsiteDate,
+	readFinalsiteDate,
 } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
+	type AlertScope,
 	AlertService,
 	formatPipelineErrorAlert,
 	formatZeroResultsAlert,
@@ -329,23 +329,24 @@ function iterateWithAlertRecovery<TItem, R>(
 		for (const item of items) {
 			if (options.shouldProcess && !options.shouldProcess(item)) continue;
 
-			const result = yield* options
-				.processItem(item)
-				.pipe(
-					Effect.catch((error) =>
-						alertAndRecover(
-							body,
-							listingFailureStage(error),
-							error,
-							"item",
-						).pipe(Effect.as({ processed: 0, errors: 1 })),
+			const outcome = yield* options.processItem(item).pipe(
+				Effect.map((result) => ({ result, requested: true })),
+				Effect.catch((error) =>
+					alertAndRecover(body, listingFailureStage(error), error, "item").pipe(
+						Effect.as({
+							result: { processed: 0, errors: 1 },
+							requested: error._tag !== "UndatedListingError",
+						}),
 					),
-				);
+				),
+			);
 
-			processed += result.processed;
-			errors += result.errors;
+			processed += outcome.result.processed;
+			errors += outcome.result.errors;
 
-			if (options.delayBetweenItemsMs > 0) {
+			// The delay paces requests to the source. A listing held for its
+			// date fails before any request is made, so it has nothing to pace.
+			if (options.delayBetweenItemsMs > 0 && outcome.requested) {
 				yield* Effect.sleep(Duration.millis(options.delayBetweenItemsMs));
 			}
 		}
@@ -554,9 +555,11 @@ function processFinalsiteListing(
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
+		const reading = readFinalsiteDate(listing.date, listing.year);
+
 		// A month-and-year cell with no day is not a dated meeting; skip it
 		// without storing, downloading, or alerting.
-		if (isMonthOnlyFinalsiteDate(listing.date)) {
+		if (reading.kind === "month-only") {
 			yield* Effect.log("finalsite.listing.skipped").pipe(
 				Effect.annotateLogs({
 					reason: "month-only date",
@@ -569,8 +572,7 @@ function processFinalsiteListing(
 
 		// A date cell the parser cannot read is held for the operator rather
 		// than filed under a guessed date, which would merge distinct meetings.
-		const meetingDate = normalizeFinalsiteDate(listing.date, listing.year);
-		if (meetingDate === null) {
+		if (reading.kind === "unreadable") {
 			return yield* Effect.fail(
 				new UndatedListingError({
 					title: `${listing.meetingType} (${listing.date})`,
@@ -578,6 +580,7 @@ function processFinalsiteListing(
 				}),
 			);
 		}
+		const meetingDate = reading.date;
 
 		const documents: MeetingInput["documents"] = [];
 		let combinedText = "";
@@ -729,6 +732,7 @@ function processYouTubeVideo(
 	video: VideoRef,
 	meetingDate: string,
 	config: ResolvedConfig,
+	dramaAlertScope: "item" | "sole-item" = "item",
 ): Effect.Effect<
 	PipelineResult,
 	TaggedPipelineError,
@@ -795,7 +799,9 @@ function processYouTubeVideo(
 			video,
 			meetingId: meeting.id,
 			transcript,
-		}).pipe(Effect.catch((error) => alertDramaFailure(body, error)));
+		}).pipe(
+			Effect.catch((error) => alertDramaFailure(body, error, dramaAlertScope)),
+		);
 		yield* Effect.log("youtube.drama.finish");
 
 		return { processed: 1, errors: 0 };
@@ -848,7 +854,11 @@ function runDramaDetection(input: {
 	});
 }
 
-function alertDramaFailure(body: BodyConfig, error: LlmError | DatabaseError) {
+function alertDramaFailure(
+	body: BodyConfig,
+	error: LlmError | DatabaseError,
+	scope: AlertScope,
+) {
 	return Effect.gen(function* () {
 		const alert = yield* AlertService;
 		yield* alert
@@ -858,7 +868,7 @@ function alertDramaFailure(body: BodyConfig, error: LlmError | DatabaseError) {
 					bodyName: body.name,
 					errorTag: error._tag,
 					errorMessage: error.message,
-					scope: "item",
+					scope,
 				}),
 			)
 			.pipe(Effect.catch(() => Effect.void));
@@ -927,7 +937,7 @@ function alertAndRecover(
 	body: BodyConfig,
 	stage: string,
 	error: TaggedPipelineError,
-	scope: "body" | "item",
+	scope: AlertScope,
 ): Effect.Effect<void, never, AlertService> {
 	return Effect.gen(function* () {
 		const alert = yield* AlertService;
@@ -996,6 +1006,7 @@ function runDramaDetectForVideo(input: {
 		input.video,
 		input.meetingDate,
 		config,
+		"sole-item",
 	).pipe(
 		Effect.catch((error) =>
 			Effect.gen(function* () {
@@ -1007,7 +1018,7 @@ function runDramaDetectForVideo(input: {
 							bodyName: input.body.name,
 							errorTag: error._tag,
 							errorMessage: error.message,
-							scope: "item",
+							scope: "sole-item",
 						}),
 					)
 					.pipe(Effect.catch(() => Effect.void));

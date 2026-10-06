@@ -92,6 +92,13 @@ function formatZeroResultsAlert(input: {
 }
 
 /**
+ * How far a pipeline-stage failure reaches: `body` when it skips the whole
+ * body, `item` when it affects one listing, video, or meeting among others,
+ * `sole-item` when the run was started for that one item and nothing follows.
+ */
+type AlertScope = "body" | "item" | "sole-item";
+
+/**
  * Builds a subject + body pair for a pipeline-stage failure. Used by the
  * orchestrator's error boundary when a stage fails for a specific body.
  */
@@ -100,13 +107,13 @@ function formatPipelineErrorAlert(input: {
 	bodyName: string;
 	errorTag: string;
 	errorMessage: string;
-	/** `body` when the failure skips the whole body, `item` when it affects one listing, video, or meeting. */
-	scope: "body" | "item";
+	scope: AlertScope;
 }): AlertInput {
-	const closing =
-		input.scope === "body"
-			? "The pipeline will continue with other bodies; this body was skipped."
-			: `The pipeline will continue with the rest of ${input.bodyName}; only the failing item was affected.`;
+	const closing: Record<AlertScope, string> = {
+		body: "The pipeline will continue with other bodies; this body was skipped.",
+		item: `The pipeline will continue with the rest of ${input.bodyName}; only the failing item was affected.`,
+		"sole-item": "The failing item was the only item in this run.",
+	};
 	return {
 		subject: `[Civic Mirror] ${input.stage} failed for ${input.bodyName}`,
 		body: [
@@ -115,7 +122,7 @@ function formatPipelineErrorAlert(input: {
 			`Error: ${input.errorTag}`,
 			`Message: ${input.errorMessage}`,
 			"",
-			closing,
+			closing[input.scope],
 		].join("\n"),
 	};
 }
@@ -126,4 +133,4 @@ export {
 	formatZeroResultsAlert,
 	formatPipelineErrorAlert,
 };
-export type { AlertInput, AlertSendFn, AlertServiceConfig };
+export type { AlertInput, AlertScope, AlertSendFn, AlertServiceConfig };
