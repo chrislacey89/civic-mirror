@@ -991,8 +991,45 @@ describe("runPipeline", () => {
 		expect(log.store).toHaveLength(1);
 		expect(result.processed).toBe(1);
 		expect(result.errors).toBe(0);
-		// Operator was alerted to the drama failure, as a failure of this one
-		// video rather than of the body.
+		// Operator was alerted to the drama failure.
+		expect(log.alert.some((a) => a.subject.includes("drama-detection"))).toBe(
+			true,
+		);
+	});
+
+	it("alerts that only the one video was affected when its drama detection fails", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{
+					videoId: "abc123",
+					title: "Town Council, March 23, 2026",
+					publishedAt: "2026-03-24T00:00:00Z",
+					hasCaptions: true,
+				},
+			],
+			dramaDetectionError: new Error("Gemini API down"),
+		});
+
+		const program = runPipeline({
+			bodies: [
+				{
+					slug: "town-council",
+					name: "Town Council",
+					youtubePlaylistId: "PL_test",
+				},
+			],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		await Effect.runPromise(program);
+
 		expect(log.alert).toHaveLength(1);
 		expect(log.alert[0].subject).toContain("drama-detection");
 		expect(log.alert[0].body).toContain("rest of Town Council");
