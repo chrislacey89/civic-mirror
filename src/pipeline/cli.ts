@@ -11,7 +11,7 @@ import {
 	DEFAULT_BODIES,
 	extractPdfText,
 } from "#/pipeline/composition.ts";
-import { extractMeetingDateFromTitle } from "#/pipeline/dates.ts";
+import { resolveDetectMeeting } from "#/pipeline/detect-date.ts";
 import {
 	runDramaDetectForVideo,
 	runPipeline,
@@ -147,20 +147,10 @@ const dramaDetectCommand = Command.make(
 				return;
 			}
 
-			const resolvedTitle = Option.getOrElse(
-				title,
-				() => `Manual drama:detect ${videoId}`,
-			);
 			// The meeting date is half of the meeting's key, so a run with no
 			// date to read stops here instead of filing the video under today.
-			// Only a title the operator typed is read: the stub title embeds the
-			// video ID, whose characters can look like a numeric date.
-			const resolvedDate =
-				Option.getOrNull(date) ??
-				Option.match(title, {
-					onNone: () => null,
-					onSome: extractMeetingDateFromTitle,
-				});
+			const { title: resolvedTitle, meetingDate: resolvedDate } =
+				resolveDetectMeeting({ videoId, date, title });
 			if (resolvedDate === null) {
 				yield* Console.error(
 					"No meeting date: pass --date YYYY-MM-DD, or a --title that carries the date.",
