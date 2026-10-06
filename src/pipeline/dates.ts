@@ -98,3 +98,12 @@ export function normalizeFinalsiteDate(
 	const iso = `${parsedYear}-${month}-${day}`;
 	return isCalendarDate(iso) ? iso : null;
 }
+
+/**
+ * True when a Finalsite date cell is a known month name and a four-digit year
+ * with no day (e.g. "September 2025"). Such a row is not a dated meeting.
+ */
+export function isMonthOnlyFinalsiteDate(label: string): boolean {
+	const match = label.match(/^([A-Za-z]+)\s+\d{4}$/);
+	return match !== null && match[1].toLowerCase() in MONTH_BY_NAME;
+}

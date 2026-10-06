@@ -1,6 +1,9 @@
 import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
-import { normalizeFinalsiteDate } from "#/pipeline/dates.ts";
+import {
+	isMonthOnlyFinalsiteDate,
+	normalizeFinalsiteDate,
+} from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
 	AlertService,
@@ -549,6 +552,19 @@ function processFinalsiteListing(
 		const scraper = yield* FinalsiteScraper;
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
+
+		// A month-and-year cell with no day is not a dated meeting; skip it
+		// without storing, downloading, or alerting.
+		if (isMonthOnlyFinalsiteDate(listing.date)) {
+			yield* Effect.log("finalsite.listing.skipped").pipe(
+				Effect.annotateLogs({
+					reason: "month-only date",
+					date: listing.date,
+					meetingType: listing.meetingType,
+				}),
+			);
+			return { processed: 0, errors: 0 };
+		}
 
 		// A date cell the parser cannot read is held for the operator rather
 		// than filed under a guessed date, which would merge distinct meetings.
