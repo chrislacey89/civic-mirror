@@ -3,6 +3,7 @@ import {
 	computeSourceFingerprint,
 	fingerprintOfSources,
 	kindsOfSources,
+	kindsOfUnfingerprintedSummary,
 } from "#/pipeline/sources.ts";
 
 const MINUTES = "https://ellettsville.in.us/egov/docs/123.pdf";
@@ -115,5 +116,25 @@ describe("kindsOfSources", () => {
 				transcript: { rawText: "\n" },
 			}),
 		).toEqual(["documents"]);
+	});
+});
+
+describe("kindsOfUnfingerprintedSummary", () => {
+	it("names only the documents when the meeting also holds a transcript", () => {
+		expect(
+			kindsOfUnfingerprintedSummary({
+				documents: [{ rawText: "Minutes." }],
+				transcript: { rawText: "Transcript." },
+			}),
+		).toEqual(["documents"]);
+	});
+
+	it("names the transcript when no document has text", () => {
+		expect(
+			kindsOfUnfingerprintedSummary({
+				documents: [{ rawText: " " }],
+				transcript: { rawText: "Transcript." },
+			}),
+		).toEqual(["transcript"]);
 	});
 });

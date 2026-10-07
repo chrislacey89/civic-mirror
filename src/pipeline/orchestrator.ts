@@ -48,7 +48,7 @@ import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
 import {
 	fingerprintOfSources,
-	kindsOfSources,
+	kindsOfUnfingerprintedSummary,
 	sessionSlug,
 } from "#/pipeline/sources.ts";
 import { readVideoTitle } from "#/pipeline/video-title.ts";
@@ -508,7 +508,7 @@ function attachDocumentsAndRegenerate(input: {
 						documents: held.documents,
 						transcriptUrl: held.transcript?.sourceUrl,
 					}),
-					sourceKinds: kindsOfSources(held),
+					sourceKinds: kindsOfUnfingerprintedSummary(held),
 				});
 			}
 			yield* storage.storeMeeting(input.meeting);
@@ -1620,7 +1620,7 @@ function matchVideoToMeeting(input: {
 					documents: held.documents,
 					transcriptUrl: held.transcript?.sourceUrl,
 				}),
-				sourceKinds: kindsOfSources(held),
+				sourceKinds: kindsOfUnfingerprintedSummary(held),
 			});
 		}
 

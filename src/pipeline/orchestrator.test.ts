@@ -3623,6 +3623,51 @@ describe("runPipeline document regeneration", () => {
 		expect(after.summaries[0].highlights).toEqual(["Regenerated highlight"]);
 	});
 
+	it("reads a documents-only summary stored without kinds as built from the documents when a transcript attached by a one-shot sits beside them and regeneration fails", async () => {
+		const { db, run } = await setup();
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				const stored = yield* storage.storeMeeting({
+					bodySlug: COUNCIL.slug,
+					date: "2025-05-27",
+					meetingType: "regular",
+					documents: [
+						{
+							sourceUrl: AGENDA.downloadUrl,
+							rawText: "Agenda text.",
+							documentType: "agenda",
+							extractionMethod: "text-layer",
+						},
+					],
+					summary: { highlights: ["h"], prose: "p", model: "m" },
+				});
+				yield* storage.storeTranscript({
+					meetingId: stored.id,
+					source: "captions",
+					rawText: "transcript text",
+					sourceUrl: "https://www.youtube.com/watch?v=one-shot",
+				});
+			}).pipe(Effect.provide(StorageServiceLive(db))),
+		);
+
+		const { result } = await run({
+			egovListings: [AGENDA, MINUTES],
+			summarizationFailsWhen: () => true,
+		});
+
+		expect(result.errors).toBe(1);
+		const [stale] = await db.select().from(schema.summaries).all();
+		expect(stale.prose).toBe("p");
+		expect(stale.sourceKinds).toEqual(["documents"]);
+		const page = await getMeetingByBodyAndDateQuery(
+			db,
+			COUNCIL.slug,
+			"2025-05-27",
+		);
+		expect(page?.summarySources).toEqual({ origin: "documents" });
+	});
+
 	it("keeps the previous summary when regeneration fails, and regenerates on the next run", async () => {
 		const { rows, run } = await setup();
 		await run({ egovListings: [AGENDA] });
