@@ -191,6 +191,38 @@ describe("MeetingMatchService", () => {
 				),
 			).toBe(0);
 		});
+
+		it("does not count a $0 amount as shared", async () => {
+			const zeroDecision = (title: string) =>
+				summary({
+					fiscalDecisions: [{ title, originalAmount: "$0" }],
+				});
+
+			expect(
+				await sharedBetween(
+					zeroDecision("Sidewalk repair"),
+					zeroDecision("Park lease"),
+				),
+			).toBe(0);
+		});
+
+		it("does not count '$2 million' and '$2' as the same amount", async () => {
+			expect(
+				await sharedBetween(
+					summary({ prose: "The council approved a $2 million bond." }),
+					summary({ prose: "The council approved a $2 fee." }),
+				),
+			).toBe(0);
+		});
+
+		it("counts '$2 million' once across case and spacing", async () => {
+			expect(
+				await sharedBetween(
+					summary({ prose: "The council approved a $2 million bond." }),
+					summary({ highlights: ["Bond of $2  Million approved"] }),
+				),
+			).toBe(1);
+		});
 	});
 
 	describe("text passed to the decision function", () => {
