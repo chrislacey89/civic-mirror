@@ -259,6 +259,24 @@ describe("MeetingDetailView — summary sources", () => {
 		expect(screen.queryByText(/couldn't extract readable text/)).toBeNull();
 	});
 
+	it("does not claim minutes are unposted when a document is attached to a video-only summary", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					summarySources: { kinds: ["transcript"], videoUrl: VIDEO_URL },
+				})}
+			/>,
+		);
+
+		expect(screen.getByRole("status").textContent).toContain(
+			"This summary was built from the meeting video alone.",
+		);
+		expect(screen.queryByText(/not yet posted/)).toBeNull();
+		expect(
+			screen.getByRole("link", { name: /View minutes PDF/ }),
+		).toBeDefined();
+	});
+
 	it("lists each disagreement with what the documents and the video say, and says the summary uses the documents' figure", () => {
 		render(
 			<MeetingDetailView

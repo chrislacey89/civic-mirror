@@ -88,7 +88,9 @@ export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 			) : (
 				<>
 					{isOcr && <OcrBanner />}
-					{isVideoOnly && <VideoOnlyNotice />}
+					{isVideoOnly && (
+						<VideoOnlyNotice minutesPosted={meeting.documents.length > 0} />
+					)}
 					{meeting.summary && (
 						<>
 							<section className="mt-10">
@@ -520,7 +522,7 @@ function OcrBanner() {
 	);
 }
 
-function VideoOnlyNotice() {
+function VideoOnlyNotice({ minutesPosted }: { minutesPosted: boolean }) {
 	return (
 		<output className="rise-in mt-6 block border border-[var(--rule)]">
 			<div className="mono flex items-center gap-3 bg-[var(--paper)] px-4 py-3 text-[12px] text-[var(--ink-mid)]">
@@ -528,8 +530,8 @@ function VideoOnlyNotice() {
 					Video only
 				</span>
 				<span>
-					This summary was built from the meeting video alone. Official minutes
-					are not yet posted.
+					This summary was built from the meeting video alone.
+					{minutesPosted ? "" : " Official minutes are not yet posted."}
 				</span>
 			</div>
 		</output>
