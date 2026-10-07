@@ -67,6 +67,32 @@ describe("TranscriptionService", () => {
 			const result = await Effect.runPromiseExit(program);
 			expect(result._tag).toBe("Failure");
 		});
+
+		it.each([
+			["no segments", []],
+			[
+				"whitespace-only segments",
+				[
+					{ text: "  ", duration: 1000, offset: 0 },
+					{ text: "\n", duration: 1000, offset: 1000 },
+				],
+			],
+		])("fails with TranscriptionError when captions have %s", async (_name, segments) => {
+			const program = Effect.gen(function* () {
+				const service = yield* TranscriptionService;
+				return yield* service.transcribe("empty-captions-video");
+			}).pipe(
+				Effect.provide(
+					YouTubeCaptionProviderLive({
+						fetchTranscriptFn: async () => segments,
+					}),
+				),
+			);
+
+			const error = await Effect.runPromise(Effect.flip(program));
+			expect(error._tag).toBe("TranscriptionError");
+			expect(error.message).toBe("Captions came back empty");
+		});
 	});
 
 	describe("WhisperLocalProvider", () => {
@@ -174,6 +200,32 @@ describe("TranscriptionService", () => {
 
 			expect(result.source).toBe("whisper");
 			expect(result.rawText).toBe("Whisper transcribed this.");
+		});
+
+		it("falls back to Whisper when captions come back empty", async () => {
+			const program = Effect.gen(function* () {
+				const service = yield* TranscriptionService;
+				return yield* service.transcribe("empty-captions-video");
+			}).pipe(
+				Effect.provide(
+					TranscriptionServiceLive({
+						fetchTranscriptFn: async () => [],
+						runWhisperFn: async () => ({
+							rawText: "Whisper transcribed this.",
+							segments: [
+								{
+									text: "Whisper transcribed this.",
+									startMs: 0,
+									durationMs: 4000,
+								},
+							],
+						}),
+					}),
+				),
+			);
+
+			const result = await Effect.runPromise(program);
+			expect(result.source).toBe("whisper");
 		});
 
 		it("fails with TranscriptionError when both providers fail", async () => {

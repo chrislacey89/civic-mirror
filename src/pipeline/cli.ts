@@ -10,9 +10,11 @@ import {
 	buildProductionLayers,
 	DEFAULT_BODIES,
 	extractPdfText,
+	parseSourcesFlag,
 } from "#/pipeline/composition.ts";
 import { resolveDetectMeeting } from "#/pipeline/detect-date.ts";
 import {
+	PIPELINE_SOURCES,
 	runDramaDetectForVideo,
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
@@ -51,11 +53,36 @@ const bodySlug = Flag.String("body").pipe(
 	),
 );
 
+const sources = Flag.String("sources").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`Comma-separated source paths to run: ${PIPELINE_SOURCES.join(", ")} (defaults to all).`,
+	),
+);
+
 const runCommand = Command.make(
 	"run",
-	{ dryRun, skipCrawlDelay, bodySlug },
-	({ dryRun, skipCrawlDelay, bodySlug }) =>
+	{ dryRun, skipCrawlDelay, bodySlug, sources },
+	({ dryRun, skipCrawlDelay, bodySlug, sources }) =>
 		Effect.gen(function* () {
+			const sourcesReading = Option.match(sources, {
+				onNone: () => ({ ok: true as const, sources: [...PIPELINE_SOURCES] }),
+				onSome: parseSourcesFlag,
+			});
+			// A mistyped list fails the run. Exiting cleanly would let a dispatched
+			// run that did nothing show as passed.
+			if (!sourcesReading.ok) {
+				const unknown =
+					sourcesReading.unknown.length > 0
+						? ` Not a source: ${sourcesReading.unknown.join(", ")}.`
+						: "";
+				return yield* Effect.fail(
+					new Error(
+						`--sources takes a comma-separated list of: ${PIPELINE_SOURCES.join(", ")}.${unknown}`,
+					),
+				);
+			}
+
 			const bodies = Option.match(bodySlug, {
 				onNone: () => DEFAULT_BODIES,
 				onSome: (slug) => DEFAULT_BODIES.filter((b) => b.slug === slug),
@@ -69,7 +96,7 @@ const runCommand = Command.make(
 			}
 
 			yield* Console.log(
-				`[pipeline] starting run: bodies=${bodies.length} dryRun=${dryRun} skipCrawlDelay=${skipCrawlDelay}`,
+				`[pipeline] starting run: bodies=${bodies.length} sources=${sourcesReading.sources.join(",")} dryRun=${dryRun} skipCrawlDelay=${skipCrawlDelay}`,
 			);
 
 			const layers = yield* Effect.try({
@@ -85,6 +112,7 @@ const runCommand = Command.make(
 				crawlDelayMs: skipCrawlDelay ? 0 : 300_000,
 				extractPdfText,
 				dryRun,
+				sources: sourcesReading.sources,
 			}).pipe(Effect.provide(layers));
 
 			yield* Console.log(

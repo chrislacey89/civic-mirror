@@ -5,6 +5,15 @@ on:
     # Every Sunday at 06:00 UTC
     - cron: "0 6 * * 0"
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Run every stage except storage and alerts
+        type: boolean
+        default: false
+      sources:
+        description: Comma-separated source paths to run (egov, finalsite, youtube). Name youtube to run the video path. Clearing the field runs all three.
+        type: string
+        default: "egov,finalsite"
 
 permissions:
   contents: read
@@ -49,4 +58,25 @@ jobs:
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           ALERT_EMAIL: ${{ vars.ALERT_EMAIL }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        run: pnpm run pipeline:run
+          # Both inputs are empty on a scheduled run (input defaults do not
+          # apply to the schedule event).
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          SOURCES: ${{ inputs.sources }}
+        # `pipeline:run`, not `pipeline:dry`: a dry run from here still keeps
+        # the eGov crawl delay.
+        run: |
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          # The video path stays out of the schedule and out of a default manual
+          # run until the January-March 2026 meetings are repaired (#115) and
+          # near-date videos are held (#137). The input defaults to
+          # egov,finalsite for dispatch; the schedule sees an empty input, so it
+          # names the same sources itself. Video runs only when someone names
+          # youtube (or clears the field, which runs every source).
+          if [ -n "$SOURCES" ]; then
+            args+=(--sources "$SOURCES")
+          elif [ "$EVENT_NAME" = "schedule" ]; then
+            args+=(--sources egov,finalsite)
+          fi
+          pnpm run pipeline:run "${args[@]}"

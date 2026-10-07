@@ -4,6 +4,11 @@ import { Layer } from "effect";
 import { Resend } from "resend";
 import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
+import {
+	type BodyConfig,
+	PIPELINE_SOURCES,
+	type PipelineSource,
+} from "#/pipeline/orchestrator.ts";
 import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
 import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionService.ts";
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
@@ -13,7 +18,7 @@ import { extractPdfText } from "#/pipeline/services/PdfExtractor.ts";
 import { EgovScraperLive } from "#/pipeline/services/ScraperService.ts";
 import { StorageServiceLive } from "#/pipeline/services/StorageService.ts";
 import { SummarizationServiceLive } from "#/pipeline/services/SummarizationService.ts";
-import { TranscriptionServiceLive } from "#/pipeline/services/TranscriptionService.ts";
+import { YouTubeCaptionProviderLive } from "#/pipeline/services/TranscriptionService.ts";
 import { YouTubeScraperLive } from "#/pipeline/services/YouTubeScraper.ts";
 import { v1 as dramaProfileV1 } from "../../evals/profiles/v1.ts";
 
@@ -31,39 +36,22 @@ import { v1 as dramaProfileV1 } from "../../evals/profiles/v1.ts";
  */
 
 /**
- * A governing-body entry in the hardcoded list. Exactly one source field
- * should be present per body — the union is kept open-ended here rather
- * than via a discriminated union because bodies may eventually aggregate
- * multiple sources (e.g. a body with both an eGov listing and a YouTube
- * playlist).
- */
-type BodyConfigEntry = {
-	slug: string;
-	name: string;
-	egovSearchType?: string;
-	/**
-	 * Required for any body sharing an `egovSearchType` with another body. The
-	 * eGov document-center page at searchType=12 returns every "minutes" row
-	 * from the portal regardless of which body produced it, so the orchestrator
-	 * uses this pattern to drop rows that belong to a sibling. See #35.
-	 */
-	egovTitlePattern?: RegExp;
-	finalsiteUrl?: string;
-	youtubePlaylistId?: string;
-};
-
-/**
  * Hardcoded governing body list for this initial CLI. Later iterations should
  * read this from the `governing_bodies` table so adding a body is a DB insert,
  * not a code change — but for the first end-to-end run, hardcoding keeps the
  * slice small.
  */
-const DEFAULT_BODIES: BodyConfigEntry[] = [
+const DEFAULT_BODIES: BodyConfig[] = [
 	{
 		slug: "ellettsville-town-council",
 		name: "Ellettsville Town Council",
 		egovSearchType: "12",
 		egovTitlePattern: /^Town Council/i,
+		// The body's own CATS playlist. The start date is the first meeting
+		// whose video is taken; earlier recordings in the playlist are ignored.
+		youtubePlaylistId: "PLLKIocQNuYstrABBQ0PL_J-B_op4n6Mxo",
+		youtubeTitlePrefix: "Ellettsville Town Council",
+		youtubeSince: "2025-05-27",
 	},
 	{
 		slug: "ellettsville-plan-commission",
@@ -105,6 +93,33 @@ function requireEnv(name: string, ...aliases: string[]): string {
 	throw new Error(
 		`Missing required environment variable: ${[name, ...aliases].join(" or ")}. Set it in .env.local or the shell.`,
 	);
+}
+
+type SourcesFlagReading =
+	| { ok: true; sources: PipelineSource[] }
+	| { ok: false; unknown: string[] };
+
+/**
+ * Reads the `--sources` value, a comma-separated list of source paths. A
+ * list with an unknown entry, or with no entries, is refused whole; `unknown`
+ * names the entries that are not source paths.
+ */
+function parseSourcesFlag(raw: string): SourcesFlagReading {
+	const entries = [
+		...new Set(
+			raw
+				.split(",")
+				.map((entry) => entry.trim().toLowerCase())
+				.filter((entry) => entry !== ""),
+		),
+	];
+	const isSource = (entry: string): entry is PipelineSource =>
+		(PIPELINE_SOURCES as readonly string[]).includes(entry);
+	const sources = entries.filter(isSource);
+	if (sources.length === 0 || sources.length !== entries.length) {
+		return { ok: false, unknown: entries.filter((e) => !isSource(e)) };
+	}
+	return { ok: true, sources };
 }
 
 type BuildLayersInput = { dryRun: boolean };
@@ -151,7 +166,11 @@ function buildProductionLayers(input: BuildLayersInput) {
 		apiKey: readEnv("YOUTUBE_API_KEY") ?? "missing-key",
 	});
 
-	const transcription = TranscriptionServiceLive();
+	// Captions only: a caption failure surfaces as that failure. The Whisper
+	// fallback in TranscriptionServiceLive shells out to yt-dlp/ffmpeg, which
+	// is out of scope for the pipeline (and would mask a blocked fetch as a
+	// spawn error).
+	const transcription = YouTubeCaptionProviderLive();
 
 	const summarization = SummarizationServiceLive({
 		model: geminiModelId,
@@ -212,8 +231,9 @@ function buildProductionLayers(input: BuildLayersInput) {
 export {
 	DEFAULT_BODIES,
 	extractPdfText,
+	parseSourcesFlag,
 	readEnv,
 	requireEnv,
 	buildProductionLayers,
 };
-export type { BodyConfigEntry, BuildLayersInput };
+export type { BuildLayersInput };

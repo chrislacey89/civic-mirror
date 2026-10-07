@@ -44,6 +44,18 @@ type YouTubeCaptionProviderConfig = {
 };
 
 /**
+ * youtube-transcript returns [] rather than throwing when YouTube serves a
+ * response it can't parse, so empty captions must be rejected here. Otherwise
+ * they'd be stored as a real transcript (and, in the chain, skip the Whisper
+ * fallback).
+ */
+function assertCaptionText(segments: CaptionSegment[]) {
+	if (segments.every((s) => s.text.trim().length === 0)) {
+		throw new Error("Captions came back empty");
+	}
+}
+
+/**
  * Effect teaching note: The fetchTranscriptFn injection follows the same
  * pattern as YouTubeScraper's fetchFn — accept a function parameter so tests
  * can substitute a mock, while production uses the real youtube-transcript call.
@@ -56,6 +68,7 @@ function YouTubeCaptionProviderLive(config: YouTubeCaptionProviderConfig = {}) {
 			Effect.tryPromise({
 				try: async () => {
 					const segments = await fetchTranscript(videoId);
+					assertCaptionText(segments);
 					const rawText = segments.map((s) => s.text).join(" ");
 					return {
 						source: "captions" as const,
@@ -251,6 +264,7 @@ function TranscriptionServiceLive(config: TranscriptionServiceLiveConfig = {}) {
 					const fetchTranscript =
 						config.fetchTranscriptFn ?? defaultFetchTranscript;
 					const segments = await fetchTranscript(videoId);
+					assertCaptionText(segments);
 					const rawText = segments.map((s) => s.text).join(" ");
 					return {
 						source: "captions" as const,
