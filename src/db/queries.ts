@@ -584,9 +584,9 @@ export type MeetingDetail = {
 	 * What the summary was built from. `videoUrl` is set only when the video is
 	 * one of those sources; `kinds` is empty when there is no summary.
 	 */
-	summarySources: { kinds: SourceKind[]; videoUrl: string | null };
+	summarySources: { kinds: readonly SourceKind[]; videoUrl: string | null };
 	/** Points where the documents and the video state different things. */
-	sourceDisagreements: SourceDisagreement[];
+	sourceDisagreements: readonly SourceDisagreement[];
 	fiscalDecisions: Array<FiscalDecisionDetail>;
 	budgetDiscussions: Array<{
 		topic: string;

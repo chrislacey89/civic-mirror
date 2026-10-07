@@ -316,7 +316,7 @@ function PrimarySources({ meeting }: { meeting: MeetingDetail }) {
 }
 
 /** The sentence naming a summary's sources, or null when it recorded none. */
-function builtFromLine(kinds: SourceKind[]): string | null {
+function builtFromLine(kinds: readonly SourceKind[]): string | null {
 	const fromVideo = kinds.includes("transcript");
 	const fromDocuments = kinds.includes("documents");
 	if (fromVideo && fromDocuments) {
@@ -340,7 +340,7 @@ const DISAGREEMENTS_HEADING_ID = "source-disagreements-heading";
 function SourceDisagreements({
 	disagreements,
 }: {
-	disagreements: SourceDisagreement[];
+	disagreements: readonly SourceDisagreement[];
 }) {
 	return (
 		<section className="mt-10" aria-labelledby={DISAGREEMENTS_HEADING_ID}>
