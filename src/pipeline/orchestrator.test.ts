@@ -1887,6 +1887,28 @@ describe("runPipeline video path", () => {
 		expect(result).toEqual({ processed: 0, errors: 1 });
 	});
 
+	it("leaves a video with an unreadable publish date unheld and counts an error, however disabled its captions", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [{ ...REGULAR, publishedAt: "" }],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			run(layers, 0, { attempts: 0, baseDelayMs: 0 }),
+		);
+
+		expect(log.held).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 1 });
+	});
+
 	it("counts an error and leaves the video unheld when the caption fetch fails for any other reason", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
