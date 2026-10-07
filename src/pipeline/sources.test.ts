@@ -4,6 +4,7 @@ import {
 	fingerprintOfSources,
 	kindsOfSources,
 	kindsOfUnfingerprintedSummary,
+	stampOfUnfingerprintedSummary,
 } from "#/pipeline/sources.ts";
 
 const MINUTES = "https://ellettsville.in.us/egov/docs/123.pdf";
@@ -136,5 +137,58 @@ describe("kindsOfUnfingerprintedSummary", () => {
 				transcript: { rawText: "Transcript." },
 			}),
 		).toEqual(["transcript"]);
+	});
+});
+
+describe("stampOfUnfingerprintedSummary", () => {
+	it("fingerprints every source held and names only the documents when a transcript sits beside them", () => {
+		expect(
+			stampOfUnfingerprintedSummary({
+				documents: [{ sourceUrl: MINUTES, rawText: "Minutes." }],
+				transcript: { sourceUrl: VIDEO, rawText: "Transcript." },
+			}),
+		).toEqual({
+			sourceFingerprint: computeSourceFingerprint([MINUTES, VIDEO]),
+			sourceKinds: ["documents"],
+		});
+	});
+
+	it("names only the documents when the transcript beside them has no URL", () => {
+		expect(
+			stampOfUnfingerprintedSummary({
+				documents: [{ sourceUrl: MINUTES, rawText: "Minutes." }],
+				transcript: { sourceUrl: null, rawText: "Transcript." },
+			}),
+		).toEqual({
+			sourceFingerprint: computeSourceFingerprint([MINUTES]),
+			sourceKinds: ["documents"],
+		});
+	});
+
+	it("names the transcript when no document held has text", () => {
+		expect(
+			stampOfUnfingerprintedSummary({
+				documents: [{ sourceUrl: MINUTES, rawText: "" }],
+				transcript: { sourceUrl: VIDEO, rawText: "Transcript." },
+			}),
+		).toEqual({
+			sourceFingerprint: computeSourceFingerprint([MINUTES, VIDEO]),
+			sourceKinds: ["transcript"],
+		});
+	});
+
+	it("stamps a summary as the transcript's alone, whatever documents the meeting is about to take", () => {
+		expect(
+			stampOfUnfingerprintedSummary({ transcriptAlone: { sourceUrl: VIDEO } }),
+		).toEqual({
+			sourceFingerprint: computeSourceFingerprint([VIDEO]),
+			sourceKinds: ["transcript"],
+		});
+		expect(
+			stampOfUnfingerprintedSummary({ transcriptAlone: { sourceUrl: null } }),
+		).toEqual({
+			sourceFingerprint: computeSourceFingerprint([]),
+			sourceKinds: ["transcript"],
+		});
 	});
 });

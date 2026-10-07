@@ -69,6 +69,44 @@ export function kindsOfUnfingerprintedSummary(sources: {
 }
 
 /**
+ * What a summary stored without a fingerprint was built from: the sources its
+ * meeting holds, or its transcript alone when the meeting is about to take
+ * documents the summary never read.
+ */
+export type UnfingerprintedSummarySources =
+	| {
+			documents: readonly { sourceUrl: string; rawText: string }[];
+			transcript?: { sourceUrl: string | null; rawText: string } | null;
+	  }
+	| { transcriptAlone: { sourceUrl: string | null } };
+
+/**
+ * The fingerprint and the one kind to record on a summary stored without a
+ * fingerprint. Both are read from the same sources, so the two cannot describe
+ * different ones.
+ */
+export function stampOfUnfingerprintedSummary(
+	builtFrom: UnfingerprintedSummarySources,
+): { sourceFingerprint: string; sourceKinds: SourceKind[] } {
+	if ("transcriptAlone" in builtFrom) {
+		return {
+			sourceFingerprint: fingerprintOfSources({
+				documents: [],
+				transcriptUrl: builtFrom.transcriptAlone.sourceUrl,
+			}),
+			sourceKinds: ["transcript"],
+		};
+	}
+	return {
+		sourceFingerprint: fingerprintOfSources({
+			documents: builtFrom.documents,
+			transcriptUrl: builtFrom.transcript?.sourceUrl,
+		}),
+		sourceKinds: kindsOfUnfingerprintedSummary(builtFrom),
+	};
+}
+
+/**
  * The session half of a meeting's key: a meeting label lowercased, with each
  * run of other characters collapsed to one "-" and the ends trimmed. School
  * board rows and video titles both build it here, because a video is paired
