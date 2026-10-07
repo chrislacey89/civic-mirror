@@ -4,6 +4,8 @@ import { extractLongFormDate, readFinalsiteDate } from "#/pipeline/dates.ts";
 import {
 	type DatabaseError,
 	type LlmError,
+	type NetworkError,
+	type ParseError,
 	TranscriptionError,
 } from "#/pipeline/errors.ts";
 import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
@@ -1285,15 +1287,11 @@ class UnsessionedListingError {
 }
 
 type TaggedPipelineError =
-	| { readonly _tag: "NetworkError"; readonly message: string }
-	| { readonly _tag: "ParseError"; readonly message: string }
-	| {
-			readonly _tag: "TranscriptionError";
-			readonly message: string;
-			readonly captionsDisabled?: boolean;
-	  }
-	| { readonly _tag: "LlmError"; readonly message: string }
-	| { readonly _tag: "DatabaseError"; readonly message: string }
+	| NetworkError
+	| ParseError
+	| TranscriptionError
+	| LlmError
+	| DatabaseError
 	| PipelineExtractError
 	| UndatedListingError
 	| UnsessionedListingError;
