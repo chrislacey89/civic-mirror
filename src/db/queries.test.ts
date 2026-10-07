@@ -24,8 +24,10 @@ async function createTestDb() {
 	return db;
 }
 
+type TestDb = Awaited<ReturnType<typeof createTestDb>>;
+
 async function seedBody(
-	db: Awaited<ReturnType<typeof createTestDb>>,
+	db: TestDb,
 	overrides: Partial<typeof schema.governingBodies.$inferInsert> = {},
 ) {
 	return await db
@@ -41,7 +43,7 @@ async function seedBody(
 }
 
 async function seedMeetingWithSummary(
-	db: Awaited<ReturnType<typeof createTestDb>>,
+	db: TestDb,
 	bodyId: number,
 	date: string,
 	opts: {
@@ -391,7 +393,7 @@ describe("listNotableFiscalDecisionsQuery", () => {
 
 describe("getMeetingByBodyAndDateQuery — extractionMethod", () => {
 	async function seedMeetingWithDocs(
-		db: Awaited<ReturnType<typeof createTestDb>>,
+		db: TestDb,
 		bodyId: number,
 		date: string,
 		docs: Array<{
@@ -793,7 +795,7 @@ describe("aggregateFiscalByCategoryForBodyQuery", () => {
 
 describe("meetings that share a date", () => {
 	async function seedSession(
-		db: Awaited<ReturnType<typeof createTestDb>>,
+		db: TestDb,
 		bodyId: number,
 		date: string,
 		session: string,
@@ -897,7 +899,7 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 	const TRANSCRIPT_TEXT = "TRANSCRIPT-TEXT-THAT-MUST-STAY-ON-THE-SERVER";
 
 	async function seedSourcedMeeting(
-		db: Awaited<ReturnType<typeof createTestDb>>,
+		db: TestDb,
 		bodyId: number,
 		opts: {
 			date?: string;
