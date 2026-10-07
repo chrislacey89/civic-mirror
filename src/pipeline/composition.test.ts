@@ -15,6 +15,7 @@ const { fetchTranscript, execFileSync } = vi.hoisted(() => ({
 
 vi.mock("youtube-transcript", () => ({
 	YoutubeTranscript: { fetchTranscript },
+	YoutubeTranscriptDisabledError: class extends Error {},
 }));
 vi.mock("node:child_process", () => ({ execFileSync }));
 

@@ -1,6 +1,8 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	CaptionTracksMissingError,
+	readCaptionsDisabled,
 	TranscriptionService,
 	TranscriptionServiceLive,
 	WhisperLocalProviderLive,
@@ -92,6 +94,96 @@ describe("TranscriptionService", () => {
 			const error = await Effect.runPromise(Effect.flip(program));
 			expect(error._tag).toBe("TranscriptionError");
 			expect(error.message).toBe("Captions came back empty");
+			expect(error.captionsDisabled).toBeUndefined();
+		});
+
+		describe("when the fetch reports no caption tracks", () => {
+			const runProvider = (
+				fetchTranscriptFn: () => Promise<
+					{ text: string; duration: number; offset: number }[]
+				>,
+				confirmCaptionsDisabledFn: (videoId: string) => Promise<boolean>,
+			) =>
+				Effect.gen(function* () {
+					const service = yield* TranscriptionService;
+					return yield* service.transcribe("no-tracks-video");
+				}).pipe(
+					Effect.provide(
+						YouTubeCaptionProviderLive({
+							fetchTranscriptFn,
+							confirmCaptionsDisabledFn,
+						}),
+					),
+				);
+			const reportNoTracks = async () => {
+				throw new CaptionTracksMissingError("no-tracks-video");
+			};
+
+			it("flags captionsDisabled when the watch page confirms it", async () => {
+				const confirmedIds: string[] = [];
+				const error = await Effect.runPromise(
+					Effect.flip(
+						runProvider(reportNoTracks, async (videoId) => {
+							confirmedIds.push(videoId);
+							return true;
+						}),
+					),
+				);
+
+				expect(error._tag).toBe("TranscriptionError");
+				expect(error.videoId).toBe("no-tracks-video");
+				expect(error.captionsDisabled).toBe(true);
+				expect(confirmedIds).toEqual(["no-tracks-video"]);
+			});
+
+			it("stays an ordinary failure when the watch page does not confirm it", async () => {
+				const error = await Effect.runPromise(
+					Effect.flip(runProvider(reportNoTracks, async () => false)),
+				);
+
+				expect(error._tag).toBe("TranscriptionError");
+				expect(error.captionsDisabled).toBeUndefined();
+				expect(error.message).toContain("not confirmed");
+			});
+
+			it("stays an ordinary failure when the confirmation itself fails", async () => {
+				const error = await Effect.runPromise(
+					Effect.flip(
+						runProvider(reportNoTracks, async () => {
+							throw new Error("watch page fetch failed");
+						}),
+					),
+				);
+
+				expect(error._tag).toBe("TranscriptionError");
+				expect(error.captionsDisabled).toBeUndefined();
+				expect(error.message).toContain("not confirmed");
+			});
+		});
+
+		it("does not ask for confirmation when the fetch fails for another reason", async () => {
+			let confirmCalled = false;
+			const program = Effect.gen(function* () {
+				const service = yield* TranscriptionService;
+				return yield* service.transcribe("flaky-video");
+			}).pipe(
+				Effect.provide(
+					YouTubeCaptionProviderLive({
+						fetchTranscriptFn: async () => {
+							throw new Error("Too many requests");
+						},
+						confirmCaptionsDisabledFn: async () => {
+							confirmCalled = true;
+							return true;
+						},
+					}),
+				),
+			);
+
+			const error = await Effect.runPromise(Effect.flip(program));
+			expect(error.message).toBe("Too many requests");
+			expect(error.captionsDisabled).toBeUndefined();
+			expect(confirmCalled).toBe(false);
 		});
 	});
 
@@ -250,6 +342,79 @@ describe("TranscriptionService", () => {
 
 			const result = await Effect.runPromiseExit(program);
 			expect(result._tag).toBe("Failure");
+		});
+	});
+
+	describe("readCaptionsDisabled", () => {
+		const videoId = "abc123DEF45";
+		const watchPage = (playerResponse: unknown) =>
+			`<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+		const playableResponse = {
+			playabilityStatus: { status: "OK" },
+			videoDetails: { videoId, title: "Meeting {draft}" },
+			streamingData: { formats: [] },
+		};
+
+		it("is true when the video is playable and has no caption tracks", () => {
+			expect(readCaptionsDisabled(watchPage(playableResponse), videoId)).toBe(
+				true,
+			);
+		});
+
+		it("is true when the caption track list is empty", () => {
+			const response = {
+				...playableResponse,
+				captions: { playerCaptionsTracklistRenderer: { captionTracks: [] } },
+			};
+			expect(readCaptionsDisabled(watchPage(response), videoId)).toBe(true);
+		});
+
+		it("is false when the video has caption tracks", () => {
+			const response = {
+				...playableResponse,
+				captions: {
+					playerCaptionsTracklistRenderer: {
+						captionTracks: [{ baseUrl: "https://example.test/c" }],
+					},
+				},
+			};
+			expect(readCaptionsDisabled(watchPage(response), videoId)).toBe(false);
+		});
+
+		it("is false when the video is unavailable", () => {
+			const response = { playabilityStatus: { status: "ERROR" } };
+			expect(readCaptionsDisabled(watchPage(response), videoId)).toBe(false);
+		});
+
+		it("is false when YouTube demands a login and sends no streaming data", () => {
+			const response = {
+				playabilityStatus: { status: "LOGIN_REQUIRED" },
+				videoDetails: { videoId },
+			};
+			expect(readCaptionsDisabled(watchPage(response), videoId)).toBe(false);
+		});
+
+		it("is false when the page describes a different video", () => {
+			const response = {
+				...playableResponse,
+				videoDetails: { videoId: "someOtherVid" },
+			};
+			expect(readCaptionsDisabled(watchPage(response), videoId)).toBe(false);
+		});
+
+		it("is false when the page has no player response", () => {
+			expect(readCaptionsDisabled("<html>consent wall</html>", videoId)).toBe(
+				false,
+			);
+		});
+
+		it("is false when the player response is not valid JSON", () => {
+			expect(
+				readCaptionsDisabled(
+					"<script>var ytInitialPlayerResponse = {oops};</script>",
+					videoId,
+				),
+			).toBe(false);
 		});
 	});
 });
