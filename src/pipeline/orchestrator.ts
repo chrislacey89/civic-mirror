@@ -4,6 +4,7 @@ import { extractLongFormDate, readFinalsiteDate } from "#/pipeline/dates.ts";
 import {
 	type DatabaseError,
 	type LlmError,
+	type MeetingMatchError,
 	type NetworkError,
 	type ParseError,
 	TranscriptionError,
@@ -19,6 +20,10 @@ import {
 import { DramaDetectionService } from "#/pipeline/services/DramaDetectionService.ts";
 import type { FinalsiteMeetingListing } from "#/pipeline/services/FinalsiteScraper.ts";
 import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
+import {
+	type MatchableSummary,
+	MeetingMatchService,
+} from "#/pipeline/services/MeetingMatchService.ts";
 import type { ExtractResult } from "#/pipeline/services/PdfExtractor.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
@@ -26,9 +31,13 @@ import type {
 	DramaCategoryScoreInput,
 	HeldVideoInput,
 	MeetingInput,
+	MeetingSourceState,
 } from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
-import type { LabelledSource } from "#/pipeline/services/SummarizationService.ts";
+import type {
+	LabelledSource,
+	SummarizationResult,
+} from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import type { TranscriptResult } from "#/pipeline/services/TranscriptionService.ts";
 import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
@@ -49,6 +58,13 @@ const MS_PER_DAY = 1000 * 60 * 60 * 24;
  * never have them, and a hold is permanent.
  */
 const CAPTIONS_GRACE_DAYS = 7;
+
+/**
+ * How far from a video's title date a documents-only meeting still counts as
+ * possibly the same meeting. The town dates a document by the meeting and
+ * the playlist titles a video by hand, and the two can differ by a day.
+ */
+const NEAR_DATE_WINDOW_DAYS = 2;
 
 function detectZeroResultsAnomaly(input: {
 	body: BodyConfig;
@@ -226,6 +242,7 @@ function runPipeline(
 	| StorageService
 	| AlertService
 	| DramaDetectionService
+	| MeetingMatchService
 > {
 	const config: ResolvedConfig = {
 		...input,
@@ -266,6 +283,7 @@ function runPipelineForBody(
 	| StorageService
 	| AlertService
 	| DramaDetectionService
+	| MeetingMatchService
 > {
 	return Effect.gen(function* () {
 		// Zero-results anomaly check: alert if this body hasn't had fresh content
@@ -453,8 +471,27 @@ function attachDocumentsAndRegenerate(input: {
 			yield* storage.storeMeeting(input.meeting);
 		}
 
+		yield* regenerateWithRetry({
+			meetingId: input.meetingId,
+			meetingContext: input.meetingContext,
+			config: input.config,
+		}).pipe(Effect.annotateLogs({ bringsNewDocument }));
+	});
+}
+
+/** Rebuilds a meeting's summary if its sources changed, retrying a failed model call. */
+function regenerateWithRetry(input: {
+	meetingId: number;
+	meetingContext: string;
+	config: ResolvedConfig;
+}): Effect.Effect<
+	void,
+	DatabaseError | LlmError,
+	StorageService | SummarizationService
+> {
+	return Effect.gen(function* () {
 		yield* Effect.log("regenerate.start").pipe(
-			Effect.annotateLogs({ meetingId: input.meetingId, bringsNewDocument }),
+			Effect.annotateLogs({ meetingId: input.meetingId }),
 		);
 		const { regenerated } = yield* regenerateMeetingSummary({
 			meetingId: input.meetingId,
@@ -882,6 +919,7 @@ function runYouTubeForBody(
 	| StorageService
 	| AlertService
 	| DramaDetectionService
+	| MeetingMatchService
 > {
 	return Effect.gen(function* () {
 		const playlistId = body.youtubePlaylistId;
@@ -925,6 +963,7 @@ function processPlaylistVideo(
 	| SummarizationService
 	| StorageService
 	| DramaDetectionService
+	| MeetingMatchService
 	| AlertService
 > {
 	return Effect.gen(function* () {
@@ -952,49 +991,111 @@ function processPlaylistVideo(
 		}
 
 		const storage = yield* StorageService;
-		if (
-			(yield* storage.hasTranscriptForVideo(videoUrl(video.videoId))) ||
-			(yield* storage.isVideoHeld(video.videoId))
-		) {
-			return SETTLED_WITHOUT_REQUEST;
-		}
-
-		// A meeting that already has documents or another video's transcript
-		// has a summary this video was not part of. Storing would attach the
-		// transcript without changing that summary, so the video is left for
-		// the run that can combine them.
+		const sourceUrl = videoUrl(video.videoId);
 		const existing = yield* storage.getMeetingSourceState({
 			bodySlug: body.slug,
 			date: reading.date,
 			session: reading.session,
 		});
+
+		// This video's transcript was attached through a match and the summary
+		// was not rebuilt with it, which is what a failed regeneration leaves.
+		// The transcript is stored, so only the regeneration is owed.
+		if (
+			existing?.transcriptSourceUrl === sourceUrl &&
+			existing.hasDocuments &&
+			!existing.summarySourceKinds.includes("transcript")
+		) {
+			yield* regenerateWithRetry({
+				meetingId: existing.meetingId,
+				meetingContext: `${body.name}, ${video.title}`,
+				config,
+			});
+			return SETTLED_WITHOUT_REQUEST;
+		}
+
+		if (
+			(yield* storage.hasTranscriptForVideo(sourceUrl)) ||
+			(yield* storage.isVideoHeld(video.videoId))
+		) {
+			return SETTLED_WITHOUT_REQUEST;
+		}
+
+		if (existing === null) {
+			// A document dated a day or two off may be this meeting under the
+			// town's date. Filing the video on its title date would show one
+			// meeting twice, so the operator decides.
+			const nearby = yield* storage.findNearbyDocumentOnlyMeetings({
+				bodySlug: body.slug,
+				date: reading.date,
+				session: reading.session,
+				windowDays: NEAR_DATE_WINDOW_DAYS,
+			});
+			if (nearby.length > 0) {
+				yield* hold({
+					reason: "near-date",
+					meetingDate: reading.date,
+					// More than one nearby meeting names no single candidate.
+					...(nearby.length === 1
+						? { candidateMeetingId: nearby[0].meetingId }
+						: {}),
+				});
+				return SETTLED_WITHOUT_REQUEST;
+			}
+		}
+
+		// A meeting that holds another video's transcript has a summary this
+		// video was not part of, and one with documents and no summary has
+		// nothing for the same-meeting check to read. Neither can take this
+		// video, and neither is a reason to hold it for good: the second
+		// changes when the meeting gains a readable document.
+		const documentsSummary =
+			existing?.hasDocuments && existing.transcriptSourceUrl === null
+				? yield* storage.getMatchableSummary(existing.meetingId)
+				: null;
 		if (
 			existing &&
-			(existing.hasDocuments || existing.transcriptSourceUrl !== null)
+			(existing.transcriptSourceUrl !== null ||
+				(existing.hasDocuments && documentsSummary === null))
 		) {
-			yield* Effect.log("youtube.video.deferred").pipe(
+			yield* Effect.log("youtube.video.skipped").pipe(
 				Effect.annotateLogs({
 					meetingId: existing.meetingId,
 					date: reading.date,
 					session: reading.session,
-					reason: existing.hasDocuments
-						? "meeting-has-documents"
-						: "meeting-has-transcript",
+					reason:
+						existing.transcriptSourceUrl !== null
+							? "meeting-has-transcript"
+							: "meeting-has-no-summary",
 				}),
 			);
 			return SETTLED_WITHOUT_REQUEST;
 		}
 
-		return yield* processYouTubeVideo(
-			body,
-			video,
-			{
-				date: reading.date,
-				session: reading.session,
-				meetingType: meetingTypeFromFinalsiteLabel(reading.qualifier ?? ""),
-			},
-			config,
-		).pipe(
+		const settle =
+			existing && documentsSummary
+				? matchVideoToMeeting({
+						body,
+						video,
+						meeting: existing,
+						documentsSummary,
+						hold,
+						config,
+					})
+				: processYouTubeVideo(
+						body,
+						video,
+						{
+							date: reading.date,
+							session: reading.session,
+							meetingType: meetingTypeFromFinalsiteLabel(
+								reading.qualifier ?? "",
+							),
+						},
+						config,
+					);
+
+		return yield* settle.pipe(
 			// Only confirmed-disabled captions on a video past the grace period
 			// are a hold. Every other transcription failure stays an error, so
 			// the next run retries it. An unreadable publish date never holds.
@@ -1098,31 +1199,13 @@ function processYouTubeVideo(
 	| AlertService
 > {
 	return Effect.gen(function* () {
-		const transcription = yield* TranscriptionService;
-		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
 
-		yield* Effect.log("youtube.transcribe.start");
-		// Disabled captions are a property of the video, so asking again
-		// cannot succeed.
-		const transcript = yield* transcription.transcribe(video.videoId).pipe(
-			Effect.retry({
-				schedule: config.networkSchedule,
-				while: (error) => error.captionsDisabled !== true,
-			}),
+		const { transcript, summary } = yield* transcribeAndSummarize(
+			body,
+			video,
+			config,
 		);
-		yield* Effect.log("youtube.transcribe.finish").pipe(
-			Effect.annotateLogs({ source: transcript.source }),
-		);
-
-		yield* Effect.log("youtube.summarize.start");
-		const summary = yield* summarizer
-			.summarize({
-				sources: [{ kind: "transcript", text: transcript.rawText }],
-				meetingContext: `${body.name}, ${video.title}`,
-			})
-			.pipe(Effect.retry(config.llmSchedule));
-		yield* Effect.log("youtube.summarize.finish");
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -1174,6 +1257,162 @@ function processYouTubeVideo(
 
 		return { processed: 1, errors: 0 };
 	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
+}
+
+/** Fetches a video's transcript and summarizes it on its own. */
+function transcribeAndSummarize(
+	body: BodyConfig,
+	video: VideoRef,
+	config: ResolvedConfig,
+): Effect.Effect<
+	{ transcript: TranscriptResult; summary: SummarizationResult },
+	TranscriptionError | LlmError,
+	TranscriptionService | SummarizationService
+> {
+	return Effect.gen(function* () {
+		const transcription = yield* TranscriptionService;
+		const summarizer = yield* SummarizationService;
+
+		yield* Effect.log("youtube.transcribe.start");
+		// Disabled captions are a property of the video, so asking again
+		// cannot succeed.
+		const transcript = yield* transcription.transcribe(video.videoId).pipe(
+			Effect.retry({
+				schedule: config.networkSchedule,
+				while: (error) => error.captionsDisabled !== true,
+			}),
+		);
+		yield* Effect.log("youtube.transcribe.finish").pipe(
+			Effect.annotateLogs({ source: transcript.source }),
+		);
+
+		yield* Effect.log("youtube.summarize.start");
+		const summary = yield* summarizer
+			.summarize({
+				sources: [{ kind: "transcript", text: transcript.rawText }],
+				meetingContext: `${body.name}, ${video.title}`,
+			})
+			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log("youtube.summarize.finish");
+
+		return { transcript, summary };
+	});
+}
+
+/**
+ * Settles a video whose meeting already has documents. The transcript is
+ * summarized alone and that summary is checked against the meeting's
+ * documents summary. Only a match attaches the transcript, after which the
+ * summary is rebuilt from every source; the transcript-only summary is never
+ * stored. Any other outcome holds the video and leaves the meeting as it
+ * was. A check that fails is an error, so the next run asks again.
+ */
+function matchVideoToMeeting(input: {
+	body: BodyConfig;
+	video: VideoRef;
+	meeting: MeetingSourceState;
+	documentsSummary: MatchableSummary;
+	hold: (
+		videoHold: VideoHold,
+	) => Effect.Effect<void, DatabaseError, StorageService | AlertService>;
+	config: ResolvedConfig;
+}): Effect.Effect<
+	PipelineResult,
+	TaggedPipelineError,
+	| TranscriptionService
+	| SummarizationService
+	| StorageService
+	| DramaDetectionService
+	| MeetingMatchService
+	| AlertService
+> {
+	const { body, video, meeting, config } = input;
+	return Effect.gen(function* () {
+		const storage = yield* StorageService;
+		const matcher = yield* MeetingMatchService;
+
+		const { transcript, summary } = yield* transcribeAndSummarize(
+			body,
+			video,
+			config,
+		);
+
+		yield* Effect.log("youtube.match.start").pipe(
+			Effect.annotateLogs({ meetingId: meeting.meetingId }),
+		);
+		const match = yield* matcher
+			.check({
+				transcriptSummary: summary,
+				documentsSummary: input.documentsSummary,
+			})
+			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log("youtube.match.finish").pipe(
+			Effect.annotateLogs({
+				meetingId: meeting.meetingId,
+				outcome: match.outcome,
+				probability: match.probability,
+				sharedIdentifiers: match.sharedIdentifiers,
+			}),
+		);
+
+		if (match.outcome !== "match") {
+			yield* input.hold({
+				// A hold always carries a reason; this names the weaker one
+				// should a check ever return a hold without it.
+				reason: match.reason ?? "signals-disagree",
+				meetingDate: meeting.date,
+				probability: match.probability,
+				sharedIdentifiers: match.sharedIdentifiers,
+				candidateMeetingId: meeting.meetingId,
+			});
+			return { processed: 0, errors: 0 };
+		}
+
+		if (config.dryRun) return { processed: 1, errors: 0 };
+
+		// `regenerateMeetingSummary` leaves a summary stored without a
+		// fingerprint alone. Stamping it with the fingerprint of the sources it
+		// was built from makes the attach below leave it visibly behind.
+		const held = yield* storage.getMeetingSources(meeting.meetingId);
+		if (held.summary?.sourceFingerprint === "") {
+			yield* storage.stampSummaryFingerprint({
+				meetingId: meeting.meetingId,
+				sourceFingerprint: fingerprintOfSources({
+					documents: held.documents,
+					transcriptUrl: held.transcript?.sourceUrl,
+				}),
+			});
+		}
+
+		yield* storage.storeTranscript({
+			meetingId: meeting.meetingId,
+			source: transcript.source,
+			rawText: transcript.rawText,
+			segments: transcript.segments,
+			sourceUrl: videoUrl(video.videoId),
+		});
+
+		// Drama detection reads only the transcript, so it does not wait for
+		// the new summary. It runs first because a failed regeneration ends
+		// this video's turn, and the run that retries the regeneration does
+		// not come back through here.
+		yield* Effect.log("youtube.drama.start");
+		yield* runDramaDetection({
+			body,
+			video,
+			meetingId: meeting.meetingId,
+			transcript,
+		}).pipe(Effect.catch((error) => alertDramaFailure(body, error, "item")));
+		yield* Effect.log("youtube.drama.finish");
+
+		yield* regenerateWithRetry({
+			meetingId: meeting.meetingId,
+			meetingContext: `${body.name}, ${video.title}`,
+			config,
+		});
+
+		return { processed: 1, errors: 0 };
+	});
 }
 
 function runDramaDetection(input: {
@@ -1288,6 +1527,7 @@ type TaggedPipelineError =
 	| ParseError
 	| TranscriptionError
 	| LlmError
+	| MeetingMatchError
 	| DatabaseError
 	| PipelineExtractError
 	| UndatedListingError
@@ -1309,6 +1549,8 @@ function listingFailureStage(error: TaggedPipelineError): string {
 			return "transcribe";
 		case "LlmError":
 			return "summarize";
+		case "MeetingMatchError":
+			return "match";
 		case "DatabaseError":
 			return "store";
 		default:

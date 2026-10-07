@@ -4,6 +4,7 @@ import type { MeetingDetail } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
 import {
 	LlmError,
+	MeetingMatchError,
 	NetworkError,
 	TranscriptionError,
 } from "#/pipeline/errors.ts";
@@ -19,6 +20,12 @@ import {
 } from "#/pipeline/services/DramaDetectionService.ts";
 import type { FinalsiteMeetingListing } from "#/pipeline/services/FinalsiteScraper.ts";
 import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
+import {
+	type MatchableSummary,
+	type MatchResult,
+	type MeetingMatchInput,
+	MeetingMatchService,
+} from "#/pipeline/services/MeetingMatchService.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
 import type {
@@ -26,6 +33,7 @@ import type {
 	Meeting,
 	MeetingInput,
 	MeetingSourceState,
+	MeetingSources,
 } from "#/pipeline/services/StorageService.ts";
 import {
 	StorageService,
@@ -62,6 +70,13 @@ type CallLog = {
 	drama: number;
 	/** Videos the storage stub was asked to hold and did not already hold. */
 	held: Array<HeldVideoInput>;
+	match: Array<MeetingMatchInput>;
+	/** Summary replacements, by meeting. */
+	replaced: Array<{ meetingId: number; sourceKinds: string[] }>;
+	/** Meetings a drama assessment was stored for. */
+	dramaStored: Array<number>;
+	/** Meetings whose summary was stamped with a fingerprint. */
+	stamped: Array<number>;
 };
 
 function emptyCallLog(): CallLog {
@@ -79,6 +94,10 @@ function emptyCallLog(): CallLog {
 		alert: [],
 		drama: 0,
 		held: [],
+		match: [],
+		replaced: [],
+		dramaStored: [],
+		stamped: [],
 	};
 }
 
@@ -90,6 +109,8 @@ type StubConfig = {
 	youtubeVideos?: YouTubeVideo[];
 	summarizationResult?: SummarizationResult;
 	summarizationError?: Error;
+	/** Fails only the summarize calls it returns true for. */
+	summarizationFailsWhen?: (input: SummarizationInput) => boolean;
 	storedMeeting?: Meeting;
 	lastMeetingLookup?: MeetingDetail | null;
 	mostRecentMeetingDate?: string | null;
@@ -98,6 +119,17 @@ type StubConfig = {
 		date: string;
 		session: string;
 	}) => MeetingSourceState | null;
+	/**
+	 * The existing meeting's stored summary, as the same-meeting check reads
+	 * it. A documents summary by default; null models a meeting with none.
+	 */
+	matchableSummary?: MatchableSummary | null;
+	/** Documents-only meetings near a date that has no meeting of its own. */
+	nearbyMeetings?: MeetingSourceState[];
+	/** Every source the existing meeting holds; none by default. */
+	meetingSources?: MeetingSources;
+	/** What the same-meeting check answers; a match by default. */
+	matchResult?: MatchResult | MeetingMatchError;
 	/** Video URLs storage already holds a transcript for. */
 	storedVideoUrls?: string[];
 	/** Videos whose transcription fails, by video ID. */
@@ -179,6 +211,9 @@ function buildStubLayers(config: StubConfig) {
 					if (config.summarizationError) {
 						throw config.summarizationError;
 					}
+					if (config.summarizationFailsWhen?.(input)) {
+						throw new Error("summarizer unavailable");
+					}
 					return config.summarizationResult ?? defaultSummary;
 				},
 				catch: (error) =>
@@ -211,9 +246,24 @@ function buildStubLayers(config: StubConfig) {
 			}),
 		getMostRecentMeetingDate: () =>
 			Effect.sync(() => config.mostRecentMeetingDate ?? null),
-		storeDramaAssessment: () => Effect.void,
+		storeDramaAssessment: (input) =>
+			Effect.sync(() => {
+				config.log.dramaStored.push(input.meetingId);
+			}),
 		getMeetingSourceState: (key) =>
 			Effect.sync(() => config.meetingSourceState?.(key) ?? null),
+		findNearbyDocumentOnlyMeetings: () =>
+			Effect.sync(() => config.nearbyMeetings ?? []),
+		getMatchableSummary: () =>
+			Effect.sync(() =>
+				config.matchableSummary === undefined
+					? {
+							highlights: ["Approved Ordinance 2025-12"],
+							prose: "The council approved Ordinance 2025-12.",
+							fiscalDecisions: [],
+						}
+					: config.matchableSummary,
+			),
 		hasTranscriptForVideo: (sourceUrl) =>
 			Effect.sync(() => (config.storedVideoUrls ?? []).includes(sourceUrl)),
 		holdVideo: (input) =>
@@ -225,9 +275,40 @@ function buildStubLayers(config: StubConfig) {
 		isVideoHeld: (videoId) => Effect.sync(() => isHeld(videoId)),
 		listHeldVideos: () => Effect.succeed([]),
 		getMeetingSources: () =>
-			Effect.succeed({ documents: [], transcript: null, summary: null }),
-		replaceMeetingSummary: () => Effect.void,
-		stampSummaryFingerprint: () => Effect.void,
+			Effect.sync(
+				() =>
+					config.meetingSources ?? {
+						documents: [],
+						transcript: null,
+						summary: null,
+					},
+			),
+		replaceMeetingSummary: (input) =>
+			Effect.sync(() => {
+				config.log.replaced.push({
+					meetingId: input.meetingId,
+					sourceKinds: input.sourceKinds,
+				});
+			}),
+		stampSummaryFingerprint: (input) =>
+			Effect.sync(() => {
+				config.log.stamped.push(input.meetingId);
+			}),
+	});
+
+	const meetingMatch = Layer.succeed(MeetingMatchService, {
+		check: (input) =>
+			Effect.suspend(() => {
+				config.log.match.push(input);
+				const result = config.matchResult ?? {
+					outcome: "match" as const,
+					probability: 0.9,
+					sharedIdentifiers: 2,
+				};
+				return result instanceof MeetingMatchError
+					? Effect.fail(result)
+					: Effect.succeed(result);
+			}),
 	});
 
 	const alert = Layer.succeed(AlertService, {
@@ -278,6 +359,7 @@ function buildStubLayers(config: StubConfig) {
 		transcription,
 		summarization,
 		config.storage ?? storage,
+		meetingMatch,
 		alert,
 		drama,
 	);
@@ -1748,48 +1830,303 @@ describe("runPipeline video path", () => {
 		expect(result).toEqual({ processed: 1, errors: 0 });
 	});
 
-	it("defers a video whose meeting already has documents: no transcription, no write, one log line", async () => {
+	/** A meeting stored from minutes alone, before summaries recorded their sources. */
+	const minutesMeeting = (key: {
+		date: string;
+		session: string;
+	}): MeetingSourceState | null =>
+		key.session === ""
+			? {
+					meetingId: 7,
+					date: key.date,
+					session: "",
+					hasDocuments: true,
+					transcriptSourceUrl: null,
+					summarySourceKinds: [],
+				}
+			: null;
+
+	it("[QA-RELI] holds a video the check does not match and writes no transcript, summary or drama assessment to the candidate meeting", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
 			log,
-			youtubeVideos: [REGULAR, WORK_SESSION],
-			meetingSourceState: (key) =>
-				key.session === ""
-					? {
-							meetingId: 7,
-							date: key.date,
-							session: "",
-							hasDocuments: true,
-							transcriptSourceUrl: null,
-							summarySourceKinds: [],
-						}
-					: null,
+			youtubeVideos: [REGULAR],
+			meetingSourceState: minutesMeeting,
+			matchResult: {
+				outcome: "hold",
+				reason: "signals-disagree",
+				probability: 0.8,
+				sharedIdentifiers: 0,
+			},
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.transcribe).toEqual(["regular"]);
+		expect(log.match).toHaveLength(1);
+		expect(log.store).toEqual([]);
+		expect(log.transcripts).toEqual([]);
+		expect(log.replaced).toEqual([]);
+		expect(log.stamped).toEqual([]);
+		expect(log.drama).toBe(0);
+		expect(log.dramaStored).toEqual([]);
+		expect(log.held).toEqual([
+			{
+				bodySlug: "ellettsville-town-council",
+				videoId: "regular",
+				title: REGULAR.title,
+				meetingDate: "2025-08-25",
+				reason: "signals-disagree",
+				probability: 0.8,
+				sharedIdentifiers: 0,
+				candidateMeetingId: 7,
+			},
+		]);
+		expect(log.alert.map((a) => a.subject)).toEqual([
+			expect.stringContaining("signals-disagree"),
+		]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
+	});
+
+	it.each([
+		{
+			outcome: "match" as const,
+			probability: 0.93,
+			sharedIdentifiers: 3,
+		},
+		{
+			outcome: "hold" as const,
+			reason: "check-failed" as const,
+			probability: 0.04,
+			sharedIdentifiers: 0,
+		},
+	])("[QA-MAINT] emits youtube.match.start and youtube.match.finish with outcome, probability and sharedIdentifiers when the check returns $outcome", async (matchResult) => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			meetingSourceState: minutesMeeting,
+			matchResult,
 		});
 		const { captured, layer: loggerLayer } = buildLogCapture();
 
-		const result = await Effect.runPromise(
-			run(layers).pipe(Effect.provide(loggerLayer)),
-		);
+		await Effect.runPromise(run(layers).pipe(Effect.provide(loggerLayer)));
 
-		// The regular meeting has minutes; the work session beside it does not.
-		expect(log.transcribe).toEqual(["work"]);
-		expect(log.summarize).toHaveLength(1);
-		expect(log.storeInputs.map((i) => i.session)).toEqual([
-			"budget-work-session",
-		]);
-		expect(log.transcripts.map((t) => t.sourceUrl)).toEqual([url("work")]);
-		expect(log.alert).toEqual([]);
-		expect(result).toEqual({ processed: 1, errors: 0 });
-
-		const deferred = captured.filter((c) =>
-			c.message.includes("youtube.video.deferred"),
+		const tags = captured.flatMap((c) => c.message);
+		expect(tags.filter((t) => t === "youtube.match.start")).toHaveLength(1);
+		expect(tags.filter((t) => t === "youtube.match.finish")).toHaveLength(1);
+		expect(tags.indexOf("youtube.match.start")).toBeLessThan(
+			tags.indexOf("youtube.match.finish"),
 		);
-		expect(deferred).toHaveLength(1);
-		expect(deferred[0].annotations.videoId).toBe("regular");
-		expect(deferred[0].annotations.meetingId).toBe(7);
+		const start = findStageLog(captured, "youtube.match.start");
+		expect(start?.annotations).toMatchObject({
+			videoId: "regular",
+			meetingId: 7,
+		});
+		const finish = findStageLog(captured, "youtube.match.finish");
+		expect(finish?.annotations).toMatchObject({
+			videoId: "regular",
+			meetingId: 7,
+			outcome: matchResult.outcome,
+			probability: matchResult.probability,
+			sharedIdentifiers: matchResult.sharedIdentifiers,
+		});
 	});
 
-	it("defers a second video for a meeting that already holds another video's transcript", async () => {
+	it("checks the transcript-only summary against the meeting's stored summary", async () => {
+		const log = emptyCallLog();
+		const documentsSummary = {
+			highlights: ["Adopted Ordinance 2025-12"],
+			prose: "The council adopted Ordinance 2025-12 for $215,215.10.",
+			fiscalDecisions: [{ title: "Paving bid", originalAmount: "$215,215.10" }],
+		};
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			meetingSourceState: minutesMeeting,
+			matchableSummary: documentsSummary,
+		});
+
+		await Effect.runPromise(run(layers));
+
+		expect(log.summarize.map((call) => call.sources)).toEqual([
+			[{ kind: "transcript", text: "transcript for regular" }],
+		]);
+		expect(log.match).toHaveLength(1);
+		expect(log.match[0].documentsSummary).toEqual(documentsSummary);
+		expect(log.match[0].transcriptSummary).toMatchObject({
+			highlights: ["A highlight"],
+			prose: "A prose summary",
+		});
+	});
+
+	it("counts an error, holds nothing and writes nothing when the check itself fails", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			meetingSourceState: minutesMeeting,
+			matchResult: new MeetingMatchError({ message: "model unavailable" }),
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(log.held).toEqual([]);
+		expect(log.transcripts).toEqual([]);
+		expect(log.replaced).toEqual([]);
+		expect(log.dramaStored).toEqual([]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("MeetingMatchError");
+	});
+
+	it("holds a video with disabled captions as no-captions when its meeting has documents, without running the check", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			meetingSourceState: minutesMeeting,
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.match).toEqual([]);
+		expect(log.held.map((h) => h.reason)).toEqual(["no-captions"]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
+	});
+
+	it("leaves a video unheld and untranscribed while its meeting has documents and no summary to check against", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			meetingSourceState: minutesMeeting,
+			matchableSummary: null,
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.transcribe).toEqual([]);
+		expect(log.match).toEqual([]);
+		expect(log.held).toEqual([]);
+		expect(log.transcripts).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
+	});
+
+	it("writes nothing on a dry run, whether the check matches or holds", async () => {
+		for (const matchResult of [
+			{ outcome: "match" as const, probability: 0.9, sharedIdentifiers: 2 },
+			{
+				outcome: "hold" as const,
+				reason: "check-failed" as const,
+				probability: 0.1,
+				sharedIdentifiers: 0,
+			},
+		]) {
+			const log = emptyCallLog();
+			const layers = buildStubLayers({
+				log,
+				youtubeVideos: [REGULAR],
+				meetingSourceState: minutesMeeting,
+				matchResult,
+			});
+
+			await Effect.runPromise(
+				runPipeline({
+					bodies: [TOWN_COUNCIL],
+					crawlDelayMs: 0,
+					youtubeDelayMs: 0,
+					networkRetry: { attempts: 0, baseDelayMs: 0 },
+					llmRetry: { attempts: 0, baseDelayMs: 0 },
+					extractPdfText: async () => ({
+						text: "unused",
+						method: "text-layer",
+					}),
+					dryRun: true,
+				}).pipe(Effect.provide(layers)),
+			);
+
+			expect(log.match).toHaveLength(1);
+			expect(log.held).toEqual([]);
+			expect(log.transcripts).toEqual([]);
+			expect(log.stamped).toEqual([]);
+			expect(log.replaced).toEqual([]);
+			expect(log.dramaStored).toEqual([]);
+			expect(log.alert).toEqual([]);
+		}
+	});
+
+	it("holds a video as near-date before transcription when documents-only meetings lie near a title date that has no meeting", async () => {
+		const nearby = (meetingId: number, date: string): MeetingSourceState => ({
+			meetingId,
+			date,
+			session: "",
+			hasDocuments: true,
+			transcriptSourceUrl: null,
+			summarySourceKinds: [],
+		});
+		const JULY_14: YouTubeVideo = {
+			...REGULAR,
+			videoId: "july14",
+			title: "Ellettsville Town Council, July 14, 2026",
+			publishedAt: "2026-07-15T00:00:00Z",
+		};
+
+		const one = emptyCallLog();
+		const result = await Effect.runPromise(
+			run(
+				buildStubLayers({
+					log: one,
+					youtubeVideos: [JULY_14],
+					nearbyMeetings: [nearby(7, "2026-07-13")],
+				}),
+			),
+		);
+
+		expect(one.transcribe).toEqual([]);
+		expect(one.store).toEqual([]);
+		expect(one.held).toEqual([
+			{
+				bodySlug: "ellettsville-town-council",
+				videoId: "july14",
+				title: JULY_14.title,
+				meetingDate: "2026-07-14",
+				reason: "near-date",
+				candidateMeetingId: 7,
+			},
+		]);
+		expect(one.alert.map((a) => a.subject)).toEqual([
+			expect.stringContaining("near-date"),
+		]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
+
+		// Two nearby meetings name no single candidate.
+		const two = emptyCallLog();
+		await Effect.runPromise(
+			run(
+				buildStubLayers({
+					log: two,
+					youtubeVideos: [JULY_14],
+					nearbyMeetings: [nearby(7, "2026-07-13"), nearby(8, "2026-07-16")],
+				}),
+			),
+		);
+
+		expect(two.transcribe).toEqual([]);
+		expect(two.store).toEqual([]);
+		expect(two.held.map((h) => [h.reason, h.candidateMeetingId])).toEqual([
+			["near-date", undefined],
+		]);
+	});
+
+	it("skips a second video for a meeting that already holds another video's transcript", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
 			log,
@@ -2337,18 +2674,23 @@ describe("runPipeline video path", () => {
 			expect(await counts()).toEqual(afterFirst);
 		});
 
-		it("leaves a meeting stored from minutes untouched when its video appears", async () => {
-			const { db, counts } = await setup();
-			await Effect.runPromise(
+		const MINUTES_URL = "https://example.com/minutes.pdf";
+
+		/** A meeting stored from minutes alone, as the eGov path left them before summaries recorded sources. */
+		async function seedMinutesMeeting(
+			db: Awaited<ReturnType<typeof createMigratedTestDb>>,
+			date: string,
+		) {
+			const meeting = await Effect.runPromise(
 				Effect.gen(function* () {
 					const storage = yield* StorageService;
-					yield* storage.storeMeeting({
+					return yield* storage.storeMeeting({
 						bodySlug: TOWN_COUNCIL.slug,
-						date: "2025-08-25",
+						date,
 						meetingType: "regular",
 						documents: [
 							{
-								sourceUrl: "https://example.com/minutes.pdf",
+								sourceUrl: MINUTES_URL,
 								rawText: "Minutes of the meeting.",
 								documentType: "minutes",
 								extractionMethod: "text-layer",
@@ -2358,21 +2700,239 @@ describe("runPipeline video path", () => {
 					});
 				}).pipe(Effect.provide(StorageServiceLive(db))),
 			);
-			const before = await counts();
+			return meeting.id;
+		}
 
+		function runAgainst(
+			db: Awaited<ReturnType<typeof createMigratedTestDb>>,
+			config: Omit<StubConfig, "log" | "storage">,
+		) {
 			const log = emptyCallLog();
-			await Effect.runPromise(
+			return Effect.runPromise(
 				run(
 					buildStubLayers({
-						log,
 						youtubeVideos: [REGULAR],
+						...config,
+						log,
 						storage: StorageServiceLive(db),
 					}),
 				),
+			).then((result) => ({ log, result }));
+		}
+
+		it("attaches a matched video to the meeting that has its minutes: transcript stored, summary rebuilt from both sources, drama assessed", async () => {
+			const { db, counts } = await setup();
+			const meetingId = await seedMinutesMeeting(db, "2025-08-25");
+
+			const { log, result } = await runAgainst(db, {
+				summarizationResult: {
+					highlights: ["Combined highlight"],
+					prose: "Combined prose",
+					fiscalDecisions: [],
+					budgetDiscussions: [],
+					sourceDisagreements: [],
+					model: "stub-model",
+				},
+			});
+
+			expect(result).toEqual({ processed: 1, errors: 0 });
+			expect(log.match[0].documentsSummary).toEqual({
+				highlights: ["h"],
+				prose: "p",
+				fiscalDecisions: [],
+			});
+			// Once for the check, once for the summary that is stored.
+			expect(log.summarize.map((c) => c.sources.map((s) => s.kind))).toEqual([
+				["transcript"],
+				["documents", "transcript"],
+			]);
+			expect(await counts()).toEqual({
+				meetings: 1,
+				summaries: 1,
+				transcripts: 1,
+				drama: 1,
+				held: 0,
+			});
+			const transcripts = await db.select().from(schema.transcripts).all();
+			expect(transcripts.map((t) => [t.meetingId, t.sourceUrl])).toEqual([
+				[meetingId, url("regular")],
+			]);
+			const [summary] = await db.select().from(schema.summaries).all();
+			expect(summary.meetingId).toBe(meetingId);
+			expect(summary.prose).toBe("Combined prose");
+			expect(summary.sourceKinds).toEqual(["documents", "transcript"]);
+			expect(summary.sourceFingerprint).toBe(
+				computeSourceFingerprint([MINUTES_URL, url("regular")]),
 			);
+			const [drama] = await db.select().from(schema.dramaAssessments).all();
+			expect(drama.meetingId).toBe(meetingId);
+		});
+
+		it("holds an unmatched video and leaves the meeting that has minutes exactly as it was", async () => {
+			const { db, counts } = await setup();
+			const meetingId = await seedMinutesMeeting(db, "2025-08-25");
+			const before = await counts();
+			const summaryBefore = await db.select().from(schema.summaries).all();
+
+			const { result } = await runAgainst(db, {
+				matchResult: {
+					outcome: "hold",
+					reason: "check-failed",
+					probability: 0.02,
+					sharedIdentifiers: 0,
+				},
+			});
+
+			expect(result).toEqual({ processed: 0, errors: 0 });
+			expect(await counts()).toEqual({ ...before, held: 1 });
+			expect(await db.select().from(schema.summaries).all()).toEqual(
+				summaryBefore,
+			);
+			const [held] = await db.select().from(schema.heldVideos).all();
+			expect(held).toMatchObject({
+				videoId: "regular",
+				meetingDate: "2025-08-25",
+				reason: "check-failed",
+				probability: 0.02,
+				sharedIdentifiers: 0,
+				candidateMeetingId: meetingId,
+			});
+		});
+
+		it.each([
+			{ name: "matched", matchResult: undefined },
+			{
+				name: "was held",
+				matchResult: {
+					outcome: "hold" as const,
+					reason: "signals-disagree" as const,
+					probability: 0.7,
+					sharedIdentifiers: 0,
+				},
+			},
+		])("[QA-RELI] makes no transcribe, summarize or match call on a second run for a video that $name on the first", async ({
+			matchResult,
+		}) => {
+			const { db, counts } = await setup();
+			await seedMinutesMeeting(db, "2025-08-25");
+
+			const first = await runAgainst(db, { matchResult });
+			expect(first.log.match).toHaveLength(1);
+			const afterFirst = await counts();
+
+			const second = await runAgainst(db, { matchResult });
+
+			expect(second.log.transcribe).toEqual([]);
+			expect(second.log.summarize).toEqual([]);
+			expect(second.log.match).toEqual([]);
+			expect(second.log.drama).toBe(0);
+			// A run that brings nothing new raises its no-new-content alert,
+			// which is not about any one video.
+			expect(
+				second.log.alert.filter((a) => a.subject.includes("held")),
+			).toEqual([]);
+			expect(second.result).toEqual({ processed: 0, errors: 0 });
+			expect(await counts()).toEqual(afterFirst);
+		});
+
+		it("holds nothing when the check fails, and checks the video again on the next run", async () => {
+			const { db, counts } = await setup();
+			await seedMinutesMeeting(db, "2025-08-25");
+			const before = await counts();
+
+			const first = await runAgainst(db, {
+				matchResult: new MeetingMatchError({ message: "model unavailable" }),
+			});
+
+			expect(first.result).toEqual({ processed: 0, errors: 1 });
+			expect(await counts()).toEqual(before);
+
+			const second = await runAgainst(db, {});
+
+			expect(second.log.transcribe).toEqual(["regular"]);
+			expect(second.log.match).toHaveLength(1);
+			expect(second.result).toEqual({ processed: 1, errors: 0 });
+			expect(await counts()).toEqual({ ...before, transcripts: 1, drama: 1 });
+		});
+
+		it("keeps the transcript and drama assessment when regeneration fails after a match, and rebuilds the summary on the next run without transcribing or checking again", async () => {
+			const { db, counts } = await setup();
+			await seedMinutesMeeting(db, "2025-08-25");
+
+			const first = await runAgainst(db, {
+				summarizationFailsWhen: (input) => input.sources.length > 1,
+			});
+
+			expect(first.result).toEqual({ processed: 0, errors: 1 });
+			expect(await counts()).toEqual({
+				meetings: 1,
+				summaries: 1,
+				transcripts: 1,
+				drama: 1,
+				held: 0,
+			});
+			const [stale] = await db.select().from(schema.summaries).all();
+			expect(stale.prose).toBe("p");
+
+			const second = await runAgainst(db, {});
+
+			expect(second.log.transcribe).toEqual([]);
+			expect(second.log.match).toEqual([]);
+			expect(second.log.drama).toBe(0);
+			expect(
+				second.log.summarize.map((c) => c.sources.map((s) => s.kind)),
+			).toEqual([["documents", "transcript"]]);
+			const [rebuilt] = await db.select().from(schema.summaries).all();
+			expect(rebuilt.sourceKinds).toEqual(["documents", "transcript"]);
+
+			const third = await runAgainst(db, {});
+			expect(third.log.summarize).toEqual([]);
+		});
+
+		it("holds a video titled July 14, 2026 as near-date when the town's document is dated July 13, and creates no second meeting", async () => {
+			const { db, counts } = await setup();
+			const meetingId = await seedMinutesMeeting(db, "2026-07-13");
+			const before = await counts();
+
+			const { log, result } = await runAgainst(db, {
+				youtubeVideos: [
+					{
+						...REGULAR,
+						videoId: "july14",
+						title: "Ellettsville Town Council, July 14, 2026",
+						publishedAt: "2026-07-15T00:00:00Z",
+					},
+				],
+			});
 
 			expect(log.transcribe).toEqual([]);
-			expect(await counts()).toEqual(before);
+			expect(result).toEqual({ processed: 0, errors: 0 });
+			expect(await counts()).toEqual({ ...before, held: 1 });
+			const [held] = await db.select().from(schema.heldVideos).all();
+			expect(held).toMatchObject({
+				videoId: "july14",
+				meetingDate: "2026-07-14",
+				reason: "near-date",
+				candidateMeetingId: meetingId,
+			});
+		});
+
+		it("stores a video as its own video-only meeting when the nearest documents-only meeting is three days from its title date", async () => {
+			const { db, counts } = await setup();
+			await seedMinutesMeeting(db, "2025-08-22");
+
+			const { log, result } = await runAgainst(db, {});
+
+			expect(log.transcribe).toEqual(["regular"]);
+			expect(log.match).toEqual([]);
+			expect(result).toEqual({ processed: 1, errors: 0 });
+			expect(await counts()).toEqual({
+				meetings: 2,
+				summaries: 2,
+				transcripts: 1,
+				drama: 1,
+				held: 0,
+			});
 		});
 	});
 });
