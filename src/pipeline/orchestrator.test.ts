@@ -2967,7 +2967,7 @@ describe("runPipeline video path", () => {
 			expect(page?.summarySources).toEqual({ origin: "documents" });
 		});
 
-		it("reads a summary stored without kinds as built from the documents alone when a transcript with no URL already sits beside them and regeneration fails after a video is attached", async () => {
+		it("stamps a summary stored without kinds as built from the documents alone when a video is attached to a meeting that already holds a transcript with no URL", async () => {
 			const { db } = await setup();
 			const meetingId = await seedMinutesMeeting(db, "2025-08-25");
 			// A transcript with no URL does not stop a video being matched to
@@ -2983,16 +2983,17 @@ describe("runPipeline video path", () => {
 				}).pipe(Effect.provide(StorageServiceLive(db))),
 			);
 
-			const { log, result } = await runAgainst(db, {
+			// The stamp is what is read back, so no rebuild may replace it.
+			const { log } = await runAgainst(db, {
 				summarizationFailsWhen: (input) => input.sources.length > 1,
 			});
 
 			expect(log.match).toHaveLength(1);
-			expect(result).toEqual({ processed: 0, errors: 1 });
-			const [stale] = await db.select().from(schema.summaries).all();
-			expect(stale.prose).toBe("p");
-			expect(stale.sourceKinds).toEqual(["documents"]);
-			expect(stale.sourceFingerprint).toBe(
+			expect(await db.select().from(schema.transcripts).all()).toHaveLength(2);
+			const [stamped] = await db.select().from(schema.summaries).all();
+			expect(stamped.prose).toBe("p");
+			expect(stamped.sourceKinds).toEqual(["documents"]);
+			expect(stamped.sourceFingerprint).toBe(
 				computeSourceFingerprint([MINUTES_URL]),
 			);
 		});
