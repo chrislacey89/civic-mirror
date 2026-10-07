@@ -1,5 +1,8 @@
 import { Duration, Effect, Schedule } from "effect";
-import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
+import {
+	DRAMA_CATEGORIES,
+	type ScoredDramaCategory,
+} from "#/lib/drama-levels.ts";
 import { extractLongFormDate, readFinalsiteDate } from "#/pipeline/dates.ts";
 import {
 	type DatabaseError,
@@ -1713,15 +1716,16 @@ function runDramaDetection(input: {
 			meetingContext: `${input.body.name}, ${input.video.title}`,
 		});
 
-		const categoryScores: Record<DramaCategory, DramaCategoryScoreInput> = {
-			procedural_breakdown: { score: 0, evidenceQuotes: [] },
-			question_looping: { score: 0, evidenceQuotes: [] },
-			defensive_hedging: { score: 0, evidenceQuotes: [] },
-			timeline_pressure: { score: 0, evidenceQuotes: [] },
-			improvised_workarounds: { score: 0, evidenceQuotes: [] },
-			visible_dissent: { score: 0, evidenceQuotes: [] },
-			post_hoc_corrections: { score: 0, evidenceQuotes: [] },
-		};
+		const categoryScores: Record<ScoredDramaCategory, DramaCategoryScoreInput> =
+			{
+				procedural_breakdown: { score: 0, evidenceQuotes: [] },
+				question_looping: { score: 0, evidenceQuotes: [] },
+				unanswered_questions: { score: 0, evidenceQuotes: [] },
+				undecided_time: { score: 0, evidenceQuotes: [] },
+				repeat_deferrals: { score: 0, evidenceQuotes: [] },
+				improvised_workarounds: { score: 0, evidenceQuotes: [] },
+				post_hoc_corrections: { score: 0, evidenceQuotes: [] },
+			};
 		for (const cat of DRAMA_CATEGORIES) {
 			categoryScores[cat] = {
 				score: assessment.category_scores[cat].score,

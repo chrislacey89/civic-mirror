@@ -8,7 +8,7 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import { Effect } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
-import type { DramaCategory } from "#/lib/drama-levels.ts";
+import type { ScoredDramaCategory } from "#/lib/drama-levels.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import { computeSourceFingerprint } from "#/pipeline/sources.ts";
 import {
@@ -21,12 +21,12 @@ import {
 const ZERO_SCORES = {
 	procedural_breakdown: { score: 0, evidenceQuotes: [] },
 	question_looping: { score: 0, evidenceQuotes: [] },
-	defensive_hedging: { score: 0, evidenceQuotes: [] },
-	timeline_pressure: { score: 0, evidenceQuotes: [] },
+	unanswered_questions: { score: 0, evidenceQuotes: [] },
+	undecided_time: { score: 0, evidenceQuotes: [] },
 	improvised_workarounds: { score: 0, evidenceQuotes: [] },
-	visible_dissent: { score: 0, evidenceQuotes: [] },
+	repeat_deferrals: { score: 0, evidenceQuotes: [] },
 	post_hoc_corrections: { score: 0, evidenceQuotes: [] },
-} satisfies Record<DramaCategory, DramaCategoryScoreInput>;
+} satisfies Record<ScoredDramaCategory, DramaCategoryScoreInput>;
 
 const tmpFiles: string[] = [];
 
@@ -821,7 +821,7 @@ describe("StorageService", () => {
 							...ZERO_SCORES,
 							procedural_breakdown: { score: 3, evidenceQuotes: ["q"] },
 							question_looping: { score: 3, evidenceQuotes: ["q"] },
-							visible_dissent: { score: 3, evidenceQuotes: ["q"] },
+							repeat_deferrals: { score: 3, evidenceQuotes: ["q"] },
 							post_hoc_corrections: { score: 3, evidenceQuotes: ["q"] },
 						},
 					});
@@ -837,10 +837,10 @@ describe("StorageService", () => {
 						categoryScores: {
 							procedural_breakdown: { score: 3, evidenceQuotes: ["q"] },
 							question_looping: { score: 3, evidenceQuotes: ["q"] },
-							defensive_hedging: { score: 3, evidenceQuotes: ["q"] },
-							timeline_pressure: { score: 3, evidenceQuotes: ["q"] },
+							unanswered_questions: { score: 3, evidenceQuotes: ["q"] },
+							undecided_time: { score: 3, evidenceQuotes: ["q"] },
 							improvised_workarounds: { score: 3, evidenceQuotes: ["q"] },
-							visible_dissent: { score: 3, evidenceQuotes: ["q"] },
+							repeat_deferrals: { score: 3, evidenceQuotes: ["q"] },
 							post_hoc_corrections: { score: 3, evidenceQuotes: ["q"] },
 						},
 					});
@@ -873,7 +873,7 @@ describe("StorageService", () => {
 						narrative: "n",
 						categoryScores: {
 							...ZERO_SCORES,
-							visible_dissent: { score: 3, evidenceQuotes: ["q"] },
+							repeat_deferrals: { score: 3, evidenceQuotes: ["q"] },
 						},
 					});
 				}).pipe(Effect.provide(layer)),

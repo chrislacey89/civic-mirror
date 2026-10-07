@@ -6,9 +6,9 @@ import { getMeetingByBodyAndDateQuery } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
 import {
 	DRAMA_CATEGORIES,
-	type DramaCategory,
 	type DramaLevel,
 	mapSumToLevel,
+	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
@@ -159,7 +159,7 @@ type StoreDramaAssessmentInput = {
 	model: string;
 	headline: string;
 	narrative: string;
-	categoryScores: Record<DramaCategory, DramaCategoryScoreInput>;
+	categoryScores: Record<ScoredDramaCategory, DramaCategoryScoreInput>;
 };
 
 /**

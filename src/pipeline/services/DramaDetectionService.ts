@@ -4,6 +4,7 @@ import {
 	DRAMA_CATEGORIES,
 	DRAMA_LEVELS,
 	mapSumToLevel,
+	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 
@@ -24,12 +25,12 @@ const dramaAssessmentSchema = z.object({
 	category_scores: z.object({
 		procedural_breakdown: categoryScoreSchema,
 		question_looping: categoryScoreSchema,
-		defensive_hedging: categoryScoreSchema,
-		timeline_pressure: categoryScoreSchema,
+		unanswered_questions: categoryScoreSchema,
+		undecided_time: categoryScoreSchema,
+		repeat_deferrals: categoryScoreSchema,
 		improvised_workarounds: categoryScoreSchema,
-		visible_dissent: categoryScoreSchema,
 		post_hoc_corrections: categoryScoreSchema,
-	}),
+	} satisfies Record<ScoredDramaCategory, typeof categoryScoreSchema>),
 	level: z.enum(DRAMA_LEVELS),
 	confidence: z.number().min(0).max(1),
 	headline: z.string().max(200),

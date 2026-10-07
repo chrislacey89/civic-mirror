@@ -22,7 +22,7 @@ import { StorageServiceLive } from "#/pipeline/services/StorageService.ts";
 import { SummarizationServiceLive } from "#/pipeline/services/SummarizationService.ts";
 import { YouTubeCaptionProviderLive } from "#/pipeline/services/TranscriptionService.ts";
 import { YouTubeScraperLive } from "#/pipeline/services/YouTubeScraper.ts";
-import { v1 as dramaProfileV1 } from "../../evals/profiles/v1.ts";
+import { v2 as dramaProfile } from "../../evals/profiles/v2.ts";
 
 /**
  * Effect teaching note: This file is the composition root — the single place
@@ -185,21 +185,21 @@ function buildProductionLayers(input: BuildLayersInput) {
 
 	const dramaDetector = createGeminiDramaDetector({
 		modelId: geminiModelId,
-		promptVersion: dramaProfileV1.promptVersion,
-		systemPrompt: dramaProfileV1.systemPrompt,
-		...(dramaProfileV1.temperature !== undefined
-			? { temperature: dramaProfileV1.temperature }
+		promptVersion: dramaProfile.promptVersion,
+		systemPrompt: dramaProfile.systemPrompt,
+		...(dramaProfile.temperature !== undefined
+			? { temperature: dramaProfile.temperature }
 			: {}),
-		...(dramaProfileV1.thinkingBudget !== undefined
-			? { thinkingBudget: dramaProfileV1.thinkingBudget }
+		...(dramaProfile.thinkingBudget !== undefined
+			? { thinkingBudget: dramaProfile.thinkingBudget }
 			: {}),
-		...(dramaProfileV1.includeThoughts !== undefined
-			? { includeThoughts: dramaProfileV1.includeThoughts }
+		...(dramaProfile.includeThoughts !== undefined
+			? { includeThoughts: dramaProfile.includeThoughts }
 			: {}),
 	});
 	const dramaDetection = DramaDetectionServiceLive({
 		model: geminiModelId,
-		promptVersion: dramaProfileV1.promptVersion,
+		promptVersion: dramaProfile.promptVersion,
 		generateFn: dramaDetector,
 	});
 

@@ -5,7 +5,7 @@ import {
 	type MeetingDetail,
 } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
-import type { DramaCategory } from "#/lib/drama-levels.ts";
+import type { ScoredDramaCategory } from "#/lib/drama-levels.ts";
 import {
 	DatabaseError,
 	LlmError,
@@ -331,10 +331,10 @@ function buildStubLayers(config: StubConfig) {
 		category_scores: {
 			procedural_breakdown: { score: 0, evidence_quotes: [] },
 			question_looping: { score: 0, evidence_quotes: [] },
-			defensive_hedging: { score: 0, evidence_quotes: [] },
-			timeline_pressure: { score: 0, evidence_quotes: [] },
+			unanswered_questions: { score: 0, evidence_quotes: [] },
+			undecided_time: { score: 0, evidence_quotes: [] },
 			improvised_workarounds: { score: 0, evidence_quotes: [] },
-			visible_dissent: { score: 0, evidence_quotes: [] },
+			repeat_deferrals: { score: 0, evidence_quotes: [] },
 			post_hoc_corrections: { score: 0, evidence_quotes: [] },
 		},
 		level: "routine",
@@ -3945,12 +3945,12 @@ describe("runPipeline document regeneration", () => {
 					const categoryScores = {
 						procedural_breakdown: { score: 0, evidenceQuotes: [] },
 						question_looping: { score: 0, evidenceQuotes: [] },
-						defensive_hedging: { score: 0, evidenceQuotes: [] },
-						timeline_pressure: { score: 0, evidenceQuotes: [] },
+						unanswered_questions: { score: 0, evidenceQuotes: [] },
+						undecided_time: { score: 0, evidenceQuotes: [] },
 						improvised_workarounds: { score: 0, evidenceQuotes: [] },
-						visible_dissent: { score: 0, evidenceQuotes: [] },
+						repeat_deferrals: { score: 0, evidenceQuotes: [] },
 						post_hoc_corrections: { score: 0, evidenceQuotes: [] },
-					} satisfies Record<DramaCategory, DramaCategoryScoreInput>;
+					} satisfies Record<ScoredDramaCategory, DramaCategoryScoreInput>;
 					const stored = yield* storage.storeMeeting({
 						...key,
 						meetingType: "regular",
