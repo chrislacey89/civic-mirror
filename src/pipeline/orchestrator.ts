@@ -508,6 +508,129 @@ function regenerateWithRetry(input: {
 	});
 }
 
+/**
+ * Settles a listing's documents against a meeting that has a transcript and
+ * no documents. The documents were summarized alone, and that summary is
+ * checked against the meeting's stored transcript summary. A match attaches
+ * the documents and rebuilds the summary from every source. On any other
+ * outcome the documents win, being the official record: the video is held,
+ * its transcript and drama assessment are detached, and the meeting takes the
+ * documents and their summary. A check that fails is an error that leaves the
+ * meeting as it was, so the next run asks again.
+ *
+ * `settled` is false for a meeting with no stored summary, which leaves the
+ * check nothing to read.
+ */
+function matchDocumentsToMeeting(input: {
+	source: "egov" | "finalsite";
+	body: BodyConfig;
+	meeting: MeetingSourceState;
+	documents: Omit<
+		MeetingInput,
+		"summary" | "fiscalDecisions" | "budgetDiscussions"
+	>;
+	documentsSummary: SummarizationResult;
+	meetingContext: string;
+	config: ResolvedConfig;
+}): Effect.Effect<
+	{ settled: boolean },
+	DatabaseError | LlmError | MeetingMatchError,
+	StorageService | SummarizationService | MeetingMatchService | AlertService
+> {
+	const { source, body, meeting, config } = input;
+	const summary = input.documentsSummary;
+	return Effect.gen(function* () {
+		const storage = yield* StorageService;
+		const matcher = yield* MeetingMatchService;
+
+		const transcriptSummary = yield* storage.getMatchableSummary(
+			meeting.meetingId,
+		);
+		if (transcriptSummary === null) return { settled: false };
+
+		yield* Effect.log(`${source}.match.start`).pipe(
+			Effect.annotateLogs({ meetingId: meeting.meetingId }),
+		);
+		const match = yield* matcher
+			.check({ transcriptSummary, documentsSummary: summary })
+			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log(`${source}.match.finish`).pipe(
+			Effect.annotateLogs({
+				meetingId: meeting.meetingId,
+				outcome: match.outcome,
+				probability: match.probability,
+				sharedIdentifiers: match.sharedIdentifiers,
+			}),
+		);
+
+		if (match.outcome === "match") {
+			yield* attachDocumentsAndRegenerate({
+				meetingId: meeting.meetingId,
+				meeting: input.documents,
+				meetingContext: input.meetingContext,
+				config,
+			});
+			return { settled: true };
+		}
+
+		// The hold is written before the transcript goes, so no video run can
+		// find the video neither attached nor held and transcribe it again.
+		// The stored transcript carries no title, so the URL stands in for it.
+		const transcriptUrl = meeting.transcriptSourceUrl;
+		const videoId = transcriptUrl?.match(/[?&]v=([^&]+)/)?.[1];
+		if (transcriptUrl && videoId) {
+			yield* holdVideoAndAlert(
+				body,
+				{ videoId, title: transcriptUrl },
+				{
+					// A hold always carries a reason; this names the weaker one
+					// should a check ever return a hold without it.
+					reason: match.reason ?? "signals-disagree",
+					meetingDate: meeting.date,
+					probability: match.probability,
+					sharedIdentifiers: match.sharedIdentifiers,
+					candidateMeetingId: meeting.meetingId,
+				},
+				config,
+			);
+		}
+
+		// Should a write below fail, the next run finds the documents-only
+		// summary still owed. A summary stored without a fingerprint would look
+		// current once the documents are attached, so it is stamped as the
+		// transcript's first.
+		yield* storage.stampSummaryFingerprint({
+			meetingId: meeting.meetingId,
+			sourceFingerprint: fingerprintOfSources({
+				documents: [],
+				transcriptUrl: transcriptUrl ?? undefined,
+			}),
+		});
+		yield* storage.detachTranscript(meeting.meetingId);
+		yield* Effect.log(`${source}.transcript.detached`).pipe(
+			Effect.annotateLogs({ meetingId: meeting.meetingId, transcriptUrl }),
+		);
+
+		yield* storage.storeMeeting(input.documents);
+		yield* storage.replaceMeetingSummary({
+			meetingId: meeting.meetingId,
+			summary: {
+				highlights: summary.highlights,
+				prose: summary.prose,
+				model: summary.model,
+			},
+			fiscalDecisions: summary.fiscalDecisions,
+			budgetDiscussions: summary.budgetDiscussions,
+			sourceKinds: ["documents"],
+			sourceFingerprint: fingerprintOfSources({
+				documents: input.documents.documents,
+			}),
+			sourceDisagreements: summary.sourceDisagreements,
+		});
+		return { settled: true };
+	});
+}
+
 // ---------------------------------------------------------------------------
 // eGov path
 // ---------------------------------------------------------------------------
@@ -518,7 +641,11 @@ function runEgovForBody(
 ): Effect.Effect<
 	PipelineResult,
 	never,
-	EgovScraper | SummarizationService | StorageService | AlertService
+	| EgovScraper
+	| SummarizationService
+	| StorageService
+	| MeetingMatchService
+	| AlertService
 > {
 	return Effect.gen(function* () {
 		const searchType = body.egovSearchType;
@@ -554,7 +681,11 @@ function processEgovListing(
 ): Effect.Effect<
 	PipelineResult,
 	TaggedPipelineError,
-	EgovScraper | SummarizationService | StorageService
+	| EgovScraper
+	| SummarizationService
+	| StorageService
+	| MeetingMatchService
+	| AlertService
 > {
 	return Effect.gen(function* () {
 		const scraper = yield* EgovScraper;
@@ -596,8 +727,8 @@ function processEgovListing(
 		);
 
 		// A meeting that already has documents takes this one as a further
-		// source of the same summary. One that has only a transcript falls
-		// through to the single-document path below.
+		// source of the same summary. One that has only a transcript is
+		// settled below, once this document has a summary of its own.
 		const existing = config.dryRun
 			? null
 			: yield* storage.getMeetingSourceState({
@@ -663,7 +794,7 @@ function processEgovListing(
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
-		const meetingInput: MeetingInput = {
+		const documents = {
 			bodySlug: body.slug,
 			date: meetingDate,
 			meetingType: "regular",
@@ -675,6 +806,23 @@ function processEgovListing(
 					extractionMethod: extraction.method,
 				},
 			],
+		} satisfies MeetingInput;
+
+		if (existing && existing.transcriptSourceUrl !== null) {
+			const { settled } = yield* matchDocumentsToMeeting({
+				source: "egov",
+				body,
+				meeting: existing,
+				documents,
+				documentsSummary: summary,
+				meetingContext: `${body.name}, ${meetingDate}`,
+				config,
+			});
+			if (settled) return { processed: 1, errors: 0 };
+		}
+
+		const meetingInput: MeetingInput = {
+			...documents,
 			summary: {
 				highlights: summary.highlights,
 				prose: summary.prose,
@@ -710,7 +858,11 @@ function runFinalsiteForBody(
 ): Effect.Effect<
 	PipelineResult,
 	never,
-	FinalsiteScraper | SummarizationService | StorageService | AlertService
+	| FinalsiteScraper
+	| SummarizationService
+	| StorageService
+	| MeetingMatchService
+	| AlertService
 > {
 	return Effect.gen(function* () {
 		const scraper = yield* FinalsiteScraper;
@@ -737,7 +889,11 @@ function processFinalsiteListing(
 ): Effect.Effect<
 	PipelineResult,
 	TaggedPipelineError,
-	FinalsiteScraper | SummarizationService | StorageService
+	| FinalsiteScraper
+	| SummarizationService
+	| StorageService
+	| MeetingMatchService
+	| AlertService
 > {
 	return Effect.gen(function* () {
 		const scraper = yield* FinalsiteScraper;
@@ -824,8 +980,8 @@ function processFinalsiteListing(
 		const meetingType = meetingTypeFromFinalsiteLabel(listing.meetingType);
 
 		// A meeting that already has documents takes these as further sources
-		// of the same summary. One that has only a transcript falls through to
-		// the paths below.
+		// of the same summary. One that has only a transcript is settled below,
+		// once these documents have a summary of their own.
 		const existing = config.dryRun
 			? null
 			: yield* storage.getMeetingSourceState({
@@ -882,12 +1038,29 @@ function processFinalsiteListing(
 
 		if (config.dryRun) return { processed: 1, errors: 0 };
 
-		yield* storage.storeMeeting({
+		const meeting = {
 			bodySlug: body.slug,
 			date: meetingDate,
 			session,
 			meetingType,
 			documents,
+		} satisfies MeetingInput;
+
+		if (existing && existing.transcriptSourceUrl !== null) {
+			const { settled } = yield* matchDocumentsToMeeting({
+				source: "finalsite",
+				body,
+				meeting: existing,
+				documents: meeting,
+				documentsSummary: summary,
+				meetingContext: `${body.name}, ${listing.date}`,
+				config,
+			});
+			if (settled) return { processed: 1, errors: 0 };
+		}
+
+		yield* storage.storeMeeting({
+			...meeting,
 			summary: {
 				highlights: summary.highlights,
 				prose: summary.prose,
