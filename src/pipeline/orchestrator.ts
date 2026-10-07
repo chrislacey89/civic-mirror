@@ -2,10 +2,7 @@ import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import { readFinalsiteDate } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
-import {
-	fingerprintHeldSources,
-	regenerateMeetingSummary,
-} from "#/pipeline/regenerate.ts";
+import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
 import {
 	type AlertScope,
 	AlertService,
@@ -30,7 +27,7 @@ import { TranscriptionService } from "#/pipeline/services/TranscriptionService.t
 import { formatTranscriptWithTimestamps } from "#/pipeline/services/transcriptFormatting.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
-import { computeSourceFingerprint, sessionSlug } from "#/pipeline/sources.ts";
+import { fingerprintOfSources, sessionSlug } from "#/pipeline/sources.ts";
 import { readVideoTitle } from "#/pipeline/video-title.ts";
 
 /** Threshold (in days) beyond which the zero-results anomaly alert fires. */
@@ -433,7 +430,10 @@ function attachDocumentsAndRegenerate(input: {
 			if (held.summary?.sourceFingerprint === "") {
 				yield* storage.stampSummaryFingerprint({
 					meetingId: input.meetingId,
-					sourceFingerprint: fingerprintHeldSources(held),
+					sourceFingerprint: fingerprintOfSources({
+						documents: held.documents,
+						transcriptUrl: held.transcript?.sourceUrl,
+					}),
 				});
 			}
 			yield* storage.storeMeeting(input.meeting);
@@ -629,7 +629,9 @@ function processEgovListing(
 				prose: summary.prose,
 				model: summary.model,
 				sourceKinds: ["documents"],
-				sourceFingerprint: computeSourceFingerprint([listing.downloadUrl]),
+				sourceFingerprint: fingerprintOfSources({
+					documents: [{ sourceUrl: listing.downloadUrl }],
+				}),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
@@ -840,9 +842,7 @@ function processFinalsiteListing(
 				prose: summary.prose,
 				model: summary.model,
 				sourceKinds: ["documents"],
-				sourceFingerprint: computeSourceFingerprint(
-					documents.map((d) => d.sourceUrl),
-				),
+				sourceFingerprint: fingerprintOfSources({ documents }),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
@@ -1036,7 +1036,10 @@ function processYouTubeVideo(
 				prose: summary.prose,
 				model: summary.model,
 				sourceKinds: ["transcript"],
-				sourceFingerprint: computeSourceFingerprint([sourceUrl]),
+				sourceFingerprint: fingerprintOfSources({
+					documents: [],
+					transcriptUrl: sourceUrl,
+				}),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,

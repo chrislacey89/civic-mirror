@@ -1,22 +1,9 @@
 import { Effect } from "effect";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
-import {
-	type MeetingSources,
-	StorageService,
-} from "#/pipeline/services/StorageService.ts";
+import { StorageService } from "#/pipeline/services/StorageService.ts";
 import type { LabelledSource } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
-import {
-	computeSourceFingerprint,
-	type SourceKind,
-} from "#/pipeline/sources.ts";
-
-/** The fingerprint of every source URL a meeting holds, readable or not. */
-function fingerprintHeldSources(held: MeetingSources): string {
-	const sourceUrls = held.documents.map((document) => document.sourceUrl);
-	if (held.transcript?.sourceUrl) sourceUrls.push(held.transcript.sourceUrl);
-	return computeSourceFingerprint(sourceUrls);
-}
+import { fingerprintOfSources, type SourceKind } from "#/pipeline/sources.ts";
 
 /**
  * Rebuilds a meeting's summary from every source it holds, and replaces the
@@ -41,10 +28,10 @@ function regenerateMeetingSummary(input: {
 
 		const held = yield* storage.getMeetingSources(input.meetingId);
 
-		// Every source URL counts, readable or not: an unreadable document is a
-		// source the summary has already accounted for, and leaving it out would
-		// make the meeting look changed on every run.
-		const sourceFingerprint = fingerprintHeldSources(held);
+		const sourceFingerprint = fingerprintOfSources({
+			documents: held.documents,
+			transcriptUrl: held.transcript?.sourceUrl,
+		});
 		if (held.summary?.sourceFingerprint === sourceFingerprint) {
 			return { regenerated: false };
 		}
@@ -84,4 +71,4 @@ function regenerateMeetingSummary(input: {
 	});
 }
 
-export { fingerprintHeldSources, regenerateMeetingSummary };
+export { regenerateMeetingSummary };

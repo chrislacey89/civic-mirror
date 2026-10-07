@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeSourceFingerprint } from "#/pipeline/sources.ts";
+import {
+	computeSourceFingerprint,
+	fingerprintOfSources,
+} from "#/pipeline/sources.ts";
 
 const MINUTES = "https://ellettsville.in.us/egov/docs/123.pdf";
 const VIDEO = "https://www.youtube.com/watch?v=abc123";
@@ -40,5 +43,35 @@ describe("computeSourceFingerprint", () => {
 
 	it("is never the empty string that marks a summary with no recorded sources", () => {
 		expect(computeSourceFingerprint([])).not.toBe("");
+	});
+});
+
+describe("fingerprintOfSources", () => {
+	it("counts every document URL and the transcript URL", () => {
+		expect(
+			fingerprintOfSources({
+				documents: [{ sourceUrl: MINUTES }],
+				transcriptUrl: VIDEO,
+			}),
+		).toBe(computeSourceFingerprint([MINUTES, VIDEO]));
+	});
+
+	it("fingerprints documents alone when there is no transcript", () => {
+		const expected = computeSourceFingerprint([MINUTES]);
+		expect(fingerprintOfSources({ documents: [{ sourceUrl: MINUTES }] })).toBe(
+			expected,
+		);
+		expect(
+			fingerprintOfSources({
+				documents: [{ sourceUrl: MINUTES }],
+				transcriptUrl: null,
+			}),
+		).toBe(expected);
+	});
+
+	it("fingerprints a transcript alone when there are no documents", () => {
+		expect(fingerprintOfSources({ documents: [], transcriptUrl: VIDEO })).toBe(
+			computeSourceFingerprint([VIDEO]),
+		);
 	});
 });
