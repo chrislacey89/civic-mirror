@@ -1,10 +1,11 @@
 import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
-import { readFinalsiteDate } from "#/pipeline/dates.ts";
+import { extractLongFormDate, readFinalsiteDate } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
 	type AlertScope,
 	AlertService,
+	formatHeldVideoAlert,
 	formatPipelineErrorAlert,
 	formatZeroResultsAlert,
 } from "#/pipeline/services/AlertService.ts";
@@ -16,6 +17,7 @@ import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts"
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
 import type {
 	DramaCategoryScoreInput,
+	HeldVideoInput,
 	MeetingInput,
 } from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
@@ -783,13 +785,13 @@ function processPlaylistVideo(
 		const titlePrefix = body.youtubeTitlePrefix ?? body.name;
 		const reading = readVideoTitle(video.title, titlePrefix);
 		if (reading.kind === "unrecognized") {
-			return yield* Effect.fail(
-				new UndatedListingError({
-					title: video.title,
-					uploadDate: video.publishedAt.slice(0, 10),
-					expectedForm: `${titlePrefix}[ qualifier], Month D, YYYY`,
-				}),
-			);
+			// The date is recorded for the operator reading the held list; it
+			// keys nothing, so any long-form date in the title will do.
+			yield* holdVideoAndAlert(body, video, {
+				reason: "unrecognized-title",
+				meetingDate: extractLongFormDate(video.title),
+			});
+			return SETTLED_WITHOUT_REQUEST;
 		}
 
 		if (body.youtubeSince && reading.date < body.youtubeSince) {
@@ -837,6 +839,54 @@ function processPlaylistVideo(
 			},
 			config,
 		);
+	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
+}
+
+/** Why a video is held, and what the same-meeting check found when it ran. */
+type VideoHold = Pick<
+	HeldVideoInput,
+	| "reason"
+	| "meetingDate"
+	| "probability"
+	| "sharedIdentifiers"
+	| "candidateMeetingId"
+>;
+
+/**
+ * Records `video` as held and alerts the operator the first time only. The
+ * playlist is re-read on every run, so the alert follows the write, not the
+ * decision to hold.
+ */
+function holdVideoAndAlert(
+	body: BodyConfig,
+	video: VideoRef,
+	hold: VideoHold,
+): Effect.Effect<void, DatabaseError, StorageService | AlertService> {
+	return Effect.gen(function* () {
+		const storage = yield* StorageService;
+		const { created } = yield* storage.holdVideo({
+			bodySlug: body.slug,
+			videoId: video.videoId,
+			title: video.title,
+			...hold,
+		});
+		if (!created) return;
+
+		yield* Effect.log("youtube.video.held").pipe(
+			Effect.annotateLogs({ reason: hold.reason }),
+		);
+		const alert = yield* AlertService;
+		yield* alert
+			.sendAlert(
+				formatHeldVideoAlert({
+					bodyName: body.name,
+					videoTitle: video.title,
+					videoUrl: videoUrl(video.videoId),
+					reason: hold.reason,
+					meetingDate: hold.meetingDate,
+				}),
+			)
+			.pipe(Effect.catch(() => Effect.void));
 	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
 }
 
@@ -1024,14 +1074,9 @@ class UndatedListingError {
 	constructor(input: {
 		title: string;
 		uploadDate: string | null;
-		/** The form the title had to take, when the source has a single one. */
-		expectedForm?: string;
 	}) {
 		const uploaded = input.uploadDate ? ` (uploaded ${input.uploadDate})` : "";
-		const expected = input.expectedForm
-			? ` Expected the form "${input.expectedForm}".`
-			: "";
-		this.message = `No meeting date could be read from "${input.title}"${uploaded}.${expected} The listing was not ingested.`;
+		this.message = `No meeting date could be read from "${input.title}"${uploaded}. The listing was not ingested.`;
 	}
 }
 
@@ -1173,7 +1218,12 @@ function runDramaDetectForVideo(input: {
 	);
 }
 
-export { PIPELINE_SOURCES, runDramaDetectForVideo, runPipeline };
+export {
+	holdVideoAndAlert,
+	PIPELINE_SOURCES,
+	runDramaDetectForVideo,
+	runPipeline,
+};
 export type {
 	BodyConfig,
 	PipelineSource,

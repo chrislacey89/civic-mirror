@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from "effect";
 import { NetworkError } from "#/pipeline/errors.ts";
+import type { HeldReason } from "#/pipeline/held.ts";
 
 /**
  * Effect teaching note: AlertService is deliberately kept thin. It knows how
@@ -127,9 +128,50 @@ function formatPipelineErrorAlert(input: {
 	};
 }
 
+/** What each hold reason means, in the words the alert uses. */
+const HELD_REASON_TEXT: Record<HeldReason, string> = {
+	"check-failed":
+		"the same-meeting check found it is not the meeting the documents record",
+	"signals-disagree":
+		"the two signals of the same-meeting check disagree with each other",
+	"near-date":
+		"no meeting exists on its date, but one built from documents is within two days",
+	"unrecognized-title":
+		"its title is not this body's meeting title with a long-form date",
+	"no-captions": "captions are disabled on it",
+};
+
+/**
+ * Builds a subject + body pair for a video held for the first time. A held
+ * video is skipped by every later run, so this is the only alert it gets.
+ */
+function formatHeldVideoAlert(input: {
+	bodyName: string;
+	videoTitle: string;
+	videoUrl: string;
+	reason: HeldReason;
+	/** Null when the title has no readable date. */
+	meetingDate: string | null;
+}): AlertInput {
+	return {
+		subject: `[Civic Mirror] Video held for ${input.bodyName}: ${input.reason}`,
+		body: [
+			`A video in the ${input.bodyName} playlist was held: ${HELD_REASON_TEXT[input.reason]}.`,
+			"",
+			`Title: ${input.videoTitle}`,
+			`Reason: ${input.reason}`,
+			`Meeting date: ${input.meetingDate ?? "not readable from the title"}`,
+			`Video: ${input.videoUrl}`,
+			"",
+			"It will not be transcribed or attached to a meeting, and later runs skip it without alerting again. Run `pnpm pipeline held:list` to see every held video.",
+		].join("\n"),
+	};
+}
+
 export {
 	AlertService,
 	AlertServiceLive,
+	formatHeldVideoAlert,
 	formatZeroResultsAlert,
 	formatPipelineErrorAlert,
 };

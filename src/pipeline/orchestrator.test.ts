@@ -17,6 +17,7 @@ import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
 import type {
+	HeldVideoInput,
 	Meeting,
 	MeetingInput,
 	MeetingSourceState,
@@ -51,6 +52,8 @@ type CallLog = {
 	transcripts: Array<{ meetingId: number; sourceUrl?: string }>;
 	alert: Array<{ subject: string; body: string }>;
 	drama: number;
+	/** Videos the storage stub was asked to hold and did not already hold. */
+	held: Array<HeldVideoInput>;
 };
 
 function emptyCallLog(): CallLog {
@@ -67,6 +70,7 @@ function emptyCallLog(): CallLog {
 		transcripts: [],
 		alert: [],
 		drama: 0,
+		held: [],
 	};
 }
 
@@ -88,6 +92,8 @@ type StubConfig = {
 	}) => MeetingSourceState | null;
 	/** Video URLs storage already holds a transcript for. */
 	storedVideoUrls?: string[];
+	/** Video IDs storage already holds as held videos. */
+	heldVideoIds?: string[];
 	/** Replaces the storage stub, for tests that run against a real database. */
 	storage?: Layer.Layer<StorageService>;
 	dramaDetectionResult?: DramaAssessmentResult;
@@ -170,6 +176,10 @@ function buildStubLayers(config: StubConfig) {
 			}),
 	});
 
+	const isHeld = (videoId: string) =>
+		(config.heldVideoIds ?? []).includes(videoId) ||
+		config.log.held.some((h) => h.videoId === videoId);
+
 	const storage = Layer.succeed(StorageService, {
 		storeMeeting: (input) =>
 			Effect.sync(() => {
@@ -193,6 +203,14 @@ function buildStubLayers(config: StubConfig) {
 			Effect.sync(() => config.meetingSourceState?.(key) ?? null),
 		hasTranscriptForVideo: (sourceUrl) =>
 			Effect.sync(() => (config.storedVideoUrls ?? []).includes(sourceUrl)),
+		holdVideo: (input) =>
+			Effect.sync(() => {
+				if (isHeld(input.videoId)) return { created: false };
+				config.log.held.push(input);
+				return { created: true };
+			}),
+		isVideoHeld: (videoId) => Effect.sync(() => isHeld(videoId)),
+		listHeldVideos: () => Effect.succeed([]),
 	});
 
 	const alert = Layer.succeed(AlertService, {
@@ -1161,12 +1179,18 @@ describe("runPipeline", () => {
 		expect(log.transcribe).toEqual(["dated"]);
 		expect(log.summarize).toHaveLength(1);
 		expect(log.store.map((s) => s.date)).toEqual(["2026-07-14"]);
+		expect(log.held.map((h) => [h.videoId, h.reason, h.meetingDate])).toEqual([
+			["undated", "unrecognized-title", null],
+		]);
 		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].subject).toContain("unrecognized-title");
 		expect(log.alert[0].body).toContain(
-			"Ellettsville Town Council Special Session",
+			"Title: Ellettsville Town Council Special Session",
 		);
-		expect(log.alert[0].body).toContain("2026-07-16");
-		expect(result).toEqual({ processed: 1, errors: 1 });
+		expect(log.alert[0].body).toContain(
+			"Meeting date: not readable from the title",
+		);
+		expect(result).toEqual({ processed: 1, errors: 0 });
 	});
 
 	it("does not block transcript storage when drama detection fails", async () => {
@@ -1612,7 +1636,7 @@ describe("runPipeline video path", () => {
 		]);
 	});
 
-	it("fails a video titled for another body without transcribing or storing it, and continues", async () => {
+	it("holds a video titled for another body as unrecognized-title without transcribing it, counts no error, and continues", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
 			log,
@@ -1630,15 +1654,19 @@ describe("runPipeline video path", () => {
 
 		expect(log.transcribe).toEqual(["regular"]);
 		expect(log.storeInputs.map((i) => i.date)).toEqual(["2025-08-25"]);
-		expect(log.transcripts.map((t) => t.sourceUrl)).toEqual([url("regular")]);
-		expect(log.alert).toHaveLength(1);
-		expect(log.alert[0].body).toContain(
-			"Ellettsville Plan Commission, August 25, 2025",
-		);
-		expect(result).toEqual({ processed: 1, errors: 1 });
+		expect(log.held).toEqual([
+			{
+				bodySlug: "ellettsville-town-council",
+				videoId: "plan",
+				title: "Ellettsville Plan Commission, August 25, 2025",
+				meetingDate: "2025-08-25",
+				reason: "unrecognized-title",
+			},
+		]);
+		expect(result).toEqual({ processed: 1, errors: 0 });
 	});
 
-	it("fails a video whose title carries only a numeric date without transcribing it", async () => {
+	it("holds a video whose title carries only a numeric date with a null meeting date, without transcribing it", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
 			log,
@@ -1651,8 +1679,10 @@ describe("runPipeline video path", () => {
 
 		expect(log.transcribe).toEqual([]);
 		expect(log.store).toEqual([]);
-		expect(log.alert).toHaveLength(1);
-		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(log.held.map((h) => [h.reason, h.meetingDate])).toEqual([
+			["unrecognized-title", null],
+		]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
 	});
 
 	it("ignores a video dated before youtubeSince and takes one dated on it", async () => {
