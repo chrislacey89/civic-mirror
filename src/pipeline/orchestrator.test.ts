@@ -2967,6 +2967,36 @@ describe("runPipeline video path", () => {
 			expect(page?.summarySources).toEqual({ origin: "documents" });
 		});
 
+		it("reads a summary stored without kinds as built from the documents alone when a transcript with no URL already sits beside them and regeneration fails after a video is attached", async () => {
+			const { db } = await setup();
+			const meetingId = await seedMinutesMeeting(db, "2025-08-25");
+			// A transcript with no URL does not stop a video being matched to
+			// the meeting, so the stamp is written with a transcript held.
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeTranscript({
+						meetingId,
+						source: "whisper",
+						rawText: "transcript text",
+					});
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			const { log, result } = await runAgainst(db, {
+				summarizationFailsWhen: (input) => input.sources.length > 1,
+			});
+
+			expect(log.match).toHaveLength(1);
+			expect(result).toEqual({ processed: 0, errors: 1 });
+			const [stale] = await db.select().from(schema.summaries).all();
+			expect(stale.prose).toBe("p");
+			expect(stale.sourceKinds).toEqual(["documents"]);
+			expect(stale.sourceFingerprint).toBe(
+				computeSourceFingerprint([MINUTES_URL]),
+			);
+		});
+
 		it("holds a video titled July 14, 2026 as near-date when the town's document is dated July 13, and creates no second meeting", async () => {
 			const { db, counts } = await setup();
 			const meetingId = await seedMinutesMeeting(db, "2026-07-13");
