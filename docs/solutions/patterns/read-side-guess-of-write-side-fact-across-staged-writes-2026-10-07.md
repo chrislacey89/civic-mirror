@@ -24,11 +24,14 @@ The fix made documents win: a summary with no stored kinds is credited to the do
 
 No rule over the attached rows is right in both directions, because the rows are the meeting's current sources and the question is about the summary's past ones.
 
+#149 then moved the fact to the writer (PR #154): the pipeline stamps a summary's kinds in the same update as its fingerprint, just before it attaches a new source. Review of that PR found the same guess one step earlier. Two of the three stamping callers derived the kinds from every source the meeting held at that moment. The operator one-shot `drama:detect` attaches a transcript to an existing meeting without stamping, so a later PDF would have stamped an older documents-only summary as built from both.
+
 ## Symptoms
 
 - A page asserts something about a stored artifact that is true of its inputs today and was not true when the artifact was written.
 - The wrong statement appears only between two pipeline steps, or indefinitely after the second step fails. Tests that seed a settled database never see it.
 - A fix for one direction passes review and mutation testing, and the opposite direction turns up from a different write path.
+- The fix moves the derivation to the writer, and the writer still reads the attached rows. Its tests seed meetings with one kind of source, so they pass.
 
 ## Root Cause
 
@@ -36,43 +39,53 @@ The summary's provenance is a write-side fact: only the code that built the summ
 
 The stored column existed (`summaries.source_kinds`). The gap was the `[]` default for rows written before it, plus a boundary map that turned that gap into a read-side derivation rule.
 
+Moving the derivation to the writer does not by itself change what it reads. A stamp computed from the rows held just before an attach is right only if every earlier attach also stamped. That is a claim about every write path in the codebase, including operator tools, and one unstamped path makes the stamp record the guess permanently where the reader's guess was at least recomputed on each read.
+
 ## Learning Level
 
 - **Level:** Structure
-- **Feedback loop or delay:** the proxy and the fact diverge only inside a window that page tests and query tests do not construct, so every check on a settled fixture confirms the guess. The delay between "attach" and "regenerate" is where the feedback is missing.
+- **Feedback loop or delay:** the proxy and the fact diverge only inside a window that page tests and query tests do not construct, so every check on a settled fixture confirms the guess. The delay between "attach" and "regenerate" is where the feedback is missing. The writer-side version has the same blind spot: fixtures that hold one kind of source cannot tell "the kinds of the held rows" from "the kinds the summary was built from".
 
 ## Rule Scope
 
 - **Applies when:** a reader displays or branches on a property of a derived artifact (a summary, a report, a cache entry), the property depends on what the artifact was built from, and the inputs can change without the artifact being rebuilt in the same transaction.
+- **Applies to a writer too when:** the writer records the property late (at the next attach, or in a backfill) and derives it from the inputs attached at that moment. Prefer an invariant of how the artifact was built over a census of its current inputs. Here the invariant is that a summary with no fingerprint was written by a single-kind path, so it was never built from both.
 - **Inverts or does not apply when:** the artifact and its inputs are replaced atomically, so no reader can see one without the other; or the reader is asking about the inputs themselves ("which documents does this meeting have?"), where the attached rows are the fact and not a proxy for it.
 - **Narrows a sibling's exemption:** `guessed-natural-key-on-unreadable-input-2026-10-06.md` allows a fallback for a descriptive field because it merges nothing. That holds for storage. A descriptive property of a derived artifact, published to readers and guessed from inputs that can change without a rebuild, is a different case: the guess merges nothing and still tells the public something false. A plain default such as a missing meeting type reading `"regular"` stays exempt.
 - **Sibling docs:** `guessed-natural-key-on-unreadable-input-2026-10-06.md` (a guess standing in for a key), `permanent-outcome-from-ambiguous-evidence-2026-10-06.md` (evidence that is true now and false later), `boundary-map-drift-between-slices-2026-04-10.md` (a sibling slice changing what a contract means), `tri-state-return-for-pipeline-outcomes-2026-04-13.md` (the union shape used for the page's four states).
 
 ## Solution
 
-What this PR ships is a stopgap with one known wrong direction, stated here so nobody reads it as closed.
+Record the fact at the writer, and derive it from how the summary was built, not from what the meeting holds.
 
-`summarySourceKinds` in `src/db/queries.ts` uses the stored kinds when there are any. For a summary that stored none, documents win when the meeting has any, and the transcript is credited only when it has none. The page never sees kinds: `summarySourcesOf` turns them into a four-state union (`none`, `documents`, `video`, `both`), and a video link exists only in the two states built from the video.
+`stampSummaryFingerprint` in `src/pipeline/services/StorageService.ts` writes `source_kinds` in the same update as the fingerprint. Its three callers in `src/pipeline/orchestrator.ts` (`matchVideoToMeeting`, `attachDocumentsAndRegenerate` and `matchDocumentsToMeeting`) run it before they attach a source, so the kinds are stored before the rows change (#149, PR #154).
 
-The wrong direction that remains: an older video-only summary whose meeting gains a PDF is credited to the documents until its regeneration succeeds.
+What the stamp should write: a summary with no fingerprint was stored by a path that read one kind of source, so the stamp names one kind. It is the documents when the meeting holds any with text, and the transcript otherwise. `matchDocumentsToMeeting` already stamps this way, with a literal `["transcript"]`. The other two callers shipped in PR #154's first review round calling `kindsOfSources(held)`, which names every kind held; the review's first finding on that PR tracks changing them, with a test that seeds a documents-only summary beside an unstamped transcript.
 
-The correction belongs to the writer. All three callers of `stampSummaryFingerprint` in `src/pipeline/orchestrator.ts` (`matchVideoToMeeting`, `attachDocumentsAndRegenerate` and `matchDocumentsToMeeting`) already hold the sources the existing summary was built from, because they compute its fingerprint from them. Stamping the kinds in the same update records the fact before the attach changes the rows. Once no summary has `[]` kinds beside a non-empty fingerprint, the read-side fallback has nothing left to guess. Tracked as #149, which blocks the #137 backfill.
+The read-side fallback in `summarySourceKinds` (`src/db/queries.ts`) stays for summaries that have never had a source attached since they were built: documents win when the meeting has any, and the transcript is credited only when it has none. Twenty-five production summaries depended on it on 2026-10-07. None held both a transcript and a document, and none was in the unsettled state.
+
+`drama:detect` (`runDramaDetectForVideo`) still attaches a transcript to an existing meeting without stamping. The fallback answers "documents" there, which is right, and the single-kind stamp is right when a PDF follows. It is the reason "the pipeline stamps before every attach" is not a safe premise for later work.
 
 ## Prevention
 
-**Code-level:** `src/db/queries.test.ts`, "derives the kinds from the attached rows when the summary stored none, never crediting a video that joined later", pins the documents-first rule and fails when the transcript is credited beside documents. Nothing pins the opposite direction, because the read side cannot get it right; a test for it belongs with the writer-side change. A test that seeds the unsettled state (source attached, summary not rebuilt) is the case to add for any reader of a derived artifact.
+**Code-level:** `src/db/queries.test.ts`, "derives the kinds from the attached rows when the summary stored none, never crediting a video that joined later", pins the documents-first rule and fails when the transcript is credited beside documents. Three tests in `src/pipeline/orchestrator.test.ts` (their names contain "stored without kinds") seed an unsettled state against a real database and assert the meeting detail query's `summarySources`, one per stamping caller. A test that seeds the unsettled state (source attached, summary not rebuilt) is the case to add for any reader of a derived artifact.
+
+When a writer records such a fact late, seed a fixture where the attached rows and the fact disagree: here, a documents-only summary on a meeting that also holds a transcript. Single-kind fixtures pass for both the right rule and the wrong one.
 
 **Process-level:**
 
 - At decomposition, a read-side slice that must show a fact about a derived artifact should consume a stored column. A Produces line that says "derived from the rows attached" for such a fact is a flag: ask what the rows look like between the pipeline's attach and its rebuild.
 - When a column is added with a default for old rows, decide in the same slice who backfills it. Leaving the default to a reader's fallback moves a write-side question to code that cannot answer it.
 - When reviewing a fix for a guess, look for the mirror-image write path before accepting it, including paths added by sibling slices since the branch was cut.
+- When a fix says "the callers already hold the sources the artifact was built from", list every path that can add a source, operator one-shots included, and check each one against that sentence. This entry made that claim in its first version and it was false for `drama:detect`.
+
+**Mechanism for the recurrence:** the pattern recurred inside its own fix, so prose is not enough. The mechanism is the test named above for a documents-only summary beside an unstamped transcript. It lands with the fix for the review's first finding on PR #154, not with this entry: the branch was locked after review, and the fix needs an author other than the session that wrote the code.
 
 **Clustering:** the nearest entry is `guessed-natural-key-on-unreadable-input-2026-10-06.md`. It is not the same pattern. There the guess fills a key and records merge; here nothing is unreadable and nothing merges, and the guess is wrong only while a staged write is in flight. This entry narrows that entry's "descriptive only" exemption, noted in both.
 
 ## Planning / Calibration Notes
 
-- **What widened the work:** the slice was four commits; review plus a TypeScript audit added eleven fix commits and a second review. The base branch moved during review (#135 merged), and that merge is what exposed the second wrong direction.
+- **What widened the work:** the slice was four commits; review plus a TypeScript audit added eleven fix commits and a second review. The base branch moved during review (#135 merged), and that merge is what exposed the second wrong direction. The writer-side follow-up (#149) was two commits, and independent review found the third direction in it.
 - **What tightened the work:** two independent reviewers raised the first direction separately, and mutation testing on each fix showed which tests held their property.
 - **Future planning adjustment:** when two sibling slices touch the same derived artifact from the write side and the read side, sequence the write-side slice first or have the read-side slice state which unsettled states it has considered.
 
@@ -83,13 +96,17 @@ The correction belongs to the writer. All three callers of `stampSummaryFingerpr
 **Alternatives considered:** crediting every attached row (wrong when a video joins); comparing the stored fingerprint with the current sources to detect "behind" (detects the window, still cannot say what the summary was built from).
 **Revisable:** yes, as soon as the writer stamps kinds (#149).
 
+**Decision (#149, 2026-10-07):** keep the read-side fallback after the writer stamps kinds.
+**Rationale:** summaries that have had no source attached since they were built still store `[]`, and the fallback is correct for them.
+**Revisable:** yes, after a one-time backfill of kinds on those rows.
+
 ## Related
 
 - PR #147, slice #136, PRD #127
 - #135 (`attachDocumentsAndRegenerate`), #133 (regenerate and replace), #130 (the `source_kinds` column)
-- #149 (stamp the kinds at the writer; the open half of this lesson)
+- #149 and PR #154 (stamp the kinds at the writer)
 - #82 step 5 (a meeting with a summary is not "unreadable"), implemented in this PR
 
 ## Shelf Life
 
-When the pipeline stamps `source_kinds` wherever it stamps a fingerprint, and no stored summary has `[]` kinds, delete the fallback in `summarySourceKinds`. The Solution section is then history; the Rule Scope and Prevention sections remain evergreen.
+When no stored summary has `[]` kinds (after a one-time backfill of the older rows) and every path that attaches a source stamps first, delete the fallback in `summarySourceKinds`. The Solution section is then history; the Rule Scope and Prevention sections remain evergreen.
