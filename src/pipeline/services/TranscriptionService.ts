@@ -200,13 +200,14 @@ function captionsAttempt(
 			}
 			assertCaptionText(segments);
 			const rawText = segments.map((s) => s.text).join(" ");
+			const unitMs = captionUnitMs(segments);
 			return {
 				source: "captions" as const,
 				rawText,
 				segments: segments.map((s) => ({
 					text: s.text,
-					startMs: s.offset,
-					durationMs: s.duration,
+					startMs: Math.round(s.offset * unitMs),
+					durationMs: Math.round(s.duration * unitMs),
 				})),
 			};
 		},
@@ -215,6 +216,20 @@ function captionsAttempt(
 				? error
 				: new TranscriptionError({ videoId, message: errorMessage(error) }),
 	});
+}
+
+/**
+ * youtube-transcript returns integer milliseconds from its srv3 branch and
+ * float seconds from its classic branch, with nothing on the segments to say
+ * which. A fractional offset or duration can only come from the classic
+ * branch, so it means the whole transcript is in seconds. A classic transcript
+ * whose values are all integers is indistinguishable from srv3 and stays as is.
+ */
+function captionUnitMs(segments: CaptionSegment[]): number {
+	const hasFraction = segments.some(
+		(s) => !Number.isInteger(s.offset) || !Number.isInteger(s.duration),
+	);
+	return hasFraction ? 1000 : 1;
 }
 
 function errorMessage(error: unknown): string {
