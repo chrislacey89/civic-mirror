@@ -20,6 +20,22 @@ export function computeSourceFingerprint(
 }
 
 /**
+ * The fingerprint of a meeting's sources: every document URL plus the
+ * transcript URL, whether or not their text was readable. An unreadable
+ * source is one the summary has already accounted for, so leaving it out
+ * would make the meeting look changed on every run. Every place that stores
+ * or compares a fingerprint builds it here, so they cannot disagree.
+ */
+export function fingerprintOfSources(sources: {
+	documents: readonly { sourceUrl: string }[];
+	transcriptUrl?: string | null;
+}): string {
+	const sourceUrls = sources.documents.map((document) => document.sourceUrl);
+	if (sources.transcriptUrl) sourceUrls.push(sources.transcriptUrl);
+	return computeSourceFingerprint(sourceUrls);
+}
+
+/**
  * The session half of a meeting's key: a meeting label lowercased, with each
  * run of other characters collapsed to one "-" and the ends trimmed. School
  * board rows and video titles both build it here, because a video is paired

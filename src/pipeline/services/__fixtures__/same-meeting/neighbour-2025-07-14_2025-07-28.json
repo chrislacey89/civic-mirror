@@ -1,0 +1,62 @@
+{
+	"transcriptDate": "2025-07-14",
+	"documentsDate": "2025-07-28",
+	"sameMeeting": false,
+	"recordedProbability": 0.05,
+	"transcriptSummary": {
+		"highlights": [
+			"Bids were opened for the Heritage Trail Pedestrian Bridge, ranging from $541,363 to $737,250, and were tabled for review.",
+			"Accounts payable and payroll vouchers were approved.",
+			"Ordinances 2025-16 and 2025-17, pertaining to zoning map amendments, were approved.",
+			"The 2025 consulting contract with Rick Copic LLC was renewed for a year with a $750 monthly retainer.",
+			"Discussion occurred regarding an estimated $150,000 repair for the fire station roof.",
+			"New appointments were made to the Redevelopment Commission (Andrew Henry) and the Parks Board (Emily Kelly)."
+		],
+		"prose": "The Ellettsville Town Council meeting commenced with standard opening procedures, including a prayer, the Pledge of Allegiance, and roll call. A procedural announcement was made regarding the discontinuation of the online chat feature due to changes in Indiana law concerning meeting records. The Council then proceeded to open bids for the Heritage Trail Pedestrian Bridge over Jack Defat Creek. Three bids were received: CLR, Inc. bid $698,890; Crider and Crider bid $737,250; and Fox Construction Company bid $541,363. Following the bid opening, the Council voted to table the bids for review by the planning and street departments. Subsequently, the minutes from the June 9th, 2025 meeting and the accounts payable and payroll vouchers were approved. Two ordinances on second reading received approval: Ordinance 2025-16, which amends zone maps for 30 acres at 444 North Triple Crown Drive from agricultural to R1 single-family residential, and Ordinance 2025-17, amending the zoning map for 5965 North Matthews Drive from R1 single-family residential to R3 multi-family residential for senior housing expansion. Under new business, the Council approved the renewal of the 2025 consulting contract with Rick Copic LLC for a one-year term from July 1, 2025, to July 1, 2026, with a retainer of $750 per month and an hourly rate of $100 thereafter. A motion was also passed to table discussion on the wastewater treatment plant SCADA system electric gates and clarifying louvers until more complete figures were available. Appointments were made, with Andrew Henry appointed to the Redevelopment Commission and Emily Kelly appointed to the Parks Board. During supervisory comments, the Police Chief reported on issues with the fire station roof, noting leaks and delamination, and presented a rough estimate of $150,000 for a full replacement, suggesting financing options and the need for quotes. The initiation of the 2025 budget process was also announced, with plans for an August work session.",
+		"fiscalDecisions": [
+			{
+				"title": "2025 Consulting Contract Renewal with Rick Copic LLC",
+				"originalAmount": "$750 per month as a retainer and after the retainer is exhausted he will bill for his services at the rate of $100 an hour"
+			}
+		]
+	},
+	"documentsSummary": {
+		"highlights": [
+			"The Town Council awarded the bid for the Heritage Trail pedestrian bridge to Fox Construction Inc. for $541,363.00, with a condition to hold off on immediate commencement.",
+			"Approved an additional appropriation of $100,000.00 from the General Fund for professional services and Town Hall costs.",
+			"Approved an additional appropriation of $24,500.00 from the Parks Fund for various park improvements and equipment.",
+			"Approved the transfer of $250,000.00 from the General Fund to a new checking account at Old National Bank for a higher interest rate.",
+			"Tabled a Memorandum of Understanding (MOU) for a new Fire Station and bids for the Fire Department roof replacement for further review."
+		],
+		"prose": "The Ellettsville Town Council convened on July 28, 2025, with Scott Oldham, Trevor Sager, and William Ellis present. Following a review, the Council voted to award the bid to Fox Construction Inc. for $541,363.00 for the Heritage Trail pedestrian bridge crossing Jacks Defeat Creek, with the condition to delay proceeding due to a Department of Natural Resources stop work order. Minutes from the July 14, 2025, meeting and the Accounts Payable Vouchers and Payroll were approved. The Council then addressed several resolutions: Resolution 18-2025 for an additional $100,000.00 appropriation from the General Fund for professional services and Town Hall costs was approved. Resolution 19-2025, an additional $24,500.00 appropriation from the Parks Fund for upgrades, furnishings, and landscaping, was also approved. Resolution 20-2025, concerning the transfer of funds from MVH Restricted to the Local Road & Bridge Matching Grant to cover a 25% match for E&B Paving, was approved. Resolution 23-2025, authorizing the transfer of $250,000.00 from the General Fund to Old National Bank for a higher interest rate, passed with a 2-1 vote. In new business, the Council approved a contract with Baker Tilly for a 30-day filing to increase water hook-on fees, citing inflation and material costs, with proposed increases to various service rates. A request to make a contingent offer of full-time employment to Cody Mauder for a budgeted Fire Department position was approved, pending a PERF physical. The Council discussed a Memorandum of Understanding (MOU) for a new Fire Station where Richland Township would finance the building and the Town would convey the old fire station property, but ultimately tabled the MOU due to concerns about land ownership and the future of Townships. Three bids for a new Fire Department roof were presented, ranging from $93,500.00 to $209,563.79, but the decision was tabled for further review due to substantial price differences and guarantee comparisons. A work session on August 25 was scheduled to address budget concerns related to SBI legislation.",
+		"fiscalDecisions": [
+			{
+				"title": "Award Bid for Heritage Trail Pedestrian Bridge",
+				"originalAmount": "$541,363.00"
+			},
+			{
+				"title": "Resolution 18-2025 Additional Appropriation General Fund",
+				"originalAmount": "$100,000.00",
+				"ordinanceNumber": "Resolution 18-2025"
+			},
+			{
+				"title": "Resolution 19-2025 Additional Appropriation Parks Fund",
+				"originalAmount": "$24,500.00",
+				"ordinanceNumber": "Resolution 19-2025"
+			},
+			{
+				"title": "Resolution 23-2025 Authorization to Open a New Checking Account and Transfer Funds",
+				"originalAmount": "$250,000.00",
+				"ordinanceNumber": "Resolution 23-2025"
+			},
+			{
+				"title": "MOU Richland Township Fire Station",
+				"originalAmount": "$1 a year"
+			},
+			{
+				"title": "Fire Department Roof Replacement Bids",
+				"originalAmount": ""
+			}
+		]
+	}
+}

@@ -1,0 +1,42 @@
+{
+	"transcriptDate": "2025-10-27",
+	"documentsDate": "2025-11-10",
+	"sameMeeting": false,
+	"recordedProbability": 0.35,
+	"transcriptSummary": {
+		"highlights": [
+			"Approved minutes from the October 17, 2025 meeting.",
+			"Approved payment of accounts payable and payroll vouchers.",
+			"Adopted Resolution 34-2025 to approve the Monroe County Multihazard Mitigation Plan.",
+			"Introduced Ordinance 2025-25 on first reading to create a separate vehicle replacement fund for the storm water utility.",
+			"Approved the 2026 Monroe County Interlocal Agreement for Animal Control for $37,492.",
+			"Re-appointed William Ellis to the Monroe County Animal Management Commission."
+		],
+		"prose": "The Ellettsville Town Council convened its meeting on October 27, 2025, opening with a prayer and pledge. The Council approved the minutes from the October 17th, 2025 meeting and authorized the payment of accounts payable and payroll vouchers. Following this, Resolution 34-2025 was adopted, formally approving the Monroe County Multihazard Mitigation Plan. This plan, updated every five years, is essential for the town to receive FEMA reimbursement in case of disasters. The Council acknowledged minor corrections to the provided plan would be made, but approved it in its substantially final form. Ordinance 2025-25 was presented on its first reading, proposing the creation of a dedicated, non-reverting fund for the storm water utility's vehicle and equipment replacement. This initiative aims to facilitate long-term budgeting for equipment purchases, such as an aging 2008 street sweeper, by allocating a portion of storm water fees directly to this fund. The Council then approved the 2026 Monroe County Interlocal Agreement for Animal Control, committing to an annual payment of $37,492. This figure represents an increase over the previous year's budgeted amount. Lastly, William Ellis was formally re-appointed to the Monroe County Animal Management Commission. Supervisor comments included an announcement regarding the ongoing leaf pickup services in town.",
+		"fiscalDecisions": [
+			{
+				"title": "Approval of 2026 Monroe County Interlocal Agreement for Animal Control",
+				"originalAmount": "$37,492"
+			}
+		]
+	},
+	"documentsSummary": {
+		"highlights": [
+			"Approved Accounts Payable Vouchers and Payroll.",
+			"Approved Ordinance 2025-25 establishing a separate Vehicle Replacement Fund for the Stormwater Utility.",
+			"Voted to initiate the process to explore consolidation with Richland Township, including a commitment for all related meetings to be public."
+		],
+		"prose": "The Ellettsville Town Council convened for a special meeting on November 10, 2025. All council members were present. The council approved the minutes from their October 27, 2025, regular meeting, followed by the approval of Accounts Payable Vouchers and Payroll. A key decision was the unanimous approval of Ordinance 2025-25, which creates a non-reverting Vehicle Replacement Fund specifically for the Stormwater Utility, to be financed by a portion of stormwater fees. Town Manager Michael Farmer announced details for the upcoming 'Santa on Sale Street' event on December 13th. The main discussion focused on exploring a proposed consolidation with Richland Township. This initiative is a response to recent changes in state tax laws and potential state-level discussions about eliminating township governments, aiming to protect essential services and ensure sustainable growth. The proposed process involves forming committees, developing a reorganization plan for approval by both the Township Advisory Board and the Town Council, and a public referendum in November 2026, with an effective date of January 1, 2027. The council voted to enter into an agreement to examine the facts for reorganization and establish committees, with an amendment stipulating that all meetings related to the consolidation efforts will be public. The meeting concluded after brief comments from supervisors and council members.",
+		"fiscalDecisions": [
+			{
+				"title": "Approval of Accounts Payable Vouchers and Payroll",
+				"originalAmount": "Undisclosed"
+			},
+			{
+				"title": "Approval of Ordinance 2025-25 Creating a Separate Vehicle Replacement Fund for the Stormwater Utility",
+				"originalAmount": "Fund Established",
+				"ordinanceNumber": "2025-25"
+			}
+		]
+	}
+}

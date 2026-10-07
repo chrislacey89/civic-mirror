@@ -1,6 +1,7 @@
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
 import { LlmError } from "#/pipeline/errors.ts";
+import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
 
 /**
  * The minimum shape a fiscal decision must have for amount verification.
@@ -38,7 +39,7 @@ type FiscalDecisionCandidate = {
  * fields beyond FiscalDecisionCandidate, only modifying `confidence`.
  *
  * @param decisions - LLM-extracted fiscal decisions to verify.
- * @param sourceText - The raw meeting minutes or transcript text.
+ * @param sourceText - The text the amounts must appear in; see {@link verificationText}.
  * @returns The same array with confidence scores adjusted for unverified amounts.
  */
 function verifyAmounts<T extends FiscalDecisionCandidate>(
@@ -91,25 +92,67 @@ const budgetDiscussionSchema = z.object({
 	notes: z.string().optional(),
 });
 
+// Strings only: Gemini's structured output rejects numeric enums, and each
+// side is quoted as its source states it.
+const sourceDisagreementSchema = z.object({
+	topic: z.string(),
+	documentsSay: z.string(),
+	transcriptSays: z.string(),
+}) satisfies z.ZodType<SourceDisagreement>;
+
 const summarizationOutputSchema = z.object({
 	highlights: z.array(z.string()),
 	prose: z.string(),
 	fiscalDecisions: z.array(fiscalDecisionSchema),
 	budgetDiscussions: z.array(budgetDiscussionSchema),
+	sourceDisagreements: z.array(sourceDisagreementSchema),
 });
 
 type SummarizationOutput = z.infer<typeof summarizationOutputSchema>;
 
+/** One source of a meeting's record, labelled by the kind of source it is. */
+type LabelledSource = { kind: SourceKind; text: string };
+
 type SummarizationInput = {
-	/** Raw meeting minutes text or transcript to summarize. */
-	sourceText: string;
+	/** Every source to summarize together. Several may share a kind. */
+	sources: LabelledSource[];
 	/** Short context line for the prompt (e.g. "Town Council, March 23, 2026"). */
 	meetingContext: string;
 };
 
+/** The texts of the sources of one kind, joined. Empty when there is none. */
+function sourceTextOfKind(
+	sources: readonly LabelledSource[],
+	kind: SourceKind,
+): string {
+	return sources
+		.filter((source) => source.kind === kind)
+		.map((source) => source.text)
+		.join("\n\n");
+}
+
+function hasSourceKind(
+	sources: readonly LabelledSource[],
+	kind: SourceKind,
+): boolean {
+	return sources.some((source) => source.kind === kind);
+}
+
+/**
+ * The text extracted amounts are verified against. Documents are the official
+ * record of a figure, so a transcript is consulted only when there are none:
+ * captions that repeat a figure differently must not vouch for it.
+ */
+function verificationText(sources: readonly LabelledSource[]): string {
+	return hasSourceKind(sources, "documents")
+		? sourceTextOfKind(sources, "documents")
+		: sourceTextOfKind(sources, "transcript");
+}
+
 /**
  * The full result returned by the service — schema output plus the model
  * identifier, which gets persisted alongside the summary for auditing.
+ * `sourceDisagreements` is empty unless both kinds of source were passed.
  */
 type SummarizationResult = SummarizationOutput & {
 	model: string;
@@ -151,7 +194,7 @@ type SummarizationServiceConfig = {
  *
  * After the LLM call returns, `verifyAmounts` runs as the second pass of the
  * two-pass extraction: any fiscal decision whose `originalAmount` string
- * doesn't appear in the source text gets its confidence reduced, protecting
+ * doesn't appear in the verification text gets its confidence reduced, protecting
  * against the "temporal confusion" hallucination pitfall (confusing historical
  * spending references with new decisions).
  */
@@ -163,10 +206,19 @@ function SummarizationServiceLive(
 			Effect.tryPromise({
 				try: async () => {
 					const raw = await config.generateFn(input);
-					const verified = verifyAmounts(raw.fiscalDecisions, input.sourceText);
+					const verified = verifyAmounts(
+						raw.fiscalDecisions,
+						verificationText(input.sources),
+					);
+					// A disagreement needs two kinds of source to disagree; one
+					// reported from a single kind is the model inventing the other.
+					const bothKinds =
+						hasSourceKind(input.sources, "documents") &&
+						hasSourceKind(input.sources, "transcript");
 					return {
 						...raw,
 						fiscalDecisions: verified,
+						sourceDisagreements: bothKinds ? raw.sourceDisagreements : [],
 						model: config.model,
 					};
 				},
@@ -182,11 +234,13 @@ function SummarizationServiceLive(
 export {
 	SummarizationService,
 	SummarizationServiceLive,
+	sourceTextOfKind,
 	verifyAmounts,
 	summarizationOutputSchema,
 };
 export type {
 	FiscalDecisionCandidate,
+	LabelledSource,
 	SummarizationGenerateFn,
 	SummarizationInput,
 	SummarizationOutput,

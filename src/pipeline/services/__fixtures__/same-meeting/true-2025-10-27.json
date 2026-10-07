@@ -1,0 +1,41 @@
+{
+	"transcriptDate": "2025-10-27",
+	"documentsDate": "2025-10-27",
+	"sameMeeting": true,
+	"recordedProbability": 0.99,
+	"transcriptSummary": {
+		"highlights": [
+			"Approved minutes from the October 17, 2025 meeting.",
+			"Approved payment of accounts payable and payroll vouchers.",
+			"Adopted Resolution 34-2025 to approve the Monroe County Multihazard Mitigation Plan.",
+			"Introduced Ordinance 2025-25 on first reading to create a separate vehicle replacement fund for the storm water utility.",
+			"Approved the 2026 Monroe County Interlocal Agreement for Animal Control for $37,492.",
+			"Re-appointed William Ellis to the Monroe County Animal Management Commission."
+		],
+		"prose": "The Ellettsville Town Council convened its meeting on October 27, 2025, opening with a prayer and pledge. The Council approved the minutes from the October 17th, 2025 meeting and authorized the payment of accounts payable and payroll vouchers. Following this, Resolution 34-2025 was adopted, formally approving the Monroe County Multihazard Mitigation Plan. This plan, updated every five years, is essential for the town to receive FEMA reimbursement in case of disasters. The Council acknowledged minor corrections to the provided plan would be made, but approved it in its substantially final form. Ordinance 2025-25 was presented on its first reading, proposing the creation of a dedicated, non-reverting fund for the storm water utility's vehicle and equipment replacement. This initiative aims to facilitate long-term budgeting for equipment purchases, such as an aging 2008 street sweeper, by allocating a portion of storm water fees directly to this fund. The Council then approved the 2026 Monroe County Interlocal Agreement for Animal Control, committing to an annual payment of $37,492. This figure represents an increase over the previous year's budgeted amount. Lastly, William Ellis was formally re-appointed to the Monroe County Animal Management Commission. Supervisor comments included an announcement regarding the ongoing leaf pickup services in town.",
+		"fiscalDecisions": [
+			{
+				"title": "Approval of 2026 Monroe County Interlocal Agreement for Animal Control",
+				"originalAmount": "$37,492"
+			}
+		]
+	},
+	"documentsSummary": {
+		"highlights": [
+			"Town Council approved the 2026 Monroe County Interlocal Agreement with Animal Control for $37,492.",
+			"A new non-reverting Vehicle Replacement Fund for the Stormwater Utility was introduced on first reading.",
+			"The Monroe County Multi-Hazard Mitigation Plan was adopted."
+		],
+		"prose": "The Ellettsville Town Council held a special meeting on October 27, 2025. Key actions included the approval of the minutes from the October 17, 2025, regular meeting, and the authorization of accounts payable vouchers and payroll. The Council also formally adopted Resolution 34-2025 to adopt the Monroe County Multi-Hazard Mitigation Plan, which provides guidance for disaster response and FEMA reimbursement. An ordinance (2025-25) was introduced on its first reading to establish a separate, non-reverting vehicle replacement fund for the Stormwater Utility, intended to budget for future equipment purchases using stormwater fees. The 2026 Monroe County Interlocal Agreement with Animal Control, which outlines the town's financial contribution to animal shelter operations, was approved for $37,492. Additionally, William Ellis was formally re-appointed to the Monroe County Animal Management Commission. The meeting concluded after comments regarding leaf pickup by the Street Commissioner.",
+		"fiscalDecisions": [
+			{
+				"title": "Approval of Accounts Payable Vouchers and Payroll",
+				"originalAmount": "Accounts Payable Vouchers and Payroll"
+			},
+			{
+				"title": "Approval of 2026 Monroe County Interlocal Agreement with Animal Control",
+				"originalAmount": "$37,492"
+			}
+		]
+	}
+}

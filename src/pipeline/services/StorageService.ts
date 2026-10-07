@@ -12,7 +12,7 @@ import {
 } from "#/lib/drama-levels.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
-import type { SourceKind } from "#/pipeline/sources.ts";
+import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
 
 /**
  * Effect teaching note: Context.Service creates a typed token that identifies a service
@@ -125,6 +125,23 @@ type HeldVideoInput = {
 
 type HeldVideo = HeldVideoInput & { createdAt: Date };
 
+/** Every source a stored meeting holds, and what its current summary was built from. */
+type MeetingSources = {
+	documents: {
+		sourceUrl: string;
+		rawText: string;
+		documentType: string;
+		extractionMethod: string;
+	}[];
+	transcript: { sourceUrl: string | null; rawText: string } | null;
+	summary: { sourceKinds: SourceKind[]; sourceFingerprint: string } | null;
+};
+
+/** Transaction handle Drizzle passes to a `db.transaction` callback. */
+type Tx = Parameters<
+	Parameters<LibSQLDatabase<typeof schema>["transaction"]>[0]
+>[0];
+
 /** Minimal handle returned after a successful store — just enough to reference the meeting. */
 type Meeting = { id: number; date: string; bodyId: number };
 
@@ -211,6 +228,38 @@ interface StorageServiceInterface {
 	listHeldVideos(input?: {
 		bodySlug?: string;
 	}): Effect.Effect<HeldVideo[], DatabaseError>;
+	/**
+	 * Every document and the first transcript a meeting holds, plus the source
+	 * kinds and fingerprint of its summary. A meeting id with no rows yields no
+	 * documents, no transcript and no summary.
+	 */
+	getMeetingSources(
+		meetingId: number,
+	): Effect.Effect<MeetingSources, DatabaseError>;
+	/**
+	 * Swap a meeting's summary, fiscal decisions and budget discussions for a
+	 * new set in one transaction, so a failed insert leaves the old set intact.
+	 * Works when the meeting has no summary yet. Documents, transcripts, drama
+	 * rows and the meeting itself are not touched.
+	 */
+	replaceMeetingSummary(input: {
+		meetingId: number;
+		summary: { highlights: string[]; prose: string; model: string };
+		fiscalDecisions: MeetingInput["fiscalDecisions"];
+		budgetDiscussions: MeetingInput["budgetDiscussions"];
+		sourceKinds: SourceKind[];
+		sourceFingerprint: string;
+		sourceDisagreements: SourceDisagreement[];
+	}): Effect.Effect<void, DatabaseError>;
+	/**
+	 * Record the fingerprint of the sources a summary was built from, on a
+	 * summary stored without one. A summary that already has a fingerprint, and
+	 * a meeting with no summary, are left as they are. Nothing else is touched.
+	 */
+	stampSummaryFingerprint(input: {
+		meetingId: number;
+		sourceFingerprint: string;
+	}): Effect.Effect<void, DatabaseError>;
 }
 
 class StorageService extends Context.Service<
@@ -448,6 +497,44 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		getMeetingSources: (meetingId) =>
+			Effect.tryPromise({
+				try: () => getMeetingSourcesQuery(db, meetingId),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "getMeetingSources",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		replaceMeetingSummary: (input) =>
+			Effect.tryPromise({
+				try: () => replaceMeetingSummaryTransaction(db, input),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "replaceMeetingSummary",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		stampSummaryFingerprint: (input) =>
+			Effect.tryPromise({
+				try: async () => {
+					await db
+						.update(schema.summaries)
+						.set({ sourceFingerprint: input.sourceFingerprint })
+						.where(
+							and(
+								eq(schema.summaries.meetingId, input.meetingId),
+								eq(schema.summaries.sourceFingerprint, ""),
+							),
+						)
+						.run();
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "stampSummaryFingerprint",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 	});
 }
 
@@ -503,6 +590,160 @@ async function getMeetingSourceStateQuery(
 		transcriptSourceUrl: transcript?.sourceUrl ?? null,
 		summarySourceKinds: summary?.sourceKinds ?? [],
 	};
+}
+
+async function getMeetingSourcesQuery(
+	db: LibSQLDatabase<typeof schema>,
+	meetingId: number,
+): Promise<MeetingSources> {
+	const documents = await db
+		.select({
+			sourceUrl: schema.documents.sourceUrl,
+			rawText: schema.documents.rawText,
+			documentType: schema.documents.documentType,
+			extractionMethod: schema.documents.extractionMethod,
+		})
+		.from(schema.documents)
+		.where(eq(schema.documents.meetingId, meetingId))
+		.orderBy(schema.documents.id)
+		.all();
+	// The first transcript by id, the same one getMeetingSourceStateQuery reports.
+	const transcript = await db
+		.select({
+			sourceUrl: schema.transcripts.sourceUrl,
+			rawText: schema.transcripts.rawText,
+		})
+		.from(schema.transcripts)
+		.where(eq(schema.transcripts.meetingId, meetingId))
+		.orderBy(schema.transcripts.id)
+		.limit(1)
+		.get();
+	const summary = await db
+		.select({
+			sourceKinds: schema.summaries.sourceKinds,
+			sourceFingerprint: schema.summaries.sourceFingerprint,
+		})
+		.from(schema.summaries)
+		.where(eq(schema.summaries.meetingId, meetingId))
+		.get();
+
+	return {
+		documents,
+		transcript: transcript ?? null,
+		summary: summary ?? null,
+	};
+}
+
+/**
+ * Replace a meeting's summary and the fiscal decisions and budget discussions
+ * derived from it. Deletes run child-first, matching delete-meeting.ts. The
+ * OCR flag is read inside the transaction so it reflects the documents the
+ * new rows are written against.
+ */
+async function replaceMeetingSummaryTransaction(
+	db: LibSQLDatabase<typeof schema>,
+	input: Parameters<StorageServiceInterface["replaceMeetingSummary"]>[0],
+): Promise<void> {
+	await db.transaction(async (tx) => {
+		const ocrDocument = await tx
+			.select({ id: schema.documents.id })
+			.from(schema.documents)
+			.where(
+				and(
+					eq(schema.documents.meetingId, input.meetingId),
+					eq(schema.documents.extractionMethod, "ocr"),
+				),
+			)
+			.limit(1)
+			.get();
+
+		await tx
+			.delete(schema.budgetDiscussions)
+			.where(eq(schema.budgetDiscussions.meetingId, input.meetingId))
+			.run();
+		await tx
+			.delete(schema.fiscalDecisions)
+			.where(eq(schema.fiscalDecisions.meetingId, input.meetingId))
+			.run();
+		await tx
+			.delete(schema.summaries)
+			.where(eq(schema.summaries.meetingId, input.meetingId))
+			.run();
+
+		await tx
+			.insert(schema.summaries)
+			.values({
+				meetingId: input.meetingId,
+				highlights: input.summary.highlights,
+				prose: input.summary.prose,
+				model: input.summary.model,
+				sourceKinds: input.sourceKinds,
+				sourceFingerprint: input.sourceFingerprint,
+				sourceDisagreements: input.sourceDisagreements,
+			})
+			.run();
+		await insertFiscalDecisions(
+			tx,
+			input.meetingId,
+			input.fiscalDecisions,
+			ocrDocument !== undefined,
+		);
+		await insertBudgetDiscussions(tx, input.meetingId, input.budgetDiscussions);
+	});
+}
+
+/**
+ * When any source document was OCR, lower the default confidence so the
+ * existing confidence-aware UI conveys the extra uncertainty without needing
+ * an OCR-aware branch of its own.
+ */
+async function insertFiscalDecisions(
+	tx: Tx,
+	meetingId: number,
+	rows: MeetingInput["fiscalDecisions"],
+	hasOcrSource: boolean,
+): Promise<void> {
+	for (const fd of rows ?? []) {
+		const confidence = hasOcrSource
+			? fd.confidence * OCR_CONFIDENCE_MULTIPLIER
+			: fd.confidence;
+		await tx
+			.insert(schema.fiscalDecisions)
+			.values({
+				meetingId,
+				title: fd.title,
+				description: fd.description,
+				amount: fd.amount,
+				originalAmount: fd.originalAmount,
+				budgetCategory: fd.budgetCategory,
+				status: fd.status,
+				voteRecord: fd.voteRecord,
+				vendor: fd.vendor,
+				fundingSource: fd.fundingSource,
+				ordinanceNumber: fd.ordinanceNumber,
+				confidence,
+				isRecurring: fd.isRecurring,
+			})
+			.run();
+	}
+}
+
+async function insertBudgetDiscussions(
+	tx: Tx,
+	meetingId: number,
+	rows: MeetingInput["budgetDiscussions"],
+): Promise<void> {
+	for (const bd of rows ?? []) {
+		await tx
+			.insert(schema.budgetDiscussions)
+			.values({
+				meetingId,
+				topic: bd.topic,
+				estimatedAmount: bd.estimatedAmount,
+				notes: bd.notes,
+			})
+			.run();
+	}
 }
 
 /**
@@ -736,49 +977,13 @@ async function storeMeetingTransaction(
 				.run();
 		}
 
-		// Insert fiscal decisions. When any source document was OCR, we lower
-		// the default confidence so the existing confidence-aware UI conveys
-		// the extra uncertainty without needing an OCR-aware branch of its own.
-		if (input.fiscalDecisions) {
-			for (const fd of input.fiscalDecisions) {
-				const confidence = hasOcrSource
-					? fd.confidence * OCR_CONFIDENCE_MULTIPLIER
-					: fd.confidence;
-				await tx
-					.insert(schema.fiscalDecisions)
-					.values({
-						meetingId: meeting.id,
-						title: fd.title,
-						description: fd.description,
-						amount: fd.amount,
-						originalAmount: fd.originalAmount,
-						budgetCategory: fd.budgetCategory,
-						status: fd.status,
-						voteRecord: fd.voteRecord,
-						vendor: fd.vendor,
-						fundingSource: fd.fundingSource,
-						ordinanceNumber: fd.ordinanceNumber,
-						confidence,
-						isRecurring: fd.isRecurring,
-					})
-					.run();
-			}
-		}
-
-		// Insert budget discussions
-		if (input.budgetDiscussions) {
-			for (const bd of input.budgetDiscussions) {
-				await tx
-					.insert(schema.budgetDiscussions)
-					.values({
-						meetingId: meeting.id,
-						topic: bd.topic,
-						estimatedAmount: bd.estimatedAmount,
-						notes: bd.notes,
-					})
-					.run();
-			}
-		}
+		await insertFiscalDecisions(
+			tx,
+			meeting.id,
+			input.fiscalDecisions,
+			hasOcrSource,
+		);
+		await insertBudgetDiscussions(tx, meeting.id, input.budgetDiscussions);
 
 		return { id: meeting.id, date: meeting.date, bodyId: meeting.bodyId };
 	});
@@ -792,6 +997,7 @@ export type {
 	HeldVideoInput,
 	Meeting,
 	MeetingInput,
+	MeetingSources,
 	MeetingSourceState,
 	StoreDramaAssessmentInput,
 };

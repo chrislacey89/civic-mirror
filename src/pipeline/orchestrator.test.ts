@@ -31,7 +31,10 @@ import {
 	StorageService,
 	StorageServiceLive,
 } from "#/pipeline/services/StorageService.ts";
-import type { SummarizationResult } from "#/pipeline/services/SummarizationService.ts";
+import type {
+	SummarizationInput,
+	SummarizationResult,
+} from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
@@ -51,7 +54,7 @@ type CallLog = {
 	finalsiteDownload: Array<string>;
 	youtubeList: Array<string>;
 	transcribe: Array<string>;
-	summarize: Array<{ sourceText: string; meetingContext: string }>;
+	summarize: Array<SummarizationInput>;
 	store: Array<{ bodySlug: string; date: string }>;
 	storeInputs: Array<MeetingInput>;
 	transcripts: Array<{ meetingId: number; sourceUrl?: string }>;
@@ -113,6 +116,7 @@ function buildStubLayers(config: StubConfig) {
 		prose: "A prose summary",
 		fiscalDecisions: [],
 		budgetDiscussions: [],
+		sourceDisagreements: [],
 		model: "stub-model",
 	};
 	const defaultMeeting: Meeting = { id: 1, date: "2026-01-01", bodyId: 1 };
@@ -220,6 +224,10 @@ function buildStubLayers(config: StubConfig) {
 			}),
 		isVideoHeld: (videoId) => Effect.sync(() => isHeld(videoId)),
 		listHeldVideos: () => Effect.succeed([]),
+		getMeetingSources: () =>
+			Effect.succeed({ documents: [], transcript: null, summary: null }),
+		replaceMeetingSummary: () => Effect.void,
+		stampSummaryFingerprint: () => Effect.void,
 	});
 
 	const alert = Layer.succeed(AlertService, {
@@ -350,7 +358,7 @@ describe("runPipeline", () => {
 		expect(log.egovScrape).toBe(1);
 		expect(log.egovDownload).toHaveLength(2);
 		expect(log.summarize).toHaveLength(2);
-		expect(log.summarize[0].sourceText).toContain("$50,000");
+		expect(log.summarize[0].sources[0].text).toContain("$50,000");
 		expect(log.store).toHaveLength(2);
 		expect(log.store[0].bodySlug).toBe("town-council");
 		expect(log.alert).toHaveLength(0);
@@ -1104,7 +1112,7 @@ describe("runPipeline", () => {
 		expect(log.youtubeList).toEqual(["PL_test"]);
 		expect(log.transcribe).toEqual(["abc123"]);
 		expect(log.summarize).toHaveLength(1);
-		expect(log.summarize[0].sourceText).toContain("transcript for abc123");
+		expect(log.summarize[0].sources[0].text).toContain("transcript for abc123");
 		expect(log.store).toHaveLength(1);
 		expect(log.drama).toBe(1);
 		expect(result.processed).toBe(1);
@@ -1446,7 +1454,7 @@ describe("runPipeline", () => {
 		// Summarizer ran exactly once — over the readable text only, not over
 		// the unreadable doc's empty string.
 		expect(log.summarize).toHaveLength(1);
-		expect(log.summarize[0].sourceText).toContain("$10,000");
+		expect(log.summarize[0].sources[0].text).toContain("$10,000");
 
 		// Single meeting persisted with both docs.
 		expect(log.store).toHaveLength(1);
@@ -2716,5 +2724,394 @@ describe("runDramaDetectForVideo", () => {
 		expect(log.alert[0].body).toContain("Gemini API down");
 		expect(log.alert[0].body).not.toContain("rest of Town Council");
 		expect(log.alert[0].body).toContain("only item in this run");
+	});
+});
+
+describe("runPipeline document regeneration", () => {
+	const COUNCIL = {
+		slug: "town-council",
+		name: "Town Council",
+		egovSearchType: "12",
+	};
+	const BOARD = {
+		slug: "school-board",
+		name: "School Board",
+		finalsiteUrl: "https://example.com/school-board",
+	};
+
+	const egovListing = (
+		id: number,
+		documentType: "agenda" | "minutes",
+	): EgovDocumentListing => ({
+		id,
+		title: `Town Council Meeting May 27, 2025 ${documentType}`,
+		date: "06/01/2025",
+		downloadUrl: `https://example.com/doc/${id}`,
+		meetingDate: "2025-05-27",
+		documentType,
+	});
+	const AGENDA = egovListing(1, "agenda");
+	const MINUTES = egovListing(2, "minutes");
+
+	const REGENERATED: SummarizationResult = {
+		highlights: ["Regenerated highlight"],
+		prose: "Regenerated prose",
+		fiscalDecisions: [
+			{
+				title: "Regenerated decision",
+				description: "From both documents",
+				amount: 100,
+				originalAmount: "$100",
+				status: "approved",
+				confidence: 0.9,
+				isRecurring: false,
+			},
+		],
+		budgetDiscussions: [{ topic: "Regenerated discussion" }],
+		sourceDisagreements: [],
+		model: "stub-model",
+	};
+
+	async function setup() {
+		const db = await createMigratedTestDb();
+		await db
+			.insert(schema.governingBodies)
+			.values([
+				{ name: COUNCIL.name, slug: COUNCIL.slug, type: "town" },
+				{ name: BOARD.name, slug: BOARD.slug, type: "school" },
+			])
+			.run();
+		const rows = async () => ({
+			documents: await db.select().from(schema.documents).all(),
+			summaries: await db.select().from(schema.summaries).all(),
+			fiscalDecisions: await db.select().from(schema.fiscalDecisions).all(),
+			budgetDiscussions: await db.select().from(schema.budgetDiscussions).all(),
+		});
+		/** One pipeline run over the given listings, against the database. */
+		const run = async (
+			config: Omit<StubConfig, "log" | "storage">,
+			body: typeof COUNCIL | typeof BOARD = COUNCIL,
+		) => {
+			const log = emptyCallLog();
+			const result = await Effect.runPromise(
+				runPipeline({
+					bodies: [body],
+					crawlDelayMs: 0,
+					networkRetry: { attempts: 0, baseDelayMs: 0 },
+					llmRetry: { attempts: 0, baseDelayMs: 0 },
+					// Each download is the same stub bytes, so the text is numbered
+					// per run to tell one document's from the next.
+					extractPdfText: async () => ({
+						text: `document text ${log.egovDownload.length + log.finalsiteDownload.length}`,
+						method: "text-layer",
+					}),
+					dryRun: false,
+					// Inside the zero-results window of the meetings stored here.
+					now: new Date("2025-06-01"),
+				}).pipe(
+					Effect.provide(
+						buildStubLayers({
+							...config,
+							log,
+							storage: StorageServiceLive(db),
+						}),
+					),
+				),
+			);
+			return { log, result };
+		};
+		return { db, rows, run };
+	}
+
+	it("attaches a second eGov document to a meeting with a documents-only summary and replaces the summary with one built from both", async () => {
+		const { rows, run } = await setup();
+		await run({
+			egovListings: [AGENDA],
+			summarizationResult: {
+				...REGENERATED,
+				highlights: ["Agenda-only highlight"],
+				fiscalDecisions: [
+					{ ...REGENERATED.fiscalDecisions[0], title: "Agenda-only decision" },
+				],
+				budgetDiscussions: [{ topic: "Agenda-only discussion" }],
+			},
+		});
+		expect((await rows()).summaries[0].highlights).toEqual([
+			"Agenda-only highlight",
+		]);
+
+		const { log, result } = await run({
+			egovListings: [AGENDA, MINUTES],
+			summarizationResult: REGENERATED,
+		});
+
+		expect(result.errors).toBe(0);
+		expect(log.alert).toEqual([]);
+		expect(log.summarize).toHaveLength(1);
+		expect(log.summarize[0].sources.map((s) => s.kind)).toEqual([
+			"documents",
+			"documents",
+		]);
+		expect(log.summarize[0].meetingContext).toBe("Town Council, 2025-05-27");
+
+		const after = await rows();
+		expect(after.documents.map((d) => d.sourceUrl)).toEqual([
+			AGENDA.downloadUrl,
+			MINUTES.downloadUrl,
+		]);
+		expect(log.summarize[0].sources.map((s) => s.text)).toEqual(
+			after.documents.map((d) => d.rawText),
+		);
+		expect(after.summaries).toHaveLength(1);
+		expect(after.summaries[0]).toMatchObject({
+			highlights: ["Regenerated highlight"],
+			sourceKinds: ["documents"],
+			sourceFingerprint: computeSourceFingerprint([
+				AGENDA.downloadUrl,
+				MINUTES.downloadUrl,
+			]),
+		});
+		expect(after.fiscalDecisions.map((d) => d.title)).toEqual([
+			"Regenerated decision",
+		]);
+		expect(after.budgetDiscussions.map((d) => d.topic)).toEqual([
+			"Regenerated discussion",
+		]);
+	});
+
+	it("makes zero summarize calls and leaves every row unchanged on a second run with no new listings", async () => {
+		const { rows, run } = await setup();
+		await run({ egovListings: [AGENDA] });
+		await run({ egovListings: [AGENDA, MINUTES] });
+		const afterRegeneration = await rows();
+
+		const { log, result } = await run({ egovListings: [AGENDA, MINUTES] });
+
+		expect(log.summarize).toEqual([]);
+		expect(result.errors).toBe(0);
+		expect(await rows()).toEqual(afterRegeneration);
+	});
+
+	it("does not regenerate a meeting whose summary has no fingerprint when a run brings it no new source", async () => {
+		const { db, rows, run } = await setup();
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				yield* storage.storeMeeting({
+					bodySlug: COUNCIL.slug,
+					date: "2025-05-27",
+					meetingType: "regular",
+					documents: [
+						{
+							sourceUrl: AGENDA.downloadUrl,
+							rawText: "Agenda text.",
+							documentType: "agenda",
+							extractionMethod: "text-layer",
+						},
+						{
+							sourceUrl: MINUTES.downloadUrl,
+							rawText: "Minutes text.",
+							documentType: "minutes",
+							extractionMethod: "text-layer",
+						},
+					],
+					summary: { highlights: ["h"], prose: "p", model: "m" },
+				});
+			}).pipe(Effect.provide(StorageServiceLive(db))),
+		);
+		const before = await rows();
+		expect(before.summaries[0].sourceFingerprint).toBe("");
+
+		const { log } = await run({ egovListings: [AGENDA, MINUTES] });
+
+		expect(log.summarize).toEqual([]);
+		expect(await rows()).toEqual(before);
+	});
+
+	it("regenerates a meeting whose summary has no fingerprint once a listing brings it a new document", async () => {
+		const { db, rows, run } = await setup();
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				yield* storage.storeMeeting({
+					bodySlug: COUNCIL.slug,
+					date: "2025-05-27",
+					meetingType: "regular",
+					documents: [
+						{
+							sourceUrl: AGENDA.downloadUrl,
+							rawText: "Agenda text.",
+							documentType: "agenda",
+							extractionMethod: "text-layer",
+						},
+					],
+					summary: { highlights: ["h"], prose: "p", model: "m" },
+				});
+			}).pipe(Effect.provide(StorageServiceLive(db))),
+		);
+
+		const { log } = await run({
+			egovListings: [AGENDA, MINUTES],
+			summarizationResult: REGENERATED,
+		});
+
+		expect(log.summarize).toHaveLength(1);
+		const after = await rows();
+		expect(after.summaries).toHaveLength(1);
+		expect(after.summaries[0].highlights).toEqual(["Regenerated highlight"]);
+	});
+
+	it("keeps the previous summary when regeneration fails, and regenerates on the next run", async () => {
+		const { rows, run } = await setup();
+		await run({ egovListings: [AGENDA] });
+		const before = await rows();
+
+		const failed = await run({
+			egovListings: [AGENDA, MINUTES],
+			summarizationError: new Error("quota exceeded"),
+		});
+
+		expect(failed.result.errors).toBe(1);
+		expect(failed.log.alert).toHaveLength(1);
+		const afterFailure = await rows();
+		expect(afterFailure.summaries).toEqual(before.summaries);
+		expect(afterFailure.fiscalDecisions).toEqual(before.fiscalDecisions);
+
+		const retried = await run({
+			egovListings: [AGENDA, MINUTES],
+			summarizationResult: REGENERATED,
+		});
+
+		expect(retried.log.summarize).toHaveLength(1);
+		expect((await rows()).summaries[0].highlights).toEqual([
+			"Regenerated highlight",
+		]);
+	});
+
+	it("regenerates a legacy meeting on the next run when regeneration failed after its new document was attached", async () => {
+		const { db, rows, run } = await setup();
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				yield* storage.storeMeeting({
+					bodySlug: COUNCIL.slug,
+					date: "2025-05-27",
+					meetingType: "regular",
+					documents: [
+						{
+							sourceUrl: AGENDA.downloadUrl,
+							rawText: "Agenda text.",
+							documentType: "agenda",
+							extractionMethod: "text-layer",
+						},
+					],
+					summary: { highlights: ["h"], prose: "p", model: "m" },
+				});
+			}).pipe(Effect.provide(StorageServiceLive(db))),
+		);
+
+		const failed = await run({
+			egovListings: [AGENDA, MINUTES],
+			summarizationError: new Error("quota exceeded"),
+		});
+		expect(failed.result.errors).toBe(1);
+		expect((await rows()).summaries[0].highlights).toEqual(["h"]);
+
+		const retried = await run({
+			egovListings: [AGENDA, MINUTES],
+			summarizationResult: REGENERATED,
+		});
+
+		expect(retried.log.summarize).toHaveLength(1);
+		expect((await rows()).summaries[0].highlights).toEqual([
+			"Regenerated highlight",
+		]);
+	});
+
+	it("attaches a new Finalsite document to a meeting that already has documents and regenerates from all of them", async () => {
+		const { rows, run } = await setup();
+		const document = (name: "agenda" | "minutes") => ({
+			uuid: `uuid-${name}`,
+			documentType: name,
+			downloadUrl: `/fs/resource-manager/view/uuid-${name}`,
+			fileName: `${name}.pdf`,
+		});
+		const listing = (
+			...documents: ReturnType<typeof document>[]
+		): FinalsiteMeetingListing => ({
+			date: "January 20, 2026",
+			meetingType: "Regular Meeting",
+			year: 2026,
+			documents,
+		});
+		await run({ finalsiteListings: [listing(document("agenda"))] }, BOARD);
+
+		const second = await run(
+			{
+				finalsiteListings: [listing(document("agenda"), document("minutes"))],
+				summarizationResult: REGENERATED,
+			},
+			BOARD,
+		);
+
+		expect(second.result.errors).toBe(0);
+		expect(second.log.summarize).toHaveLength(1);
+		const after = await rows();
+		expect(after.documents).toHaveLength(2);
+		expect(second.log.summarize[0].sources.map((s) => s.text)).toEqual(
+			after.documents.map((d) => d.rawText),
+		);
+		expect(after.summaries).toHaveLength(1);
+		expect(after.summaries[0]).toMatchObject({
+			highlights: ["Regenerated highlight"],
+			sourceFingerprint: computeSourceFingerprint(
+				after.documents.map((d) => d.sourceUrl),
+			),
+		});
+
+		const third = await run(
+			{ finalsiteListings: [listing(document("agenda"), document("minutes"))] },
+			BOARD,
+		);
+
+		expect(third.log.summarize).toEqual([]);
+		expect(await rows()).toEqual(after);
+	});
+
+	it("leaves a transcript-only meeting's summary as it is when a document arrives for it", async () => {
+		const { db, rows, run } = await setup();
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				const meeting = yield* storage.storeMeeting({
+					bodySlug: COUNCIL.slug,
+					date: "2025-05-27",
+					meetingType: "regular",
+					documents: [],
+					summary: {
+						highlights: ["From the video"],
+						prose: "p",
+						model: "m",
+						sourceKinds: ["transcript"],
+						sourceFingerprint: computeSourceFingerprint(["https://v/1"]),
+					},
+				});
+				yield* storage.storeTranscript({
+					meetingId: meeting.id,
+					source: "captions",
+					rawText: "transcript text",
+					sourceUrl: "https://v/1",
+				});
+			}).pipe(Effect.provide(StorageServiceLive(db))),
+		);
+		const before = await rows();
+
+		await run({ egovListings: [MINUTES], summarizationResult: REGENERATED });
+
+		const after = await rows();
+		expect(after.documents.map((d) => d.sourceUrl)).toEqual([
+			MINUTES.downloadUrl,
+		]);
+		expect(after.summaries).toEqual(before.summaries);
 	});
 });

@@ -1,0 +1,53 @@
+{
+	"transcriptDate": "2025-06-09",
+	"documentsDate": "2025-07-14",
+	"sameMeeting": false,
+	"recordedProbability": 0.01,
+	"transcriptSummary": {
+		"highlights": [
+			"Ordinance 2025-13, setting rental fees for the Ellettsville Heritage Center, was approved.",
+			"Ordinance 2025-14, re-certifying legislative body districts, was approved.",
+			"Ordinance 2025-15, adopting town construction standards for roadways, was approved.",
+			"Jack Neil and Brandon Wright were reappointed to the Ellettsville Building Corporation board.",
+			"The Richland Township lease termination agreement was approved, with the town vacating the Park Street property by July 1st.",
+			"Residents expressed concerns about ongoing downtown flooding and requested action on Phase Two flood mitigation, particularly regarding the McNeely Street Bridge."
+		],
+		"prose": "The Ellettsville Town Council convened on June 9, 2025, opening with a prayer and pledge, followed by roll call. The minutes from the May 27, 2025 meeting were approved. Several ordinances were discussed and passed: Ordinance 2025-13 amended and approved fees for the Ellettsville Heritage Center rental, setting rates at $125/day for residents and $250/day for non-residents, with a $500 damage deposit option. Ordinance 2025-14, re-certifying the town's legislative body districts based on the last census, was approved. Ordinance 2025-15, adopting the town's construction standards and specifications manual for roadways, was also approved. Under new business, Jack Neil and Brandon Wright were reappointed to the Ellettsville Building Corporation board, with Carly Woodruff's reappointment tabled pending verification of residency. The council then approved the Richland Township lease termination agreement, formalizing the town's vacation of the Park Street property by July 1st. During the privilege of the floor, two local business owners, Carl Thurman and Chad Stevens, voiced significant concerns about persistent flooding in the downtown area, particularly near the McNeely Street Bridge, urging the council to prioritize Phase Two of flood mitigation, including the installation of culverts. The council acknowledged the county's jurisdiction over the bridge but committed to re-engaging with the Monroe County Highway Department on the issue. A resident attempted to appeal fines but was redirected to the Board of Zoning Appeals as the appropriate venue. The town manager reported on the ongoing move of utility and street departments to new facilities, with an open house scheduled for June 23rd, and discussed continuous challenges with Inflow and Infiltration (INI) at the wastewater treatment plant. The police chief announced fireworks on July 5th, funded by donations. The clerk-treasurer reported on a successful boundary update with the Census Bureau. Council comments included a suggestion to start planning for the country's 250th anniversary next year. The meeting was then adjourned.",
+		"fiscalDecisions": [
+			{
+				"title": "Adoption of Heritage Center Rental Fee Schedule",
+				"originalAmount": "$500",
+				"ordinanceNumber": "2025-13"
+			}
+		]
+	},
+	"documentsSummary": {
+		"highlights": [
+			"Bids for the Heritage Trail Pedestrian Bridge were opened and taken under advisement.",
+			"Accounts Payable Vouchers and Payroll were approved.",
+			"Ordinance 2025-16 to rezone 30 acres to R-1 single-family residential was approved.",
+			"Ordinance 2025-17 to rezone 5965 N. Matthews Drive to R-3 multi-family residential for senior housing was approved.",
+			"A 2025 Consulting Contract with COPPCSLT LLC for a $750 monthly retainer was approved.",
+			"A motion regarding WWTP-SCADA System Electric Gates and Clarifier Louvers was tabled.",
+			"Andrew Henry was appointed to the Redevelopment Commission.",
+			"Emily Kelley was approved for the Parks Board.",
+			"Discussion included an estimated $150,000 for Fire Station roof repair, with council agreeing to proceed with obtaining bids.",
+			"The budget process for the upcoming year has begun."
+		],
+		"prose": "The Ellettsville Town Council convened on July 14, 2025. During the meeting, bids for the Heritage Trail Pedestrian Bridge over Jacks Defeat Creek were publicly opened and subsequently taken under advisement for review, with the winning bid to be announced at a later meeting. The council approved the Accounts Payable Vouchers and Payroll. Two zoning ordinances received approval: Ordinance 2025-16, which rezoned 30 acres at 4444 North Triple Crown Drive from agricultural to R-1 single-family residential, and Ordinance 2025-17, rezoning 5965 N. Matthews Drive from R-1 single-family residential to R-3 multi-family residential for a senior housing expansion. A 2025 consulting contract with COPPCSLT LLC was approved, specifying a $750 monthly retainer and a $100 hourly rate after the retainer is exhausted. A motion concerning the WWTP-SCADA System Electric Gates and Clarifier Louvers was tabled until further figures could be provided. Appointments were made for Andrew Henry to the Redevelopment Commission and Emily Kelley to the Parks Board. Supervisor comments included an update on the Fire Station roof, estimated to cost around $150,000 for repair, with the council agreeing to proceed with obtaining bids. The town manager also noted the commencement of the new budget process.",
+		"fiscalDecisions": [
+			{
+				"title": "Approval of Accounts Payable Vouchers and Payroll",
+				"originalAmount": "Not specified"
+			},
+			{
+				"title": "Approval of 2025 Consulting Contract with COPPCSLT LLC",
+				"originalAmount": "$750 per month"
+			},
+			{
+				"title": "Table WWTP-SCADA System Electric Gates and Clarifier Louvers",
+				"originalAmount": "Not specified"
+			}
+		]
+	}
+}
