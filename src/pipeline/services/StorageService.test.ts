@@ -1447,7 +1447,9 @@ describe("StorageService", () => {
 		});
 	});
 
-	describe("stampSummaryFingerprint", () => {
+	describe("stampSummarySources", () => {
+		const STAMP_VIDEO_URL = "https://www.youtube.com/watch?v=stamped";
+
 		it("sets the fingerprint and the source kinds on a summary stored without them and changes nothing else", async () => {
 			const db = await createTestDb();
 			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));
@@ -1456,17 +1458,16 @@ describe("StorageService", () => {
 			expect(before[0].sourceKinds).toEqual([]);
 
 			await run(db, (s) =>
-				s.stampSummaryFingerprint({
+				s.stampSummarySources({
 					meetingId: meeting.id,
-					sourceFingerprint: "stamped",
-					sourceKinds: ["transcript"],
+					builtFrom: { transcriptAlone: { sourceUrl: STAMP_VIDEO_URL } },
 				}),
 			);
 
 			expect(await db.select().from(schema.summaries).all()).toEqual([
 				{
 					...before[0],
-					sourceFingerprint: "stamped",
+					sourceFingerprint: computeSourceFingerprint([STAMP_VIDEO_URL]),
 					sourceKinds: ["transcript"],
 				},
 			]);
@@ -1487,10 +1488,9 @@ describe("StorageService", () => {
 			const before = await db.select().from(schema.summaries).all();
 
 			await run(db, (s) =>
-				s.stampSummaryFingerprint({
+				s.stampSummarySources({
 					meetingId: meeting.id,
-					sourceFingerprint: "stamped",
-					sourceKinds: ["transcript"],
+					builtFrom: { transcriptAlone: { sourceUrl: STAMP_VIDEO_URL } },
 				}),
 			);
 

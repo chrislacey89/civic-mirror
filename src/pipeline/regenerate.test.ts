@@ -319,10 +319,11 @@ describe("regenerateMeetingSummary", () => {
 		await Effect.runPromise(
 			Effect.gen(function* () {
 				const storage = yield* StorageService;
-				yield* storage.stampSummaryFingerprint({
+				yield* storage.stampSummarySources({
 					meetingId: meeting.id,
-					sourceFingerprint: computeSourceFingerprint([AGENDA_URL]),
-					sourceKinds: ["documents"],
+					builtFrom: {
+						documents: [{ sourceUrl: AGENDA_URL, rawText: "Agenda text." }],
+					},
 				});
 			}).pipe(Effect.provide(layers)),
 		);

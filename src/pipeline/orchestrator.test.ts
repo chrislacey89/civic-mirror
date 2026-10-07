@@ -298,7 +298,7 @@ function buildStubLayers(config: StubConfig) {
 					sourceKinds: input.sourceKinds,
 				});
 			}),
-		stampSummaryFingerprint: (input) =>
+		stampSummarySources: (input) =>
 			Effect.sync(() => {
 				config.log.stamped.push(input.meetingId);
 			}),
