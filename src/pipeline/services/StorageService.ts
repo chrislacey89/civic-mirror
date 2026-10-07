@@ -13,7 +13,12 @@ import {
 import { DatabaseError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
 import type { MatchableSummary } from "#/pipeline/services/MeetingMatchService.ts";
-import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
+import type {
+	SourceDisagreement,
+	SourceKind,
+	UnfingerprintedSummarySources,
+} from "#/pipeline/sources.ts";
+import { stampOfUnfingerprintedSummary } from "#/pipeline/sources.ts";
 
 /**
  * Effect teaching note: Context.Service creates a typed token that identifies a service
@@ -277,15 +282,14 @@ interface StorageServiceInterface {
 		meetingId: number,
 	): Effect.Effect<{ sourceUrl: string | null } | null, DatabaseError>;
 	/**
-	 * Record the sources a summary was built from, on a summary stored without
-	 * a fingerprint: their fingerprint and their kinds, in one update. A summary
-	 * that already has a fingerprint, and a meeting with no summary, are left as
-	 * they are. Nothing else is touched.
+	 * Record what a summary stored without a fingerprint was built from: the
+	 * fingerprint of those sources and the one kind it read, in one update. A
+	 * summary that already has a fingerprint, and a meeting with no summary,
+	 * are left as they are. Nothing else is touched.
 	 */
-	stampSummaryFingerprint(input: {
+	stampSummarySources(input: {
 		meetingId: number;
-		sourceFingerprint: string;
-		sourceKinds: SourceKind[];
+		builtFrom: UnfingerprintedSummarySources;
 	}): Effect.Effect<void, DatabaseError>;
 }
 
@@ -569,15 +573,12 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
-		stampSummaryFingerprint: (input) =>
+		stampSummarySources: (input) =>
 			Effect.tryPromise({
 				try: async () => {
 					await db
 						.update(schema.summaries)
-						.set({
-							sourceFingerprint: input.sourceFingerprint,
-							sourceKinds: input.sourceKinds,
-						})
+						.set(stampOfUnfingerprintedSummary(input.builtFrom))
 						.where(
 							and(
 								eq(schema.summaries.meetingId, input.meetingId),
@@ -588,7 +589,7 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				},
 				catch: (error) =>
 					new DatabaseError({
-						operation: "stampSummaryFingerprint",
+						operation: "stampSummarySources",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),

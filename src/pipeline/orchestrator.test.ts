@@ -298,7 +298,7 @@ function buildStubLayers(config: StubConfig) {
 					sourceKinds: input.sourceKinds,
 				});
 			}),
-		stampSummaryFingerprint: (input) =>
+		stampSummarySources: (input) =>
 			Effect.sync(() => {
 				config.log.stamped.push(input.meetingId);
 			}),
@@ -2965,6 +2965,37 @@ describe("runPipeline video path", () => {
 				"2025-08-25",
 			);
 			expect(page?.summarySources).toEqual({ origin: "documents" });
+		});
+
+		it("stamps a summary stored without kinds as built from the documents alone when a video is attached to a meeting that already holds a transcript with no URL", async () => {
+			const { db } = await setup();
+			const meetingId = await seedMinutesMeeting(db, "2025-08-25");
+			// A transcript with no URL does not stop a video being matched to
+			// the meeting, so the stamp is written with a transcript held.
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeTranscript({
+						meetingId,
+						source: "whisper",
+						rawText: "transcript text",
+					});
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			// The stamp is what is read back, so no rebuild may replace it.
+			const { log } = await runAgainst(db, {
+				summarizationFailsWhen: (input) => input.sources.length > 1,
+			});
+
+			expect(log.match).toHaveLength(1);
+			expect(await db.select().from(schema.transcripts).all()).toHaveLength(2);
+			const [stamped] = await db.select().from(schema.summaries).all();
+			expect(stamped.prose).toBe("p");
+			expect(stamped.sourceKinds).toEqual(["documents"]);
+			expect(stamped.sourceFingerprint).toBe(
+				computeSourceFingerprint([MINUTES_URL]),
+			);
 		});
 
 		it("holds a video titled July 14, 2026 as near-date when the town's document is dated July 13, and creates no second meeting", async () => {
