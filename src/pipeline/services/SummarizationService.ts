@@ -1,7 +1,11 @@
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
 import { LlmError } from "#/pipeline/errors.ts";
-import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
+import type {
+	LabelledSource,
+	SourceDisagreement,
+	SourceKind,
+} from "#/pipeline/sources.ts";
 
 /**
  * The minimum shape a fiscal decision must have for amount verification.
@@ -109,9 +113,6 @@ const summarizationOutputSchema = z.object({
 });
 
 type SummarizationOutput = z.infer<typeof summarizationOutputSchema>;
-
-/** One source of a meeting's record, labelled by the kind of source it is. */
-type LabelledSource = { kind: SourceKind; text: string };
 
 type SummarizationInput = {
 	/** Every source to summarize together. Several may share a kind. */

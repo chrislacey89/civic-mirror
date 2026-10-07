@@ -35,23 +35,43 @@ export function fingerprintOfSources(sources: {
 	return computeSourceFingerprint(sourceUrls);
 }
 
+/** One source of a meeting's record, labelled by the kind of source it is. */
+export type LabelledSource = { kind: SourceKind; text: string };
+
 /**
- * The kinds a summary built from these sources was built from. A source with
- * no readable text gave the summarizer nothing, so its kind is not counted,
- * though its URL is still part of the fingerprint.
+ * The sources a summarizer can read: each document with text, then the
+ * transcript if it has any. A source with no readable text gives the
+ * summarizer nothing, though its URL is still part of the fingerprint.
  */
+export function readableSources(sources: {
+	documents: readonly { rawText: string }[];
+	transcript?: { rawText: string } | null;
+}): LabelledSource[] {
+	const readable: LabelledSource[] = sources.documents
+		.filter((document) => document.rawText.trim() !== "")
+		.map((document) => ({ kind: "documents", text: document.rawText }));
+	if (sources.transcript && sources.transcript.rawText.trim() !== "") {
+		readable.push({ kind: "transcript", text: sources.transcript.rawText });
+	}
+	return readable;
+}
+
+/** The kinds among the sources a summarizer was sent, each named once. */
+export function kindsOfReadableSources(
+	readable: readonly LabelledSource[],
+): SourceKind[] {
+	const kinds: SourceKind[] = ["documents", "transcript"];
+	return kinds.filter((kind) =>
+		readable.some((source) => source.kind === kind),
+	);
+}
+
+/** The kinds a summary built from every readable source held was built from. */
 export function kindsOfSources(sources: {
 	documents: readonly { rawText: string }[];
 	transcript?: { rawText: string } | null;
 }): SourceKind[] {
-	const kinds: SourceKind[] = [];
-	if (sources.documents.some((document) => document.rawText.trim() !== "")) {
-		kinds.push("documents");
-	}
-	if (sources.transcript && sources.transcript.rawText.trim() !== "") {
-		kinds.push("transcript");
-	}
-	return kinds;
+	return kindsOfReadableSources(readableSources(sources));
 }
 
 /**
@@ -66,6 +86,44 @@ export function kindsOfUnfingerprintedSummary(sources: {
 	transcript?: { rawText: string } | null;
 }): SourceKind[] {
 	return kindsOfSources(sources).slice(0, 1);
+}
+
+/**
+ * What a summary stored without a fingerprint was built from: the sources its
+ * meeting holds, or its transcript alone when the meeting is about to take
+ * documents the summary never read.
+ */
+export type UnfingerprintedSummarySources =
+	| {
+			documents: readonly { sourceUrl: string; rawText: string }[];
+			transcript?: { sourceUrl: string | null; rawText: string } | null;
+	  }
+	| { transcriptAlone: { sourceUrl: string | null } };
+
+/**
+ * The fingerprint and the one kind to record on a summary stored without a
+ * fingerprint. Both are read from the same sources, so the two cannot describe
+ * different ones.
+ */
+export function stampOfUnfingerprintedSummary(
+	builtFrom: UnfingerprintedSummarySources,
+): { sourceFingerprint: string; sourceKinds: SourceKind[] } {
+	if ("transcriptAlone" in builtFrom) {
+		return {
+			sourceFingerprint: fingerprintOfSources({
+				documents: [],
+				transcriptUrl: builtFrom.transcriptAlone.sourceUrl,
+			}),
+			sourceKinds: ["transcript"],
+		};
+	}
+	return {
+		sourceFingerprint: fingerprintOfSources({
+			documents: builtFrom.documents,
+			transcriptUrl: builtFrom.transcript?.sourceUrl,
+		}),
+		sourceKinds: kindsOfUnfingerprintedSummary(builtFrom),
+	};
 }
 
 /**

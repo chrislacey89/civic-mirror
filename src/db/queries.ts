@@ -604,9 +604,9 @@ export type MeetingDetail = {
 };
 
 /**
- * The kinds a summary was built from: the ones it stored, when it stored any.
- * Otherwise it was built from the documents when the meeting has any, and from
- * the transcript only when it has none.
+ * The kinds a summary was built from: the stored kinds when it has any. A
+ * summary stored without them is read as built from the documents when the
+ * meeting has any, and from the transcript only when it has none.
  */
 function summarySourceKinds(
 	stored: readonly SourceKind[],
