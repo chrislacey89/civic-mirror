@@ -3,7 +3,7 @@ import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import type { LabelledSource } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
-import { fingerprintOfSources, type SourceKind } from "#/pipeline/sources.ts";
+import { fingerprintOfSources, kindsOfSources } from "#/pipeline/sources.ts";
 
 /**
  * Rebuilds a meeting's summary from every source it holds, and replaces the
@@ -16,8 +16,8 @@ import { fingerprintOfSources, type SourceKind } from "#/pipeline/sources.ts";
  * does not make it due, so it is left alone: regenerating on that alone would
  * send every such meeting back through the summarizer. A caller that adds a
  * source to such a meeting must first stamp the summary with the fingerprint
- * of the sources it held (`stampSummaryFingerprint`), which makes it differ
- * from the sources now held.
+ * and kinds of the sources it held (`stampSummaryFingerprint`), which makes
+ * its fingerprint differ from the sources now held.
  */
 function regenerateMeetingSummary(input: {
 	meetingId: number;
@@ -55,10 +55,6 @@ function regenerateMeetingSummary(input: {
 			meetingContext: input.meetingContext,
 		});
 
-		const sourceKinds = (["documents", "transcript"] as const).filter((kind) =>
-			sources.some((source) => source.kind === kind),
-		) satisfies SourceKind[];
-
 		yield* storage.replaceMeetingSummary({
 			meetingId: input.meetingId,
 			summary: {
@@ -68,7 +64,7 @@ function regenerateMeetingSummary(input: {
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
-			sourceKinds,
+			sourceKinds: kindsOfSources(held),
 			sourceFingerprint,
 			sourceDisagreements: summary.sourceDisagreements,
 		});

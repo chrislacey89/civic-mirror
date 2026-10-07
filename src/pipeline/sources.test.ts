@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
 	computeSourceFingerprint,
 	fingerprintOfSources,
+	kindsOfSources,
+	kindsOfUnfingerprintedSummary,
 } from "#/pipeline/sources.ts";
 
 const MINUTES = "https://ellettsville.in.us/egov/docs/123.pdf";
@@ -73,5 +75,66 @@ describe("fingerprintOfSources", () => {
 		expect(fingerprintOfSources({ documents: [], transcriptUrl: VIDEO })).toBe(
 			computeSourceFingerprint([VIDEO]),
 		);
+	});
+});
+
+describe("kindsOfSources", () => {
+	it("names documents and transcript, in that order, when both have text", () => {
+		expect(
+			kindsOfSources({
+				documents: [{ rawText: "Minutes." }],
+				transcript: { rawText: "Transcript." },
+			}),
+		).toEqual(["documents", "transcript"]);
+	});
+
+	it("names only the transcript when the meeting holds no documents", () => {
+		expect(
+			kindsOfSources({ documents: [], transcript: { rawText: "Transcript." } }),
+		).toEqual(["transcript"]);
+	});
+
+	it("names only the documents when there is no transcript", () => {
+		expect(
+			kindsOfSources({
+				documents: [{ rawText: "Minutes." }],
+				transcript: null,
+			}),
+		).toEqual(["documents"]);
+	});
+
+	it("does not count a kind whose text is all blank", () => {
+		expect(
+			kindsOfSources({
+				documents: [{ rawText: "  " }, { rawText: "" }],
+				transcript: { rawText: "Transcript." },
+			}),
+		).toEqual(["transcript"]);
+		expect(
+			kindsOfSources({
+				documents: [{ rawText: "" }, { rawText: "Minutes." }],
+				transcript: { rawText: "\n" },
+			}),
+		).toEqual(["documents"]);
+	});
+});
+
+describe("kindsOfUnfingerprintedSummary", () => {
+	it("names only the documents when the meeting also holds a transcript", () => {
+		expect(
+			kindsOfUnfingerprintedSummary({
+				documents: [{ rawText: "Minutes." }],
+				transcript: { rawText: "Transcript." },
+			}),
+		).toEqual(["documents"]);
+	});
+
+	it("names the transcript when no document has text", () => {
+		expect(
+			kindsOfUnfingerprintedSummary({
+				documents: [{ rawText: " " }],
+				transcript: { rawText: "Transcript." },
+			}),
+		).toEqual(["transcript"]);
 	});
 });

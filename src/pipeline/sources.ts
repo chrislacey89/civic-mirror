@@ -36,6 +36,39 @@ export function fingerprintOfSources(sources: {
 }
 
 /**
+ * The kinds a summary built from these sources was built from. A source with
+ * no readable text gave the summarizer nothing, so its kind is not counted,
+ * though its URL is still part of the fingerprint.
+ */
+export function kindsOfSources(sources: {
+	documents: readonly { rawText: string }[];
+	transcript?: { rawText: string } | null;
+}): SourceKind[] {
+	const kinds: SourceKind[] = [];
+	if (sources.documents.some((document) => document.rawText.trim() !== "")) {
+		kinds.push("documents");
+	}
+	if (sources.transcript && sources.transcript.rawText.trim() !== "") {
+		kinds.push("transcript");
+	}
+	return kinds;
+}
+
+/**
+ * The kinds a summary stored without a fingerprint was built from. Only a
+ * single-kind path writes one, so it never read both: the documents when the
+ * meeting holds any with text, the transcript otherwise. A meeting can hold a
+ * transcript the summary never read (attached by a path that does not
+ * regenerate), so `kindsOfSources` would credit it wrongly here.
+ */
+export function kindsOfUnfingerprintedSummary(sources: {
+	documents: readonly { rawText: string }[];
+	transcript?: { rawText: string } | null;
+}): SourceKind[] {
+	return kindsOfSources(sources).slice(0, 1);
+}
+
+/**
  * The session half of a meeting's key: a meeting label lowercased, with each
  * run of other characters collapsed to one "-" and the ends trimmed. School
  * board rows and video titles both build it here, because a video is paired
