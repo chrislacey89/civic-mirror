@@ -23,7 +23,7 @@ function parseExtractionMethod(raw: string): ExtractionMethod {
  * otherwise "ocr" if any readable doc came through OCR, else "text-layer".
  */
 function deriveMeetingExtractionMethod(
-	methods: ExtractionMethod[],
+	methods: readonly ExtractionMethod[],
 	hasSummary: boolean,
 ): ExtractionMethod {
 	if (methods.every((m) => m === "unreadable")) {
@@ -609,9 +609,9 @@ export type MeetingDetail = {
  * meeting has any, and from the transcript only when it has none.
  */
 function summarySourceKinds(
-	stored: SourceKind[],
+	stored: readonly SourceKind[],
 	attached: { hasDocuments: boolean; hasTranscript: boolean },
-): SourceKind[] {
+): readonly SourceKind[] {
 	if (stored.length > 0) return stored;
 	if (attached.hasDocuments) return ["documents"];
 	if (attached.hasTranscript) return ["transcript"];
