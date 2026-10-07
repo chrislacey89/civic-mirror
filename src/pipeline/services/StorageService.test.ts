@@ -1225,6 +1225,62 @@ describe("StorageService", () => {
 		});
 	});
 
+	describe("stampSummaryFingerprint", () => {
+		function run<A>(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			use: (
+				storage: Effect.Success<typeof StorageService>,
+			) => Effect.Effect<A, unknown>,
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					return yield* use(yield* StorageService);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		it("sets the fingerprint on a summary stored without one and changes nothing else", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));
+			const before = await db.select().from(schema.summaries).all();
+			expect(before[0].sourceFingerprint).toBe("");
+
+			await run(db, (s) =>
+				s.stampSummaryFingerprint({
+					meetingId: meeting.id,
+					sourceFingerprint: "stamped",
+				}),
+			);
+
+			expect(await db.select().from(schema.summaries).all()).toEqual([
+				{ ...before[0], sourceFingerprint: "stamped" },
+			]);
+		});
+
+		it("leaves a summary that already has a fingerprint alone", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: {
+						...testMeetingInput.summary,
+						sourceFingerprint: "existing",
+					},
+				}),
+			);
+
+			await run(db, (s) =>
+				s.stampSummaryFingerprint({
+					meetingId: meeting.id,
+					sourceFingerprint: "stamped",
+				}),
+			);
+
+			const rows = await db.select().from(schema.summaries).all();
+			expect(rows[0].sourceFingerprint).toBe("existing");
+		});
+	});
+
 	describe("replaceMeetingSummary", () => {
 		const replacement = {
 			summary: {

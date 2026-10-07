@@ -200,6 +200,7 @@ function buildStubLayers(config: StubConfig) {
 		getMeetingSources: () =>
 			Effect.succeed({ documents: [], transcript: null, summary: null }),
 		replaceMeetingSummary: () => Effect.void,
+		stampSummaryFingerprint: () => Effect.void,
 	});
 
 	const alert = Layer.succeed(AlertService, {
@@ -2586,6 +2587,46 @@ describe("runPipeline document regeneration", () => {
 		const afterFailure = await rows();
 		expect(afterFailure.summaries).toEqual(before.summaries);
 		expect(afterFailure.fiscalDecisions).toEqual(before.fiscalDecisions);
+
+		const retried = await run({
+			egovListings: [AGENDA, MINUTES],
+			summarizationResult: REGENERATED,
+		});
+
+		expect(retried.log.summarize).toHaveLength(1);
+		expect((await rows()).summaries[0].highlights).toEqual([
+			"Regenerated highlight",
+		]);
+	});
+
+	it("regenerates a legacy meeting on the next run when regeneration failed after its new document was attached", async () => {
+		const { db, rows, run } = await setup();
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				yield* storage.storeMeeting({
+					bodySlug: COUNCIL.slug,
+					date: "2025-05-27",
+					meetingType: "regular",
+					documents: [
+						{
+							sourceUrl: AGENDA.downloadUrl,
+							rawText: "Agenda text.",
+							documentType: "agenda",
+							extractionMethod: "text-layer",
+						},
+					],
+					summary: { highlights: ["h"], prose: "p", model: "m" },
+				});
+			}).pipe(Effect.provide(StorageServiceLive(db))),
+		);
+
+		const failed = await run({
+			egovListings: [AGENDA, MINUTES],
+			summarizationError: new Error("quota exceeded"),
+		});
+		expect(failed.result.errors).toBe(1);
+		expect((await rows()).summaries[0].highlights).toEqual(["h"]);
 
 		const retried = await run({
 			egovListings: [AGENDA, MINUTES],

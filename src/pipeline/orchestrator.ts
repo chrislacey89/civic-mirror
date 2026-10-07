@@ -2,7 +2,10 @@ import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import { readFinalsiteDate } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
-import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
+import {
+	fingerprintHeldSources,
+	regenerateMeetingSummary,
+} from "#/pipeline/regenerate.ts";
 import {
 	type AlertScope,
 	AlertService,
@@ -422,7 +425,19 @@ function attachDocumentsAndRegenerate(input: {
 		);
 		if (!bringsNewDocument && held.summary?.sourceFingerprint === "") return;
 
-		if (bringsNewDocument) yield* storage.storeMeeting(input.meeting);
+		if (bringsNewDocument) {
+			// A summary stored without a fingerprint would look current after the
+			// attach, so a failed regeneration would never be retried. Stamping it
+			// with the fingerprint of the sources it was built from first makes the
+			// attach leave it visibly behind.
+			if (held.summary?.sourceFingerprint === "") {
+				yield* storage.stampSummaryFingerprint({
+					meetingId: input.meetingId,
+					sourceFingerprint: fingerprintHeldSources(held),
+				});
+			}
+			yield* storage.storeMeeting(input.meeting);
+		}
 
 		yield* Effect.log("regenerate.start").pipe(
 			Effect.annotateLogs({ meetingId: input.meetingId, bringsNewDocument }),

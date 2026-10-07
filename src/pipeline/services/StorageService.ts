@@ -226,6 +226,15 @@ interface StorageServiceInterface {
 		sourceFingerprint: string;
 		sourceDisagreements: SourceDisagreement[];
 	}): Effect.Effect<void, DatabaseError>;
+	/**
+	 * Record the fingerprint of the sources a summary was built from, on a
+	 * summary stored without one. A summary that already has a fingerprint, and
+	 * a meeting with no summary, are left as they are. Nothing else is touched.
+	 */
+	stampSummaryFingerprint(input: {
+		meetingId: number;
+		sourceFingerprint: string;
+	}): Effect.Effect<void, DatabaseError>;
 }
 
 class StorageService extends Context.Service<
@@ -383,6 +392,26 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				catch: (error) =>
 					new DatabaseError({
 						operation: "replaceMeetingSummary",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		stampSummaryFingerprint: (input) =>
+			Effect.tryPromise({
+				try: async () => {
+					await db
+						.update(schema.summaries)
+						.set({ sourceFingerprint: input.sourceFingerprint })
+						.where(
+							and(
+								eq(schema.summaries.meetingId, input.meetingId),
+								eq(schema.summaries.sourceFingerprint, ""),
+							),
+						)
+						.run();
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "stampSummaryFingerprint",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
