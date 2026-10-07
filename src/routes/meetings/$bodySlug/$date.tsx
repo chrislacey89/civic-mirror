@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { FiscalDecisionDetail, MeetingDetail } from "#/db/queries.ts";
-import type { SourceKind } from "#/pipeline/sources.ts";
+import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
 import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
 
 /**
@@ -121,6 +121,10 @@ export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 								</div>
 							</section>
 						</>
+					)}
+
+					{meeting.sourceDisagreements.length > 0 && (
+						<SourceDisagreements disagreements={meeting.sourceDisagreements} />
 					)}
 
 					{meeting.fiscalDecisions.length > 0 && (
@@ -327,11 +331,71 @@ function builtFromLine(kinds: SourceKind[]): string | null {
 	return null;
 }
 
-function SectionHead({ kicker, title }: { kicker: string; title: string }) {
+const DISAGREEMENTS_HEADING_ID = "source-disagreements-heading";
+
+/**
+ * Points where the video and the documents state different things. Nobody
+ * adjudicates them: the summary reports the documents' figure, and this list
+ * tells the reader that figure is in question.
+ */
+function SourceDisagreements({
+	disagreements,
+}: {
+	disagreements: SourceDisagreement[];
+}) {
+	return (
+		<section className="mt-10" aria-labelledby={DISAGREEMENTS_HEADING_ID}>
+			<SectionHead
+				id={DISAGREEMENTS_HEADING_ID}
+				kicker="Check the sources"
+				title="Where the video and the documents differ"
+			/>
+			<p className="mt-3 text-[14px] leading-[1.55] text-[var(--ink-mid)]">
+				The meeting video and the official documents state different things on
+				the points below. The summary uses the documents' figure.
+			</p>
+			<ul className="m-0 mt-2 list-none p-0">
+				{disagreements.map((d, i) => (
+					<li
+						key={`${d.topic}-${d.documentsSay}-${d.transcriptSays}`}
+						className={`py-4 ${
+							i === 0
+								? "border-t border-[var(--rule)]"
+								: "border-t border-dotted border-[var(--rule-dot)]"
+						}`}
+					>
+						<p className="display m-0 text-[18px]">{d.topic}</p>
+						<p className="mt-2 text-[14px] leading-[1.55] text-[var(--ink)]">
+							<span className="font-semibold">The documents say:</span>{" "}
+							{d.documentsSay}
+						</p>
+						<p className="mt-1 text-[14px] leading-[1.55] text-[var(--ink)]">
+							<span className="font-semibold">The video says:</span>{" "}
+							{d.transcriptSays}
+						</p>
+					</li>
+				))}
+			</ul>
+		</section>
+	);
+}
+
+function SectionHead({
+	kicker,
+	title,
+	id,
+}: {
+	kicker: string;
+	title: string;
+	id?: string;
+}) {
 	return (
 		<div className="rule-double border-t-[3px] border-double border-[var(--rule)] pt-4">
 			<p className="kicker">{kicker}</p>
-			<h2 className="display mt-1 text-[26px] leading-tight tracking-[-0.01em]">
+			<h2
+				id={id}
+				className="display mt-1 text-[26px] leading-tight tracking-[-0.01em]"
+			>
 				{title}
 			</h2>
 		</div>

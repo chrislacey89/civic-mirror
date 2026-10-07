@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import { MeetingDetailView } from "./$date.tsx";
@@ -257,5 +257,58 @@ describe("MeetingDetailView — summary sources", () => {
 		expect(screen.getByText("Key Highlights")).toBeDefined();
 		expect(screen.getByText("Sale Street Road Repairs")).toBeDefined();
 		expect(screen.queryByText(/couldn't extract readable text/)).toBeNull();
+	});
+
+	it("lists each disagreement with what the documents and the video say, and says the summary uses the documents' figure", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					summarySources: {
+						kinds: ["documents", "transcript"],
+						videoUrl: VIDEO_URL,
+					},
+					sourceDisagreements: [
+						{
+							topic: "Paving bid",
+							documentsSay: "$215,215.10",
+							transcriptSays: "$244,215.10",
+						},
+						{
+							topic: "Wheel tax vote",
+							documentsSay: "Passed 4–1",
+							transcriptSays: "Passed 5–0",
+						},
+					],
+				})}
+			/>,
+		);
+
+		const section = screen.getByRole("region", {
+			name: "Where the video and the documents differ",
+		});
+		expect(section.textContent).toContain(
+			"The summary uses the documents' figure.",
+		);
+		const items = within(section).getAllByRole("listitem");
+		expect(items.map((item) => item.textContent)).toEqual([
+			"Paving bidThe documents say: $215,215.10The video says: $244,215.10",
+			"Wheel tax voteThe documents say: Passed 4–1The video says: Passed 5–0",
+		]);
+	});
+
+	it("renders no disagreement section when the sources do not disagree", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					summarySources: {
+						kinds: ["documents", "transcript"],
+						videoUrl: VIDEO_URL,
+					},
+				})}
+			/>,
+		);
+
+		expect(screen.queryByText(/differ/)).toBeNull();
+		expect(screen.queryByText(/documents' figure/)).toBeNull();
 	});
 });
