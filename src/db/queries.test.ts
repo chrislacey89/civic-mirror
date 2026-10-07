@@ -1120,6 +1120,36 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 		});
 	});
 
+	it("links the transcript that has a video link when the meeting's first transcript has none", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		const meeting = await seedSourcedMeeting(db, body.id, {
+			videoUrl: null,
+			summary: { sourceKinds: ["transcript"] },
+		});
+		await db
+			.insert(schema.transcripts)
+			.values({
+				meetingId: meeting.id,
+				source: "whisper",
+				rawText: TRANSCRIPT_TEXT,
+				segments: [{ start: 0, text: TRANSCRIPT_TEXT }],
+				sourceUrl: VIDEO_URL,
+			})
+			.run();
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2026-03-23",
+		);
+
+		expect(result?.summarySources).toEqual({
+			origin: "video",
+			videoUrl: VIDEO_URL,
+		});
+	});
+
 	it("returns a video-only meeting, which has no documents, with its summary", async () => {
 		const db = await createTestDb();
 		const body = await seedBody(db);
