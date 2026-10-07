@@ -4,6 +4,7 @@ import {
 	DRAMA_CATEGORIES,
 	DRAMA_LEVELS,
 	mapSumToLevel,
+	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 
@@ -24,12 +25,12 @@ const dramaAssessmentSchema = z.object({
 	category_scores: z.object({
 		procedural_breakdown: categoryScoreSchema,
 		question_looping: categoryScoreSchema,
-		defensive_hedging: categoryScoreSchema,
-		timeline_pressure: categoryScoreSchema,
+		unanswered_questions: categoryScoreSchema,
+		undecided_time: categoryScoreSchema,
+		repeat_deferrals: categoryScoreSchema,
 		improvised_workarounds: categoryScoreSchema,
-		visible_dissent: categoryScoreSchema,
 		post_hoc_corrections: categoryScoreSchema,
-	}),
+	} satisfies Record<ScoredDramaCategory, typeof categoryScoreSchema>),
 	level: z.enum(DRAMA_LEVELS),
 	confidence: z.number().min(0).max(1),
 	headline: z.string().max(200),
@@ -50,7 +51,13 @@ type DramaAssessmentResult = DramaAssessmentOutput & {
  * what we care about is the word sequence.
  */
 function normalize(text: string): string {
-	return text.toLowerCase().replace(/\s+/g, " ").trim();
+	// Inline `[MM:SS]` stamps are not spoken words; a quote that spans one must
+	// still match.
+	return text
+		.replace(/\[\d+:\d{2}\]/g, " ")
+		.toLowerCase()
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 /**
@@ -64,9 +71,12 @@ function verifyEvidenceQuotes(
 	sourceText: string,
 ): CategoryScore {
 	const haystack = normalize(sourceText);
-	const verifiedQuotes = category.evidence_quotes.filter((quote) =>
-		haystack.includes(normalize(quote)),
-	);
+	const verifiedQuotes = category.evidence_quotes.filter((quote) => {
+		const needle = normalize(quote);
+		// An empty needle (blank or marker-only quote) is contained in every
+		// haystack, so it would verify as evidence without citing any words.
+		return needle !== "" && haystack.includes(needle);
+	});
 	if (category.score >= 1 && verifiedQuotes.length === 0) {
 		return { score: 0, evidence_quotes: [] };
 	}

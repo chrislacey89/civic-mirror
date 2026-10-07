@@ -34,7 +34,7 @@ export default function Footer() {
 					<div>
 						<p className="kicker">The Weekly Digest</p>
 						<p className="mt-3 text-[13px] leading-6 text-[var(--ink-mid)]">
-							Every Friday morning. One email. Decisions, drama, and where the
+							Every Friday morning. One email. Decisions, process, and where the
 							money went.
 						</p>
 						<div className="mt-3 flex border border-[var(--ink)] bg-[var(--paper)]">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapSumToLevel } from "./drama-levels";
+import { DRAMA_LEVELS, LEVEL_DISPLAY, mapSumToLevel } from "./drama-levels";
 
 describe("mapSumToLevel", () => {
 	it("maps 0 to routine", () => {
@@ -32,5 +32,16 @@ describe("mapSumToLevel", () => {
 
 	it("maps 21 to off-the-rails (upper boundary)", () => {
 		expect(mapSumToLevel(21)).toBe("off-the-rails");
+	});
+});
+
+describe("LEVEL_DISPLAY", () => {
+	it("labels each tier by the process finding, in rising order", () => {
+		expect(DRAMA_LEVELS.map((level) => LEVEL_DISPLAY[level])).toEqual([
+			"Routine",
+			"Some friction",
+			"Process problems",
+			"Serious process problems",
+		]);
 	});
 });

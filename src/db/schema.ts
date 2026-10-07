@@ -250,7 +250,7 @@ export const budgetDiscussions = sqliteTable("budget_discussions", {
  *
  * `publishedAt` is nullable: routine/bumpy/heated auto-publish at insert time;
  * off-the-rails assessments land with publishedAt = null and require operator
- * approval before appearing on the public `/drama` page.
+ * approval before appearing on the public `/process` page.
  *
  * The `level` field is the mechanical sum-to-tier mapping: it must equal
  * `mapSumToLevel(sum(category_scores.*.score))` and is enforced at the
@@ -290,7 +290,7 @@ export const dramaAssessments = sqliteTable(
  * Per-category scores for each drama assessment. Each assessment has exactly
  * one row per category (even if the score is 0, in which case evidenceQuotes
  * is an empty array). This shape enables future slicing and filtering by
- * category on the public `/drama` page.
+ * category on the public `/process` page.
  */
 export const dramaCategoryScores = sqliteTable(
 	"drama_category_scores",

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as DramaRouteImport } from './routes/drama'
+import { Route as ProcessRouteImport } from './routes/process'
 import { Route as SpendingRouteImport } from './routes/spending'
 import { Route as BodiesIndexRouteImport } from './routes/bodies/index'
 import { Route as BodiesBodySlugRouteImport } from './routes/bodies/$bodySlug'
@@ -30,6 +31,11 @@ const AboutRoute = AboutRouteImport.update({
 const DramaRoute = DramaRouteImport.update({
   id: '/drama',
   path: '/drama',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProcessRoute = ProcessRouteImport.update({
+  id: '/process',
+  path: '/process',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SpendingRoute = SpendingRouteImport.update({
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/drama': typeof DramaRoute
+  '/process': typeof ProcessRoute
   '/spending': typeof SpendingRoute
   '/bodies/$bodySlug': typeof BodiesBodySlugRoute
   '/bodies/': typeof BodiesIndexRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/drama': typeof DramaRoute
+  '/process': typeof ProcessRoute
   '/spending': typeof SpendingRoute
   '/bodies/$bodySlug': typeof BodiesBodySlugRoute
   '/bodies': typeof BodiesIndexRoute
@@ -76,6 +84,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/drama': typeof DramaRoute
+  '/process': typeof ProcessRoute
   '/spending': typeof SpendingRoute
   '/bodies/$bodySlug': typeof BodiesBodySlugRoute
   '/bodies/': typeof BodiesIndexRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/drama'
+    | '/process'
     | '/spending'
     | '/bodies/$bodySlug'
     | '/bodies/'
@@ -96,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/drama'
+    | '/process'
     | '/spending'
     | '/bodies/$bodySlug'
     | '/bodies'
@@ -105,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/drama'
+    | '/process'
     | '/spending'
     | '/bodies/$bodySlug'
     | '/bodies/'
@@ -115,6 +127,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   DramaRoute: typeof DramaRoute
+  ProcessRoute: typeof ProcessRoute
   SpendingRoute: typeof SpendingRoute
   BodiesBodySlugRoute: typeof BodiesBodySlugRoute
   BodiesIndexRoute: typeof BodiesIndexRoute
@@ -142,6 +155,13 @@ declare module '@tanstack/react-router' {
       path: '/drama'
       fullPath: '/drama'
       preLoaderRoute: typeof DramaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/process': {
+      id: '/process'
+      path: '/process'
+      fullPath: '/process'
+      preLoaderRoute: typeof ProcessRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/spending': {
@@ -179,6 +199,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   DramaRoute: DramaRoute,
+  ProcessRoute: ProcessRoute,
   SpendingRoute: SpendingRoute,
   BodiesBodySlugRoute: BodiesBodySlugRoute,
   BodiesIndexRoute: BodiesIndexRoute,

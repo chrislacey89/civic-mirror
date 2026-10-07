@@ -200,7 +200,7 @@ export function LandingPage({
 					<div className="border border-[var(--rule)] bg-[var(--ink)] p-5 text-[var(--paper)]">
 						<p className="kicker text-[var(--highlight)]">The Weekly Digest</p>
 						<h3 className="display mt-2 text-[22px] leading-[1.15] text-[var(--paper)]">
-							Every Friday. One email. Decisions, drama, and where the money
+							Every Friday. One email. Decisions, process, and where the money
 							went.
 						</h3>
 						<div className="mt-4 flex border-2 border-[var(--highlight)] bg-[var(--ink)]">

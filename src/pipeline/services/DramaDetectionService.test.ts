@@ -18,14 +18,41 @@ that have not been formally approved." The motion passed 4-1.
 const ZERO_CATEGORY_SCORES = {
 	procedural_breakdown: { score: 0 as const, evidence_quotes: [] },
 	question_looping: { score: 0 as const, evidence_quotes: [] },
-	defensive_hedging: { score: 0 as const, evidence_quotes: [] },
-	timeline_pressure: { score: 0 as const, evidence_quotes: [] },
+	unanswered_questions: { score: 0 as const, evidence_quotes: [] },
+	undecided_time: { score: 0 as const, evidence_quotes: [] },
 	improvised_workarounds: { score: 0 as const, evidence_quotes: [] },
-	visible_dissent: { score: 0 as const, evidence_quotes: [] },
+	repeat_deferrals: { score: 0 as const, evidence_quotes: [] },
 	post_hoc_corrections: { score: 0 as const, evidence_quotes: [] },
 };
 
 describe("verifyEvidenceQuotes", () => {
+	it("verifies a quote that spans an inline timestamp marker", () => {
+		const verified = verifyEvidenceQuotes(
+			{ score: 1, evidence_quotes: ["we will table this until next month"] },
+			"[00:00] Chair: we will table this [00:30] until next month",
+		);
+		expect(verified.score).toBe(1);
+		expect(verified.evidence_quotes).toHaveLength(1);
+	});
+
+	it("does not verify a quote made only of timestamp markers", () => {
+		const verified = verifyEvidenceQuotes(
+			{ score: 2, evidence_quotes: ["[00:00]", "[12:00] [32:00]"] },
+			"[00:00] Chair: we will table this [00:30] until next month",
+		);
+		expect(verified.evidence_quotes).toEqual([]);
+		expect(verified.score).toBe(0);
+	});
+
+	it("does not verify an empty or whitespace-only quote", () => {
+		const verified = verifyEvidenceQuotes(
+			{ score: 1, evidence_quotes: ["", "   "] },
+			SOURCE_TEXT,
+		);
+		expect(verified.evidence_quotes).toEqual([]);
+		expect(verified.score).toBe(0);
+	});
+
 	it("keeps quotes that appear verbatim in the source text", () => {
 		const verified = verifyEvidenceQuotes(
 			{
@@ -103,7 +130,7 @@ describe("recomputeLevelFromScores", () => {
 		const assessment = {
 			category_scores: {
 				...ZERO_CATEGORY_SCORES,
-				visible_dissent: { score: 3 as const, evidence_quotes: ["a"] },
+				repeat_deferrals: { score: 3 as const, evidence_quotes: ["a"] },
 				procedural_breakdown: { score: 3 as const, evidence_quotes: ["b"] },
 			},
 			level: "bumpy" as const, // 3+3 = 6 → bumpy
@@ -121,7 +148,7 @@ describe("recomputeLevelFromScores", () => {
 		const assessment = {
 			category_scores: {
 				...ZERO_CATEGORY_SCORES,
-				visible_dissent: { score: 3 as const, evidence_quotes: ["a"] },
+				repeat_deferrals: { score: 3 as const, evidence_quotes: ["a"] },
 			},
 			level: "off-the-rails" as const, // sum=3 → routine
 			confidence: 0.9,
@@ -140,7 +167,7 @@ describe("dramaAssessmentSchema", () => {
 		const bad = {
 			category_scores: {
 				...ZERO_CATEGORY_SCORES,
-				visible_dissent: { score: 4, evidence_quotes: [] },
+				repeat_deferrals: { score: 4, evidence_quotes: [] },
 			},
 			level: "routine",
 			confidence: 0.5,
@@ -155,7 +182,7 @@ describe("dramaAssessmentSchema", () => {
 		const bad = {
 			category_scores: {
 				...ZERO_CATEGORY_SCORES,
-				visible_dissent: {
+				repeat_deferrals: {
 					score: 2,
 					evidence_quotes: ["one", "two", "three"],
 				},
@@ -186,7 +213,7 @@ describe("DramaDetectionServiceLive", () => {
 	const STUB_OUTPUT = {
 		category_scores: {
 			...ZERO_CATEGORY_SCORES,
-			visible_dissent: {
+			repeat_deferrals: {
 				score: 2 as const,
 				evidence_quotes: [
 					"We are voting on positions that have not been formally approved.",
@@ -220,7 +247,7 @@ describe("DramaDetectionServiceLive", () => {
 
 		expect(result.model).toBe("gemini-2.5-flash");
 		expect(result.promptVersion).toBe("v1");
-		expect(result.category_scores.visible_dissent.score).toBe(2);
+		expect(result.category_scores.repeat_deferrals.score).toBe(2);
 	});
 
 	it("downgrades a category to 0 when all its quotes are fabricated", async () => {
@@ -228,7 +255,7 @@ describe("DramaDetectionServiceLive", () => {
 			...STUB_OUTPUT,
 			category_scores: {
 				...ZERO_CATEGORY_SCORES,
-				timeline_pressure: {
+				undecided_time: {
 					score: 2 as const,
 					evidence_quotes: ["never said", "also never said"],
 				},
@@ -253,10 +280,8 @@ describe("DramaDetectionServiceLive", () => {
 
 		const result = await Effect.runPromise(program);
 
-		expect(result.category_scores.timeline_pressure.score).toBe(0);
-		expect(result.category_scores.timeline_pressure.evidence_quotes).toEqual(
-			[],
-		);
+		expect(result.category_scores.undecided_time.score).toBe(0);
+		expect(result.category_scores.undecided_time.evidence_quotes).toEqual([]);
 	});
 
 	it("overrides level to match the mechanical sum", async () => {
@@ -265,7 +290,7 @@ describe("DramaDetectionServiceLive", () => {
 			...STUB_OUTPUT,
 			category_scores: {
 				...ZERO_CATEGORY_SCORES,
-				visible_dissent: {
+				repeat_deferrals: {
 					score: 3 as const,
 					evidence_quotes: [
 						"We are voting on positions that have not been formally approved.",

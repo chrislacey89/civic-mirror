@@ -30,6 +30,25 @@ describe("formatTranscriptWithTimestamps", () => {
 		});
 	});
 
+	describe("YouTube captions with segments (production shape)", () => {
+		it("inlines MM:SS markers from segment offsets, at most every 30s", () => {
+			const input = {
+				source: "captions" as const,
+				rawText: "Call to order Roll call Budget item Vote",
+				segments: [
+					{ text: "Call to order", startMs: 0, durationMs: 2000 },
+					{ text: "Roll call", startMs: 10000, durationMs: 2000 },
+					{ text: "Budget item", startMs: 90000, durationMs: 2000 },
+					{ text: "Vote", startMs: 3_900_000, durationMs: 2000 },
+				],
+			};
+
+			expect(formatTranscriptWithTimestamps(input)).toBe(
+				"[00:00] Call to order Roll call [01:30] Budget item [65:00] Vote",
+			);
+		});
+	});
+
 	describe("Whisper segments (reconstruction)", () => {
 		it("reconstructs transcript with MM:SS markers placed before each segment", () => {
 			const input = {

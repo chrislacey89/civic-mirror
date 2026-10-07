@@ -25,7 +25,7 @@ A GitHub Actions workflow runs the pipeline every Sunday. Failures and zero-resu
 
 **Being honest about limits.** Figures that came from OCR carry a small `?` badge. Meetings whose documents couldn't be extracted show only a link to the source PDF. Civic Mirror is a starting point for an informed resident, not a replacement for the minutes.
 
-**In progress: Drama Watch.** Drama Watch flags meetings where more than ten minutes went to circular debate, fixations, or personal grievances. It's being added to the pipeline now.
+**In progress: Process Watch.** Process Watch notes where a meeting's process broke down: unclear approvals, items revisited without resolution, and time spent without a decision. It scores how the body conducted its business, not whether its decisions were right. It's being added to the pipeline now.
 
 ## Stack
 

@@ -50,6 +50,53 @@ describe("TranscriptionService", () => {
 			});
 		});
 
+		it("converts classic-format offsets from seconds to milliseconds", async () => {
+			const classicSegments = [
+				{ text: "Meeting called to order.", duration: 3.5, offset: 0 },
+				{ text: "Motion to approve.", duration: 4, offset: 3.5 },
+				{ text: "Second.", duration: 2.25, offset: 7200 },
+			];
+
+			const program = Effect.gen(function* () {
+				const service = yield* TranscriptionService;
+				return yield* service.transcribe("classic-video-id");
+			}).pipe(
+				Effect.provide(
+					YouTubeCaptionProviderLive({
+						fetchTranscriptFn: async () => classicSegments,
+					}),
+				),
+			);
+
+			const result = await Effect.runPromise(program);
+
+			expect(result.segments.map((s) => s.startMs)).toEqual([0, 3500, 7200000]);
+			expect(result.segments.map((s) => s.durationMs)).toEqual([
+				3500, 4000, 2250,
+			]);
+		});
+
+		it("does not rescale integer millisecond offsets", async () => {
+			const program = Effect.gen(function* () {
+				const service = yield* TranscriptionService;
+				return yield* service.transcribe("srv3-video-id");
+			}).pipe(
+				Effect.provide(
+					YouTubeCaptionProviderLive({
+						fetchTranscriptFn: async () => [
+							{ text: "Opening.", duration: 2500, offset: 1000 },
+							{ text: "Closing.", duration: 4000, offset: 7200000 },
+						],
+					}),
+				),
+			);
+
+			const result = await Effect.runPromise(program);
+
+			expect(result.segments.map((s) => s.startMs)).toEqual([1000, 7200000]);
+			expect(result.segments.map((s) => s.durationMs)).toEqual([2500, 4000]);
+		});
+
 		it("maps youtube-transcript errors to TranscriptionError", async () => {
 			const mockFetchTranscript = async () => {
 				throw new Error("Transcript not available");
