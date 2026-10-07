@@ -202,11 +202,9 @@ describe("MeetingDetailView — summary sources", () => {
 			/>,
 		);
 
-		expect(
-			screen.getByText(
-				"This summary was built from the meeting video and the official documents.",
-			),
-		).toBeDefined();
+		screen.getByText(
+			"This summary was built from the meeting video and the official documents.",
+		);
 		expect(
 			screen
 				.getByRole("link", { name: /Watch the meeting video/ })
@@ -222,15 +220,11 @@ describe("MeetingDetailView — summary sources", () => {
 	it("says a documents-only summary was built from the official documents, with no video link or notice", () => {
 		render(<MeetingDetailView meeting={makeMeeting()} />);
 
-		expect(
-			screen.getByText("This summary was built from the official documents."),
-		).toBeDefined();
-		expect(
-			screen.getByRole("link", { name: /View minutes PDF/ }),
-		).toBeDefined();
+		screen.getByText("This summary was built from the official documents.");
+		screen.getByRole("link", { name: /View minutes PDF/ });
 		expect(screen.queryByRole("link", { name: /video/i })).toBeNull();
 		expect(screen.queryByText(/video alone/)).toBeNull();
-		expect(screen.getByText("Key Highlights")).toBeDefined();
+		screen.getByText("Key Highlights");
 	});
 
 	it("tells the reader a video-only summary came from the video alone and that minutes are not yet posted", () => {
@@ -251,8 +245,8 @@ describe("MeetingDetailView — summary sources", () => {
 				.getByRole("link", { name: /Watch the meeting video/ })
 				.getAttribute("href"),
 		).toBe(VIDEO_URL);
-		expect(screen.getByText("Key Highlights")).toBeDefined();
-		expect(screen.getByText("Sale Street Road Repairs")).toBeDefined();
+		screen.getByText("Key Highlights");
+		screen.getByText("Sale Street Road Repairs");
 		expect(screen.queryByText(/couldn't extract readable text/)).toBeNull();
 	});
 
@@ -269,9 +263,7 @@ describe("MeetingDetailView — summary sources", () => {
 			"This summary was built from the meeting video alone.",
 		);
 		expect(screen.queryByText(/not yet posted/)).toBeNull();
-		expect(
-			screen.getByRole("link", { name: /View minutes PDF/ }),
-		).toBeDefined();
+		screen.getByRole("link", { name: /View minutes PDF/ });
 	});
 
 	it("lists each disagreement with what the documents and the video say, and says the summary uses the documents' figure", () => {
@@ -312,7 +304,7 @@ describe("MeetingDetailView — summary sources", () => {
 		expect(items).toHaveLength(expected.length);
 		expected.forEach((want, i) => {
 			const item = items[i];
-			expect(within(item).getByText(want.topic)).toBeTruthy();
+			within(item).getByText(want.topic);
 			// Each value must sit in the line under its own label.
 			const documentsLine = within(item)
 				.getByText("The documents say:")
