@@ -786,13 +786,8 @@ function processPlaylistVideo(
 	| AlertService
 > {
 	return Effect.gen(function* () {
-		// A dry run writes nothing, so it only reports what it would hold.
 		const hold = (videoHold: VideoHold) =>
-			config.dryRun
-				? Effect.log("youtube.video.would-hold").pipe(
-						Effect.annotateLogs({ reason: videoHold.reason }),
-					)
-				: holdVideoAndAlert(body, video, videoHold);
+			holdVideoAndAlert(body, video, videoHold, config.dryRun);
 
 		// The publish date is the day the recording reached the playlist, which
 		// trails the meeting and is shared by videos posted together, and a
@@ -889,14 +884,22 @@ type VideoHold = Pick<
 /**
  * Records `video` as held and alerts the operator the first time only. The
  * playlist is re-read on every run, so the alert follows the write, not the
- * decision to hold.
+ * decision to hold. A dry run writes and alerts nothing, so it only reports
+ * what it would hold.
  */
 function holdVideoAndAlert(
 	body: BodyConfig,
 	video: VideoRef,
 	hold: VideoHold,
+	dryRun: boolean,
 ): Effect.Effect<void, DatabaseError, StorageService | AlertService> {
 	return Effect.gen(function* () {
+		if (dryRun) {
+			yield* Effect.log("youtube.video.would-hold").pipe(
+				Effect.annotateLogs({ reason: hold.reason }),
+			);
+			return;
+		}
 		const storage = yield* StorageService;
 		const { created } = yield* storage.holdVideo({
 			bodySlug: body.slug,

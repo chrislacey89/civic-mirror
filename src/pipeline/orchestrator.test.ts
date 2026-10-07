@@ -1951,7 +1951,7 @@ describe("runPipeline video path", () => {
 			const log = emptyCallLog();
 
 			await Effect.runPromise(
-				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold).pipe(
+				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold, false).pipe(
 					Effect.provide(buildStubLayers({ log })),
 				),
 			);
@@ -1967,11 +1967,24 @@ describe("runPipeline video path", () => {
 			const log = emptyCallLog();
 
 			await Effect.runPromise(
-				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold).pipe(
+				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold, false).pipe(
 					Effect.provide(buildStubLayers({ log, heldVideoIds: ["regular"] })),
 				),
 			);
 
+			expect(log.alert).toEqual([]);
+		});
+
+		it("records no hold and sends no alert on a dry run", async () => {
+			const log = emptyCallLog();
+
+			await Effect.runPromise(
+				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold, true).pipe(
+					Effect.provide(buildStubLayers({ log })),
+				),
+			);
+
+			expect(log.held).toEqual([]);
 			expect(log.alert).toEqual([]);
 		});
 	});
