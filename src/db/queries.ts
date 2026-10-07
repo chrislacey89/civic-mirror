@@ -591,18 +591,18 @@ export type MeetingDetail = {
 };
 
 /**
- * The kinds a summary was built from. A summary that recorded none takes them
- * from the rows attached to its meeting.
+ * The kinds a summary was built from. A summary that recorded none predates
+ * video summaries, so it was built from the documents when the meeting has any;
+ * only a meeting with no documents falls back to its transcript.
  */
 function summarySourceKinds(
 	stored: SourceKind[],
 	attached: { hasDocuments: boolean; hasTranscript: boolean },
 ): SourceKind[] {
 	if (stored.length > 0) return stored;
-	const kinds: SourceKind[] = [];
-	if (attached.hasDocuments) kinds.push("documents");
-	if (attached.hasTranscript) kinds.push("transcript");
-	return kinds;
+	if (attached.hasDocuments) return ["documents"];
+	if (attached.hasTranscript) return ["transcript"];
+	return [];
 }
 
 /**

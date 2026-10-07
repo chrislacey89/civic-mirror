@@ -980,7 +980,7 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 		expect(JSON.stringify(result)).not.toContain(TRANSCRIPT_TEXT);
 	});
 
-	it("derives the kinds from the attached rows when the summary stored none", async () => {
+	it("derives the kinds from the attached rows when the summary stored none, never crediting a video that joined later", async () => {
 		const db = await createTestDb();
 		const body = await seedBody(db);
 		await seedSourcedMeeting(db, body.id, {
@@ -1009,8 +1009,8 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 			videoUrl: VIDEO_URL,
 		});
 		expect(await sourcesOn("2026-04-27")).toEqual({
-			kinds: ["documents", "transcript"],
-			videoUrl: VIDEO_URL,
+			kinds: ["documents"],
+			videoUrl: null,
 		});
 	});
 
