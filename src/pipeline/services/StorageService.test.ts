@@ -1573,5 +1573,27 @@ describe("StorageService", () => {
 			expect(all[0].createdAt).toBeInstanceOf(Date);
 			expect(planOnly.map((v) => v.videoId)).toEqual(["vid-held-2"]);
 		});
+
+		it("listHeldVideos reports a row with no created_at as null", async () => {
+			const db = await createTestDb();
+			const [body] = await db
+				.insert(schema.governingBodies)
+				.values({ name: "Plan Commission", slug: "plan", type: "town" })
+				.returning();
+			await db
+				.insert(schema.heldVideos)
+				.values({
+					bodyId: body.id,
+					videoId: "vid-no-created-at",
+					title: "Plan Commission",
+					reason: "signals-disagree",
+					createdAt: null,
+				})
+				.run();
+
+			const [row] = await run(db, (s) => s.listHeldVideos());
+
+			expect(row.createdAt).toBeNull();
+		});
 	});
 });

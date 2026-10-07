@@ -123,7 +123,7 @@ type HeldVideoInput = {
 	candidateMeetingId?: number;
 };
 
-type HeldVideo = HeldVideoInput & { createdAt: Date };
+type HeldVideo = HeldVideoInput & { createdAt: Date | null };
 
 /** Every source a stored meeting holds, and what its current summary was built from. */
 type MeetingSources = {
@@ -488,7 +488,7 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						...(held.candidateMeetingId !== null
 							? { candidateMeetingId: held.candidateMeetingId }
 							: {}),
-						createdAt: held.createdAt ?? new Date(0),
+						createdAt: held.createdAt,
 					}));
 				},
 				catch: (error) =>
