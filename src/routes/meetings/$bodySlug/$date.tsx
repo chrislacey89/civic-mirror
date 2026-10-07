@@ -1,6 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { FiscalDecisionDetail, MeetingDetail } from "#/db/queries.ts";
-import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
+import type {
+	FiscalDecisionDetail,
+	MeetingDetail,
+	SummarySources,
+} from "#/db/queries.ts";
+import type { SourceDisagreement } from "#/pipeline/sources.ts";
 import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
 
 /**
@@ -71,9 +75,7 @@ function MeetingDetailPage() {
 export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 	const isOcr = meeting.extractionMethod === "ocr";
 	const isUnreadable = meeting.extractionMethod === "unreadable";
-	const isVideoOnly =
-		meeting.summarySources.kinds.length === 1 &&
-		meeting.summarySources.kinds[0] === "transcript";
+	const isVideoOnly = meeting.summarySources.origin === "video";
 
 	return (
 		<main className="page-wrap px-4 pb-8 pt-6">
@@ -255,8 +257,12 @@ function PrimarySources({
 }: {
 	meeting: Pick<MeetingDetail, "documents" | "summarySources">;
 }) {
-	const { kinds, videoUrl } = meeting.summarySources;
-	const builtFrom = builtFromLine(kinds);
+	const sources = meeting.summarySources;
+	const builtFrom = builtFromLine(sources);
+	const videoUrl =
+		sources.origin === "video" || sources.origin === "both"
+			? sources.videoUrl
+			: null;
 
 	if (meeting.documents.length === 0 && !videoUrl) return null;
 
@@ -320,18 +326,18 @@ function PrimarySources({
 }
 
 /** The sentence naming a summary's sources, or null when it recorded none. */
-function builtFromLine(kinds: readonly SourceKind[]): string | null {
-	const fromVideo = kinds.includes("transcript");
-	const fromDocuments = kinds.includes("documents");
-	if (fromVideo && fromDocuments) {
-		return "This summary was built from the meeting video and the official documents.";
+function builtFromLine(sources: SummarySources): string | null {
+	switch (sources.origin) {
+		case "both":
+			return "This summary was built from the meeting video and the official documents.";
+		case "documents":
+			return "This summary was built from the official documents.";
+		// The video-only notice already says so.
+		case "video":
+			return null;
+		case "none":
+			return null;
 	}
-	// The video-only notice already says so.
-	if (fromVideo) return null;
-	if (fromDocuments) {
-		return "This summary was built from the official documents.";
-	}
-	return null;
 }
 
 const DISAGREEMENTS_HEADING_ID = "source-disagreements-heading";

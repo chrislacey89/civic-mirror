@@ -561,6 +561,17 @@ export type FiscalDecisionDetail = {
 };
 
 /**
+ * What a meeting's summary was built from. Only a summary built from the video
+ * carries a video link, and that link is null when the transcript recorded no
+ * URL. `none` is a meeting with no summary, or one with nothing attached.
+ */
+export type SummarySources =
+	| { origin: "none" }
+	| { origin: "documents" }
+	| { origin: "video"; videoUrl: string | null }
+	| { origin: "both"; videoUrl: string | null };
+
+/**
  * The "read shape" — a fully assembled meeting with all related records
  * joined together. This is what the server function returns to the UI.
  */
@@ -580,11 +591,8 @@ export type MeetingDetail = {
 		extractionMethod: ExtractionMethod;
 	}>;
 	summary: { highlights: string[]; prose: string; model: string } | null;
-	/**
-	 * What the summary was built from. `videoUrl` is set only when the video is
-	 * one of those sources; `kinds` is empty when there is no summary.
-	 */
-	summarySources: { kinds: readonly SourceKind[]; videoUrl: string | null };
+	/** What the summary was built from. */
+	summarySources: SummarySources;
 	/** Points where the documents and the video state different things. */
 	sourceDisagreements: readonly SourceDisagreement[];
 	fiscalDecisions: Array<FiscalDecisionDetail>;
@@ -608,6 +616,23 @@ function summarySourceKinds(
 	if (attached.hasDocuments) return ["documents"];
 	if (attached.hasTranscript) return ["transcript"];
 	return [];
+}
+
+/**
+ * The one place that decides what a summary was built from. `videoUrl` is the
+ * meeting's transcript link, and reaches the result only when the video is one
+ * of the summary's sources.
+ */
+function summarySourcesOf(
+	kinds: readonly SourceKind[],
+	videoUrl: string | null,
+): SummarySources {
+	const fromVideo = kinds.includes("transcript");
+	const fromDocuments = kinds.includes("documents");
+	if (fromVideo && fromDocuments) return { origin: "both", videoUrl };
+	if (fromVideo) return { origin: "video", videoUrl };
+	if (fromDocuments) return { origin: "documents" };
+	return { origin: "none" };
 }
 
 /**
@@ -686,9 +711,10 @@ export async function getMeetingByBodyAndDateQuery(
 				hasTranscript: transcriptLinks.length > 0,
 			})
 		: [];
-	const videoUrl = sourceKinds.includes("transcript")
-		? (transcriptLinks.find((t) => t.sourceUrl)?.sourceUrl ?? null)
-		: null;
+	const summarySources = summarySourcesOf(
+		sourceKinds,
+		transcriptLinks.find((t) => t.sourceUrl)?.sourceUrl ?? null,
+	);
 
 	const fiscals = await db
 		.select()
@@ -724,7 +750,7 @@ export async function getMeetingByBodyAndDateQuery(
 					model: summary.model,
 				}
 			: null,
-		summarySources: { kinds: sourceKinds, videoUrl },
+		summarySources,
 		sourceDisagreements: summary?.sourceDisagreements ?? [],
 		fiscalDecisions: fiscals.map((f) => ({
 			title: f.title,

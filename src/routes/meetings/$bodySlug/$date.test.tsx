@@ -28,7 +28,7 @@ function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
 			prose: "Council discussed infrastructure.",
 			model: "gemini-2.5-flash",
 		},
-		summarySources: { kinds: ["documents"], videoUrl: null },
+		summarySources: { origin: "documents" },
 		sourceDisagreements: [],
 		fiscalDecisions: [
 			{
@@ -195,7 +195,7 @@ describe("MeetingDetailView — summary sources", () => {
 			<MeetingDetailView
 				meeting={makeMeeting({
 					summarySources: {
-						kinds: ["documents", "transcript"],
+						origin: "both",
 						videoUrl: VIDEO_URL,
 					},
 				})}
@@ -238,7 +238,7 @@ describe("MeetingDetailView — summary sources", () => {
 			<MeetingDetailView
 				meeting={makeMeeting({
 					documents: [],
-					summarySources: { kinds: ["transcript"], videoUrl: VIDEO_URL },
+					summarySources: { origin: "video", videoUrl: VIDEO_URL },
 				})}
 			/>,
 		);
@@ -260,7 +260,7 @@ describe("MeetingDetailView — summary sources", () => {
 		render(
 			<MeetingDetailView
 				meeting={makeMeeting({
-					summarySources: { kinds: ["transcript"], videoUrl: VIDEO_URL },
+					summarySources: { origin: "video", videoUrl: VIDEO_URL },
 				})}
 			/>,
 		);
@@ -279,7 +279,7 @@ describe("MeetingDetailView — summary sources", () => {
 			<MeetingDetailView
 				meeting={makeMeeting({
 					summarySources: {
-						kinds: ["documents", "transcript"],
+						origin: "both",
 						videoUrl: VIDEO_URL,
 					},
 					sourceDisagreements: [
@@ -316,7 +316,7 @@ describe("MeetingDetailView — summary sources", () => {
 			<MeetingDetailView
 				meeting={makeMeeting({
 					summarySources: {
-						kinds: ["documents", "transcript"],
+						origin: "both",
 						videoUrl: VIDEO_URL,
 					},
 				})}

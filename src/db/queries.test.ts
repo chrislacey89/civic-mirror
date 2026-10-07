@@ -1040,7 +1040,7 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 		);
 
 		expect(result?.summarySources).toEqual({
-			kinds: ["documents", "transcript"],
+			origin: "both",
 			videoUrl: VIDEO_URL,
 		});
 		expect(JSON.stringify(result)).not.toContain(TRANSCRIPT_TEXT);
@@ -1067,16 +1067,14 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 			(await getMeetingByBodyAndDateQuery(db, body.slug, date))?.summarySources;
 
 		expect(await sourcesOn("2026-03-23")).toEqual({
-			kinds: ["documents"],
-			videoUrl: null,
+			origin: "documents",
 		});
 		expect(await sourcesOn("2026-04-13")).toEqual({
-			kinds: ["transcript"],
+			origin: "video",
 			videoUrl: VIDEO_URL,
 		});
 		expect(await sourcesOn("2026-04-27")).toEqual({
-			kinds: ["documents"],
-			videoUrl: null,
+			origin: "documents",
 		});
 	});
 
@@ -1096,8 +1094,7 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 		);
 
 		expect(result?.summarySources).toEqual({
-			kinds: ["documents"],
-			videoUrl: null,
+			origin: "documents",
 		});
 	});
 
@@ -1116,7 +1113,7 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 		);
 
 		expect(result?.summarySources).toEqual({
-			kinds: ["transcript"],
+			origin: "video",
 			videoUrl: null,
 		});
 	});
@@ -1138,7 +1135,7 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 		expect(result?.documents).toEqual([]);
 		expect(result?.summary?.prose).toBe("from the video");
 		expect(result?.summarySources).toEqual({
-			kinds: ["transcript"],
+			origin: "video",
 			videoUrl: VIDEO_URL,
 		});
 	});
@@ -1208,11 +1205,10 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 		);
 
 		expect(regular?.summarySources).toEqual({
-			kinds: ["documents"],
-			videoUrl: null,
+			origin: "documents",
 		});
 		expect(workSession?.summarySources).toEqual({
-			kinds: ["transcript"],
+			origin: "video",
 			videoUrl: "https://www.youtube.com/watch?v=worksession",
 		});
 	});
