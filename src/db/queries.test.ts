@@ -1101,6 +1101,26 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 		});
 	});
 
+	it("credits the video but gives no link when the transcript's sourceUrl is null", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSourcedMeeting(db, body.id, {
+			videoUrl: null,
+			summary: { sourceKinds: ["transcript"] },
+		});
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2026-03-23",
+		);
+
+		expect(result?.summarySources).toEqual({
+			kinds: ["transcript"],
+			videoUrl: null,
+		});
+	});
+
 	it("returns a video-only meeting, which has no documents, with its summary", async () => {
 		const db = await createTestDb();
 		const body = await seedBody(db);
