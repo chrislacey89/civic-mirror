@@ -2,7 +2,7 @@ import { Clock, Duration, Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
-import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
+import type { DramaCategory } from "#/lib/drama-levels.ts";
 import {
 	DatabaseError,
 	LlmError,
@@ -3739,13 +3739,15 @@ describe("runPipeline document regeneration", () => {
 			const meeting = await Effect.runPromise(
 				Effect.gen(function* () {
 					const storage = yield* StorageService;
-					const categoryScores = {} as Record<
-						DramaCategory,
-						DramaCategoryScoreInput
-					>;
-					for (const category of DRAMA_CATEGORIES) {
-						categoryScores[category] = { score: 0, evidenceQuotes: [] };
-					}
+					const categoryScores = {
+						procedural_breakdown: { score: 0, evidenceQuotes: [] },
+						question_looping: { score: 0, evidenceQuotes: [] },
+						defensive_hedging: { score: 0, evidenceQuotes: [] },
+						timeline_pressure: { score: 0, evidenceQuotes: [] },
+						improvised_workarounds: { score: 0, evidenceQuotes: [] },
+						visible_dissent: { score: 0, evidenceQuotes: [] },
+						post_hoc_corrections: { score: 0, evidenceQuotes: [] },
+					} satisfies Record<DramaCategory, DramaCategoryScoreInput>;
 					const stored = yield* storage.storeMeeting({
 						...key,
 						meetingType: "regular",
