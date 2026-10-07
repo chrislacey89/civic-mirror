@@ -197,6 +197,9 @@ function buildStubLayers(config: StubConfig) {
 			Effect.sync(() => config.meetingSourceState?.(key) ?? null),
 		hasTranscriptForVideo: (sourceUrl) =>
 			Effect.sync(() => (config.storedVideoUrls ?? []).includes(sourceUrl)),
+		getMeetingSources: () =>
+			Effect.succeed({ documents: [], transcript: null, summary: null }),
+		replaceMeetingSummary: () => Effect.void,
 	});
 
 	const alert = Layer.succeed(AlertService, {
