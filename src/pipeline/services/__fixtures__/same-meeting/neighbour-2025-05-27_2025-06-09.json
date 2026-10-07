@@ -1,0 +1,46 @@
+{
+	"transcriptDate": "2025-05-27",
+	"documentsDate": "2025-06-09",
+	"sameMeeting": false,
+	"recordedProbability": 0.01,
+	"transcriptSummary": {
+		"highlights": [
+			"Town Council approved a bid of $244,215.10 for ENB Paving for the Community Crossing Matching Grant road improvements.",
+			"Ordinance 2025-13, which proposed rental fees for the Ellettsville Heritage Center (a $250 rental fee and a $500 deposit), was tabled for further discussion regarding resident/non-resident rates, fee waivers, and event insurance.",
+			"The Clerk-Treasurer announced the initiation of zero-based budgeting for the upcoming budget season and the development of a comprehensive financial plan."
+		],
+		"prose": "The Ellettsville Town Council convened on May 27, 2025, opening with a public hearing for the Community Crossing Matching Grant. The council approved the low bid of $244,215.10 from ENB Paving for road improvements under the grant, with the town responsible for a 25% match. Following this, minutes from previous meetings and accounts payable/payroll vouchers were approved. The first reading of Ordinance 2025-14, which re-certifies current legislative body districts, prompted discussion regarding population changes, unannexed areas within the town, and the need for future re-evaluation. Ordinance 2025-15, adopting construction standards and specifications for roadways, also had its first reading, with a minor amendment noted for a storm water management chapter reference. On its second reading, Ordinance 2025-13, proposing a $250 rental fee and a $500 deposit for the Ellettsville Heritage Center, sparked extensive debate. Concerns were raised about the affordability of the deposit, and the council decided to table the ordinance to further explore options for resident/non-resident fees, charitable waivers, and the possibility of accepting event insurance in lieu of a deposit. During supervisor comments, the Police Chief announced the Ellettsville Fire Department received a grant for a UTV and confirmed fireworks on July 5th, funded by donations. The Clerk-Treasurer detailed plans to implement zero-based budgeting for the next fiscal year and is working with Baker Tilly on a comprehensive financial plan, with budget forms and a calendar to be distributed soon. The Town Manager also announced a tentative ribbon-cutting and open house for the new Department of Public Works building on June 23rd.",
+		"fiscalDecisions": [
+			{
+				"title": "Approval of bid for Community Crossing Matching Grant",
+				"originalAmount": "$244,215.10"
+			},
+			{
+				"title": "Ordinance 2025-13 to set fees for the rental of Ellettsville Heritage Center",
+				"originalAmount": "$250",
+				"ordinanceNumber": "2025-13"
+			}
+		]
+	},
+	"documentsSummary": {
+		"highlights": [
+			"Approved Accounts Payable Vouchers and Payroll.",
+			"Approved Amended Ordinance 2025-13 to set Ellettsville Heritage Center rental fees ($125/day for residents/property owners, $250/day for non-residents/non-property owners, with a $500 damage deposit option).",
+			"Approved Ordinance 2025-14 Recertifying Current Legislative Body Districts.",
+			"Approved Ordinance 2025-15 to Adopt Town Construction Standards & Specifications Manual for Roadways.",
+			"Re-appointed Jack Neal and Brandon Wright to the Ellettsville Building Corporation board.",
+			"Approved the Richland Township Lease Termination Agreement."
+		],
+		"prose": "The Ellettsville Town Council held a regular meeting on June 9, 2025, presided over by Scott Oldham. Members present included Scott Oldham, William Ellis, Dan Swafford, Trevor Sager, and Pamela Samples. Noelle Conyer, Clerk Treasurer, was absent, with Deputy Clerk Kelley Cantrell serving in her stead. The council approved the minutes from the May 27, 2025, regular meeting and authorized the payment of Accounts Payable Vouchers and Payroll. An amended Ordinance 2025-13 was approved, establishing new rental fees for the Ellettsville Heritage Center: $125 per day for residents/property owners and $250 per day for non-residents/non-property owners, including a $500 damage deposit option or proof of insurance. The council also approved Ordinance 2025-14, recertifying the current legislative body districts based on the last census, and Ordinance 2025-15, adopting the Town of Ellettsville Construction Standards & Specifications Manual for Roadways. Jack Neal and Brandon Wright were re-appointed to the Ellettsville Building Corporation board, with Carly Woodruff's reappointment deferred pending confirmation of residency. The Richland Township Lease Termination Agreement was approved, facilitating the town's vacation of the Park Street property by July 1st. During the Privilege of the Floor, residents expressed concerns about ongoing flooding, prompting Town Manager Michael Farmer to discuss plans for culvert installation at the McNeely Street Bridge pending county approval. Supervisor comments included updates on the new DPW Building ribbon cutting, utility department move, wastewater plant incidents, and the upcoming fireworks display on July 5th. Planner Denise Line reported on a boundary update with the Census Bureau. Councilman William Ellis suggested considering plans for the country's 250th anniversary next year, such as flags and hydrant painting. The meeting adjourned at 7:12 p.m.",
+		"fiscalDecisions": [
+			{
+				"title": "Approval of Accounts Payable Vouchers and Payroll",
+				"originalAmount": "Accounts Payable Vouchers and Payroll"
+			},
+			{
+				"title": "Approval of Amended Ordinance 2025-13 to Set Ellettsville Heritage Center Rental Fees",
+				"originalAmount": "Fees: $125 per day (resident/property owner), $250 per day (non-resident/non-property owner); Damage Deposit: $500"
+			}
+		]
+	}
+}

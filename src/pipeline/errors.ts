@@ -35,6 +35,11 @@ export class LlmError extends Data.TaggedError("LlmError")<{
 	readonly message: string;
 }> {}
 
+/** The same-meeting decision call failed or returned an unusable probability. */
+export class MeetingMatchError extends Data.TaggedError("MeetingMatchError")<{
+	readonly message: string;
+}> {}
+
 /** Database read/write failure — wraps Drizzle/SQLite exceptions. */
 export class DatabaseError extends Data.TaggedError("DatabaseError")<{
 	readonly operation: string;
