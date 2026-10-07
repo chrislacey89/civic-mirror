@@ -182,7 +182,9 @@ type RunPipelineInput = {
 	 * yield nothing — that the PDF is `unreadable`. The orchestrator persists
 	 * the `unreadable` case as a document row with empty text and skips
 	 * summarization + fiscal extraction for that meeting instead of treating
-	 * it as a pipeline failure.
+	 * it as a pipeline failure. The exception is a meeting that has a video
+	 * and no documents: its unreadable PDFs are skipped and logged, not
+	 * persisted, so a later readable one is still checked against the video.
 	 */
 	extractPdfText: (bytes: ArrayBuffer) => Promise<ExtractResult>;
 	/** When true, run all stages except storage and alerts — for smoke-testing. */
@@ -784,9 +786,10 @@ function processEgovListing(
 
 		// Unreadable branch: persist the document row so the meeting appears in
 		// listings with a link to the PDF, but skip summarization + fiscal
-		// extraction entirely. This is the "silent hole" the PRD is eliminating
-		// — previously, a scanned PDF would fail extraction and the whole row
-		// would be dropped, making the meeting invisible on the public site.
+		// extraction entirely. Dropping the row would make a meeting whose only
+		// source is a scanned PDF invisible on the public site. The exception
+		// is a meeting that already has a video and no documents, which stores
+		// nothing.
 		if (extraction.method === "unreadable") {
 			if (config.dryRun) return { processed: 1, errors: 0 };
 
@@ -795,6 +798,13 @@ function processEgovListing(
 			// without a check. The listing is read again on every run, so it is
 			// settled once a readable document arrives.
 			if (existing && existing.transcriptSourceUrl !== null) {
+				yield* Effect.log("egov.listing.skipped").pipe(
+					Effect.annotateLogs({
+						meetingId: existing.meetingId,
+						date: meetingDate,
+						reason: "unreadable-for-video-only-meeting",
+					}),
+				);
 				return { processed: 1, errors: 0 };
 			}
 
@@ -1039,8 +1049,9 @@ function processFinalsiteListing(
 
 		// If every document for the meeting came back unreadable, skip
 		// summarization and persist the meeting + document rows so the meeting
-		// still appears in listings with a PDF link. Otherwise summarize the
-		// readable documents together and persist normally.
+		// still appears in listings with a PDF link, unless the meeting already
+		// has a video and no documents, which stores nothing. Otherwise
+		// summarize the readable documents together and persist normally.
 		const allUnreadable = documents.every(
 			(d) => d.extractionMethod === "unreadable",
 		);
@@ -1053,6 +1064,14 @@ function processFinalsiteListing(
 			// without a check. The listing is read again on every run, so it is
 			// settled once a readable document arrives.
 			if (existing && existing.transcriptSourceUrl !== null) {
+				yield* Effect.log("finalsite.listing.skipped").pipe(
+					Effect.annotateLogs({
+						meetingId: existing.meetingId,
+						date: meetingDate,
+						session,
+						reason: "unreadable-for-video-only-meeting",
+					}),
+				);
 				return { processed: 1, errors: 0 };
 			}
 

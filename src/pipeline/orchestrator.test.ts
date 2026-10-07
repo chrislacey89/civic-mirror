@@ -4030,6 +4030,25 @@ describe("runPipeline document regeneration", () => {
 			expect(video.held).toHaveLength(1);
 		});
 
+		it("logs egov.listing.skipped with the meeting and a reason when an unreadable document is skipped for a meeting that has a transcript and no documents", async () => {
+			const { db, run } = await setup();
+			const meetingId = await seedVideoMeeting(db, COUNCIL_MEETING);
+
+			const { captured } = await run(
+				{ egovListings: [MINUTES] },
+				COUNCIL,
+				true,
+			);
+
+			expect(
+				findStageLog(captured, "egov.listing.skipped")?.annotations,
+			).toMatchObject({
+				meetingId,
+				date: COUNCIL_MEETING.date,
+				reason: "unreadable-for-video-only-meeting",
+			});
+		});
+
 		describe("on the Finalsite path", () => {
 			const LISTING: FinalsiteMeetingListing = {
 				date: "January 20, 2026",
@@ -4108,6 +4127,26 @@ describe("runPipeline document regeneration", () => {
 				const video = await videoRows(db);
 				expect(video.transcripts).toEqual([]);
 				expect(video.held).toHaveLength(1);
+			});
+
+			it("logs finalsite.listing.skipped with the meeting and a reason when an all-unreadable listing is skipped for a meeting that has a transcript and no documents", async () => {
+				const { db, run } = await setup();
+				const meetingId = await seedVideoMeeting(db, BOARD_MEETING);
+
+				const { captured } = await run(
+					{ finalsiteListings: [LISTING] },
+					BOARD,
+					true,
+				);
+
+				expect(
+					findStageLog(captured, "finalsite.listing.skipped")?.annotations,
+				).toMatchObject({
+					meetingId,
+					date: BOARD_MEETING.date,
+					session: BOARD_MEETING.session,
+					reason: "unreadable-for-video-only-meeting",
+				});
 			});
 
 			it("takes the documents-only summary, detaches the transcript with its drama assessment and holds the video when the check returns hold", async () => {
