@@ -107,6 +107,21 @@ const testMeetingInput = {
 	],
 };
 
+type TestDb = Awaited<ReturnType<typeof createTestDb>>;
+
+function run<A>(
+	db: TestDb,
+	use: (
+		storage: Effect.Success<typeof StorageService>,
+	) => Effect.Effect<A, unknown>,
+) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			return yield* use(yield* StorageService);
+		}).pipe(Effect.provide(StorageServiceLive(db))),
+	);
+}
+
 describe("StorageService", () => {
 	describe("storeMeeting", () => {
 		it("rolls back all records when any part of the transaction fails", async () => {
@@ -1340,19 +1355,6 @@ describe("StorageService", () => {
 	describe("getMeetingSources", () => {
 		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
 
-		function run<A>(
-			db: Awaited<ReturnType<typeof createTestDb>>,
-			use: (
-				storage: Effect.Success<typeof StorageService>,
-			) => Effect.Effect<A, unknown>,
-		) {
-			return Effect.runPromise(
-				Effect.gen(function* () {
-					return yield* use(yield* StorageService);
-				}).pipe(Effect.provide(StorageServiceLive(db))),
-			);
-		}
-
 		it("returns a meeting's documents, transcript, and the source kinds and fingerprint of its summary", async () => {
 			const db = await createTestDb();
 			const sources = await run(db, (storage) =>
@@ -1446,19 +1448,6 @@ describe("StorageService", () => {
 	});
 
 	describe("stampSummaryFingerprint", () => {
-		function run<A>(
-			db: Awaited<ReturnType<typeof createTestDb>>,
-			use: (
-				storage: Effect.Success<typeof StorageService>,
-			) => Effect.Effect<A, unknown>,
-		) {
-			return Effect.runPromise(
-				Effect.gen(function* () {
-					return yield* use(yield* StorageService);
-				}).pipe(Effect.provide(StorageServiceLive(db))),
-			);
-		}
-
 		it("sets the fingerprint on a summary stored without one and changes nothing else", async () => {
 			const db = await createTestDb();
 			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));
@@ -1529,19 +1518,6 @@ describe("StorageService", () => {
 				{ topic: "Vote count", documentsSay: "4-1", transcriptSays: "5-0" },
 			],
 		};
-
-		function run<A>(
-			db: Awaited<ReturnType<typeof createTestDb>>,
-			use: (
-				storage: Effect.Success<typeof StorageService>,
-			) => Effect.Effect<A, unknown>,
-		) {
-			return Effect.runPromise(
-				Effect.gen(function* () {
-					return yield* use(yield* StorageService);
-				}).pipe(Effect.provide(StorageServiceLive(db))),
-			);
-		}
 
 		function store(
 			db: Awaited<ReturnType<typeof createTestDb>>,
@@ -1714,19 +1690,6 @@ describe("StorageService", () => {
 
 	describe("detachTranscript", () => {
 		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
-		function run<A>(
-			db: Awaited<ReturnType<typeof createTestDb>>,
-			use: (
-				storage: Effect.Success<typeof StorageService>,
-			) => Effect.Effect<A, unknown>,
-		) {
-			return Effect.runPromise(
-				Effect.gen(function* () {
-					return yield* use(yield* StorageService);
-				}).pipe(Effect.provide(StorageServiceLive(db))),
-			);
-		}
-
 		function seedMeeting(
 			db: Awaited<ReturnType<typeof createTestDb>>,
 			date: string,
