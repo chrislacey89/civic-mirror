@@ -11,8 +11,13 @@ import { fingerprintOfSources, type SourceKind } from "#/pipeline/sources.ts";
  * sources differs from the stored one, so calling it again with the same
  * sources costs no summarize call.
  *
- * A summary stored without a fingerprint never matches, so the caller decides
- * whether such a meeting is due: this function would regenerate it.
+ * A summary stored with an empty fingerprint predates fingerprints, and
+ * nothing is known about the sources it was built from. Having no fingerprint
+ * does not make it due, so it is left alone: regenerating on that alone would
+ * send every such meeting back through the summarizer. A caller that adds a
+ * source to such a meeting must first stamp the summary with the fingerprint
+ * of the sources it held (`stampSummaryFingerprint`), which makes it differ
+ * from the sources now held.
  */
 function regenerateMeetingSummary(input: {
 	meetingId: number;
@@ -32,6 +37,7 @@ function regenerateMeetingSummary(input: {
 			documents: held.documents,
 			transcriptUrl: held.transcript?.sourceUrl,
 		});
+		if (held.summary?.sourceFingerprint === "") return { regenerated: false };
 		if (held.summary?.sourceFingerprint === sourceFingerprint) {
 			return { regenerated: false };
 		}

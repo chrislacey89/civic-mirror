@@ -116,6 +116,17 @@ async function setup(options: {
 		}).pipe(Effect.provide(layers)),
 	);
 
+	// A summary stored by `storeMeeting` carries no fingerprint, which
+	// `regenerateMeetingSummary` treats as not due. Stamp one that differs from
+	// the sources held, as a summary built before a source arrived would have.
+	if (options.summarized !== false) {
+		await db
+			.update(schema.summaries)
+			.set({ sourceFingerprint: computeSourceFingerprint(["stale"]) })
+			.where(eq(schema.summaries.meetingId, meeting.id))
+			.run();
+	}
+
 	const regenerate = () =>
 		Effect.runPromise(
 			regenerateMeetingSummary({
@@ -287,5 +298,37 @@ describe("regenerateMeetingSummary", () => {
 		await expect(regenerate()).rejects.toThrow("quota exceeded");
 
 		expect(await rows()).toEqual(before);
+	});
+	it("leaves a summary stored without a fingerprint alone, and regenerates it once stamped with the fingerprint of fewer sources", async () => {
+		const { db, meeting, calls, layers, regenerate, rows } = await setup({
+			documents: [AGENDA, MINUTES],
+		});
+		await db
+			.update(schema.summaries)
+			.set({ sourceFingerprint: "" })
+			.where(eq(schema.summaries.meetingId, meeting.id))
+			.run();
+		const before = await rows();
+
+		const untouched = await regenerate();
+
+		expect(untouched).toEqual({ regenerated: false });
+		expect(calls).toHaveLength(0);
+		expect(await rows()).toEqual(before);
+
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				yield* storage.stampSummaryFingerprint({
+					meetingId: meeting.id,
+					sourceFingerprint: computeSourceFingerprint([AGENDA_URL]),
+				});
+			}).pipe(Effect.provide(layers)),
+		);
+
+		const stamped = await regenerate();
+
+		expect(stamped).toEqual({ regenerated: true });
+		expect(calls).toHaveLength(1);
 	});
 });

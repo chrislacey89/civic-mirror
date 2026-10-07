@@ -394,10 +394,8 @@ function iterateWithAlertRecovery<TItem, R>(
  * source dated both sets of documents itself.
  *
  * A listing is re-read on every run, so most calls bring nothing new. Those
- * cost no summarize call: `regenerateMeetingSummary` compares fingerprints,
- * and a summary stored without one is left alone until its meeting gains a
- * source, because an empty fingerprint matches nothing and would otherwise
- * send every such meeting back through the summarizer on a single run.
+ * cost no summarize call: `regenerateMeetingSummary` compares fingerprints
+ * and leaves a summary stored without one alone.
  */
 function attachDocumentsAndRegenerate(input: {
 	meetingId: number;
@@ -420,13 +418,13 @@ function attachDocumentsAndRegenerate(input: {
 		const bringsNewDocument = input.meeting.documents.some(
 			(d) => !heldUrls.has(d.sourceUrl),
 		);
-		if (!bringsNewDocument && held.summary?.sourceFingerprint === "") return;
 
 		if (bringsNewDocument) {
-			// A summary stored without a fingerprint would look current after the
-			// attach, so a failed regeneration would never be retried. Stamping it
-			// with the fingerprint of the sources it was built from first makes the
-			// attach leave it visibly behind.
+			// `regenerateMeetingSummary` leaves a summary stored without a
+			// fingerprint alone, and it would look current after the attach, so a
+			// failed regeneration would never be retried. Stamping it with the
+			// fingerprint of the sources it was built from first makes the attach
+			// leave it visibly behind and due.
 			if (held.summary?.sourceFingerprint === "") {
 				yield* storage.stampSummaryFingerprint({
 					meetingId: input.meetingId,
