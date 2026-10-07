@@ -12,7 +12,8 @@ import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
  * Three render branches keyed on `meeting.extractionMethod`:
  *   - `text-layer`: full Ledger layout (highlights, summary, receipts table)
  *   - `ocr`:        full layout plus OCR trust-disclosure banner and per-figure `?` badge
- *   - `unreadable`: status card + source PDF links only (no generated content)
+ *   - `unreadable`: status card + source PDF links only (no generated content),
+ *                   unless a summary exists (one built from the meeting video)
  */
 export const Route = createFileRoute("/meetings/$bodySlug/$date")({
 	validateSearch: (search: Record<string, unknown>): { session?: string } =>
@@ -69,7 +70,13 @@ function MeetingDetailPage() {
  */
 export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 	const isOcr = meeting.extractionMethod === "ocr";
-	const isUnreadable = meeting.extractionMethod === "unreadable";
+	// A meeting summarized from its video has no readable document, yet it is
+	// not unreadable: only a meeting with nothing to show gets the status card.
+	const isUnreadable =
+		meeting.extractionMethod === "unreadable" && meeting.summary === null;
+	const isVideoOnly =
+		meeting.summarySources.kinds.length === 1 &&
+		meeting.summarySources.kinds[0] === "transcript";
 
 	return (
 		<main className="page-wrap px-4 pb-8 pt-6">
@@ -81,6 +88,7 @@ export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 			) : (
 				<>
 					{isOcr && <OcrBanner />}
+					{isVideoOnly && <VideoOnlyNotice />}
 					{meeting.summary && (
 						<>
 							<section className="mt-10">
@@ -311,7 +319,8 @@ function builtFromLine(kinds: SourceKind[]): string | null {
 	if (fromVideo && fromDocuments) {
 		return "This summary was built from the meeting video and the official documents.";
 	}
-	if (fromVideo) return "This summary was built from the meeting video.";
+	// The video-only notice already says so.
+	if (fromVideo) return null;
 	if (fromDocuments) {
 		return "This summary was built from the official documents.";
 	}
@@ -441,6 +450,22 @@ function OcrBanner() {
 				<span>
 					Extracted via OCR from a scanned PDF. Verify figures against the
 					original document.
+				</span>
+			</div>
+		</output>
+	);
+}
+
+function VideoOnlyNotice() {
+	return (
+		<output className="rise-in mt-6 block border border-[var(--rule)]">
+			<div className="mono flex items-center gap-3 bg-[var(--paper)] px-4 py-3 text-[12px] text-[var(--ink-mid)]">
+				<span className="mono shrink-0 bg-[var(--ink)] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--highlight)]">
+					Video only
+				</span>
+				<span>
+					This summary was built from the meeting video alone. Official minutes
+					are not yet posted.
 				</span>
 			</div>
 		</output>

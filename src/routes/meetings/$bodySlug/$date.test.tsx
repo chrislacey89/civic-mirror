@@ -218,4 +218,44 @@ describe("MeetingDetailView — summary sources", () => {
 				.getAttribute("href"),
 		).toBe("https://example.gov/minutes.pdf");
 	});
+
+	it("says a documents-only summary was built from the official documents, with no video link or notice", () => {
+		render(<MeetingDetailView meeting={makeMeeting()} />);
+
+		expect(
+			screen.getByText("This summary was built from the official documents."),
+		).toBeDefined();
+		expect(
+			screen.getByRole("link", { name: /View minutes PDF/ }),
+		).toBeDefined();
+		expect(screen.queryByRole("link", { name: /video/i })).toBeNull();
+		expect(screen.queryByText(/video alone/)).toBeNull();
+		expect(screen.getByText("Key Highlights")).toBeDefined();
+	});
+
+	it("tells the reader a video-only summary came from the video alone and that minutes are not yet posted", () => {
+		// A video-only meeting has no documents, so its derived extraction
+		// method is "unreadable" — it must still render its summary.
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					extractionMethod: "unreadable",
+					documents: [],
+					summarySources: { kinds: ["transcript"], videoUrl: VIDEO_URL },
+				})}
+			/>,
+		);
+
+		expect(screen.getByRole("status").textContent).toContain(
+			"This summary was built from the meeting video alone. Official minutes are not yet posted.",
+		);
+		expect(
+			screen
+				.getByRole("link", { name: /Watch the meeting video/ })
+				.getAttribute("href"),
+		).toBe(VIDEO_URL);
+		expect(screen.getByText("Key Highlights")).toBeDefined();
+		expect(screen.getByText("Sale Street Road Repairs")).toBeDefined();
+		expect(screen.queryByText(/couldn't extract readable text/)).toBeNull();
+	});
 });
