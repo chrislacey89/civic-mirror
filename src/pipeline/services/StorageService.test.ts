@@ -8,13 +8,25 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import { Effect } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
+import type { DramaCategory } from "#/lib/drama-levels.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import { computeSourceFingerprint } from "#/pipeline/sources.ts";
 import {
+	type DramaCategoryScoreInput,
 	OCR_CONFIDENCE_MULTIPLIER,
 	StorageService,
 	StorageServiceLive,
 } from "./StorageService.ts";
+
+const ZERO_SCORES = {
+	procedural_breakdown: { score: 0, evidenceQuotes: [] },
+	question_looping: { score: 0, evidenceQuotes: [] },
+	defensive_hedging: { score: 0, evidenceQuotes: [] },
+	timeline_pressure: { score: 0, evidenceQuotes: [] },
+	improvised_workarounds: { score: 0, evidenceQuotes: [] },
+	visible_dissent: { score: 0, evidenceQuotes: [] },
+	post_hoc_corrections: { score: 0, evidenceQuotes: [] },
+} satisfies Record<DramaCategory, DramaCategoryScoreInput>;
 
 const tmpFiles: string[] = [];
 
@@ -702,16 +714,6 @@ describe("StorageService", () => {
 	});
 
 	describe("storeDramaAssessment", () => {
-		const ZERO_SCORES = {
-			procedural_breakdown: { score: 0 as const, evidenceQuotes: [] },
-			question_looping: { score: 0 as const, evidenceQuotes: [] },
-			defensive_hedging: { score: 0 as const, evidenceQuotes: [] },
-			timeline_pressure: { score: 0 as const, evidenceQuotes: [] },
-			improvised_workarounds: { score: 0 as const, evidenceQuotes: [] },
-			visible_dissent: { score: 0 as const, evidenceQuotes: [] },
-			post_hoc_corrections: { score: 0 as const, evidenceQuotes: [] },
-		};
-
 		async function seedMeeting(db: Awaited<ReturnType<typeof createTestDb>>) {
 			const layer = StorageServiceLive(db);
 			return await Effect.runPromise(
@@ -1712,16 +1714,6 @@ describe("StorageService", () => {
 
 	describe("detachTranscript", () => {
 		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
-		const ZERO_SCORES = {
-			procedural_breakdown: { score: 0 as const, evidenceQuotes: [] },
-			question_looping: { score: 0 as const, evidenceQuotes: [] },
-			defensive_hedging: { score: 0 as const, evidenceQuotes: [] },
-			timeline_pressure: { score: 0 as const, evidenceQuotes: [] },
-			improvised_workarounds: { score: 0 as const, evidenceQuotes: [] },
-			visible_dissent: { score: 0 as const, evidenceQuotes: [] },
-			post_hoc_corrections: { score: 0 as const, evidenceQuotes: [] },
-		};
-
 		function run<A>(
 			db: Awaited<ReturnType<typeof createTestDb>>,
 			use: (
