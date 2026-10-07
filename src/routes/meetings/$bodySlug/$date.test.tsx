@@ -337,7 +337,11 @@ describe("MeetingDetailView — summary sources", () => {
 			/>,
 		);
 
-		expect(screen.queryByText(/differ/)).toBeNull();
+		expect(
+			screen.queryByRole("region", {
+				name: "Where the video and the documents differ",
+			}),
+		).toBeNull();
 		expect(screen.queryByText(/documents' figure/)).toBeNull();
 	});
 });
