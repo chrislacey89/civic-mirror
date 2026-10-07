@@ -52,7 +52,10 @@ import type {
 	SummarizationResult,
 } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
-import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
+import {
+	TranscriptionService,
+	type TranscriptResult,
+} from "#/pipeline/services/TranscriptionService.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
 import { computeSourceFingerprint } from "#/pipeline/sources.ts";
@@ -76,6 +79,8 @@ type CallLog = {
 	transcripts: Array<{ meetingId: number; sourceUrl?: string }>;
 	alert: Array<{ subject: string; body: string }>;
 	drama: number;
+	/** The `sourceText` each drama detection call received. */
+	dramaSourceTexts: Array<string>;
 	/** Videos the storage stub was asked to hold and did not already hold. */
 	held: Array<HeldVideoInput>;
 	match: Array<MeetingMatchInput>;
@@ -101,6 +106,7 @@ function emptyCallLog(): CallLog {
 		transcripts: [],
 		alert: [],
 		drama: 0,
+		dramaSourceTexts: [],
 		held: [],
 		match: [],
 		replaced: [],
@@ -142,6 +148,8 @@ type StubConfig = {
 	storedVideoUrls?: string[];
 	/** Videos whose transcription fails, by video ID. */
 	transcriptionErrors?: Record<string, TranscriptionError>;
+	/** Replaces the default transcript, by video ID. */
+	transcripts?: Record<string, TranscriptResult>;
 	/** Video IDs storage already holds as held videos. */
 	heldVideoIds?: string[];
 	/** Replaces the storage stub, for tests that run against a real database. */
@@ -203,6 +211,8 @@ function buildStubLayers(config: StubConfig) {
 				config.log.transcribe.push(videoId);
 				const error = config.transcriptionErrors?.[videoId];
 				if (error) return Effect.fail(error);
+				const transcript = config.transcripts?.[videoId];
+				if (transcript) return Effect.succeed(transcript);
 				return Effect.succeed({
 					source: "captions" as const,
 					rawText: `transcript for ${videoId}`,
@@ -346,10 +356,11 @@ function buildStubLayers(config: StubConfig) {
 	};
 
 	const drama = Layer.succeed(DramaDetectionService, {
-		detect: () =>
+		detect: (input) =>
 			Effect.try({
 				try: () => {
 					config.log.drama += 1;
+					config.log.dramaSourceTexts.push(input.sourceText);
 					if (config.dramaDetectionError) throw config.dramaDetectionError;
 					return config.dramaDetectionResult ?? defaultDramaResult;
 				},
@@ -1735,6 +1746,35 @@ describe("runPipeline video path", () => {
 			{ meetingId: 1, sourceUrl: url("regular") },
 		]);
 		expect(log.drama).toBe(1);
+	});
+
+	it("sends the scorer a captions transcript with [MM:SS] markers from the segment offsets", async () => {
+		// The shape the captions provider produces: rawText is the segment texts
+		// joined, offsets live only in `segments`, in milliseconds.
+		const segments = [
+			{ text: "Call to order.", startMs: 0, durationMs: 4_000 },
+			{ text: "Next is the budget item.", startMs: 4_000, durationMs: 6_000 },
+			{ text: "Any discussion?", startMs: 65_000, durationMs: 5_000 },
+			{ text: "No motion was made.", startMs: 125_000, durationMs: 5_000 },
+		];
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			transcripts: {
+				regular: {
+					source: "captions",
+					rawText: segments.map((s) => s.text).join(" "),
+					segments,
+				},
+			},
+		});
+
+		await Effect.runPromise(run(layers));
+
+		expect(log.dramaSourceTexts).toEqual([
+			"[00:00] Call to order. Next is the budget item. [01:05] Any discussion? [02:05] No motion was made.",
+		]);
 	});
 
 	it("stores a qualified title under the qualifier's session", async () => {
