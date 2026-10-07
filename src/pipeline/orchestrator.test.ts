@@ -2727,6 +2727,7 @@ describe("runPipeline video path", () => {
 		async function seedMinutesMeeting(
 			db: Awaited<ReturnType<typeof createMigratedTestDb>>,
 			date: string,
+			sourceUrl = MINUTES_URL,
 		) {
 			const meeting = await Effect.runPromise(
 				Effect.gen(function* () {
@@ -2737,7 +2738,7 @@ describe("runPipeline video path", () => {
 						meetingType: "regular",
 						documents: [
 							{
-								sourceUrl: MINUTES_URL,
+								sourceUrl,
 								rawText: "Minutes of the meeting.",
 								documentType: "minutes",
 								extractionMethod: "text-layer",
@@ -2962,6 +2963,24 @@ describe("runPipeline video path", () => {
 				reason: "near-date",
 				candidateMeetingId: meetingId,
 			});
+		});
+
+		it("checks a video against the meeting on its own title date and holds nothing as near-date when minutes also exist the day before", async () => {
+			const { db, counts } = await setup();
+			const meetingId = await seedMinutesMeeting(db, "2025-08-25");
+			await seedMinutesMeeting(
+				db,
+				"2025-08-24",
+				"https://example.com/minutes-day-before.pdf",
+			);
+
+			const { log, result } = await runAgainst(db, {});
+
+			expect(result).toEqual({ processed: 1, errors: 0 });
+			expect(log.match).toHaveLength(1);
+			expect(await counts()).toMatchObject({ meetings: 2, held: 0 });
+			const transcripts = await db.select().from(schema.transcripts).all();
+			expect(transcripts.map((t) => t.meetingId)).toEqual([meetingId]);
 		});
 
 		it("stores a video as its own video-only meeting when the nearest documents-only meeting is three days from its title date", async () => {
