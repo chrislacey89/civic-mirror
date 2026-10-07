@@ -13,7 +13,9 @@ import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
 import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionService.ts";
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
 import { createGeminiDramaDetector } from "#/pipeline/services/GeminiDramaDetector.ts";
+import { createGeminiMeetingMatcher } from "#/pipeline/services/GeminiMeetingMatcher.ts";
 import { createGeminiSummarizer } from "#/pipeline/services/GeminiSummarizer.ts";
+import { MeetingMatchServiceLive } from "#/pipeline/services/MeetingMatchService.ts";
 import { extractPdfText } from "#/pipeline/services/PdfExtractor.ts";
 import { EgovScraperLive } from "#/pipeline/services/ScraperService.ts";
 import { StorageServiceLive } from "#/pipeline/services/StorageService.ts";
@@ -177,6 +179,10 @@ function buildProductionLayers(input: BuildLayersInput) {
 		generateFn: geminiGenerator,
 	});
 
+	const meetingMatch = MeetingMatchServiceLive({
+		decideFn: createGeminiMeetingMatcher({ modelId: geminiModelId }),
+	});
+
 	const dramaDetector = createGeminiDramaDetector({
 		modelId: geminiModelId,
 		promptVersion: dramaProfileV1.promptVersion,
@@ -222,6 +228,7 @@ function buildProductionLayers(input: BuildLayersInput) {
 		youtube,
 		transcription,
 		summarization,
+		meetingMatch,
 		dramaDetection,
 		storage,
 		alert,
