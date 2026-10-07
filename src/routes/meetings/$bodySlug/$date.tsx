@@ -16,8 +16,9 @@ import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
  * Three render branches keyed on `meeting.extractionMethod`:
  *   - `text-layer`: full Ledger layout (highlights, summary, receipts table)
  *   - `ocr`:        full layout plus OCR trust-disclosure banner and per-figure `?` badge
- *   - `unreadable`: status card + source PDF links only (no generated content),
- *                   unless a summary exists (one built from the meeting video)
+ *   - `unreadable`: status card + source PDF links only (no generated content).
+ *                   The query never reports a meeting that has a summary as
+ *                   unreadable.
  */
 export const Route = createFileRoute("/meetings/$bodySlug/$date")({
 	validateSearch: (search: Record<string, unknown>): { session?: string } =>
