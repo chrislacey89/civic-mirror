@@ -766,6 +766,14 @@ function processEgovListing(
 		if (extraction.method === "unreadable") {
 			if (config.dryRun) return { processed: 1, errors: 0 };
 
+			// A document with no text cannot be checked against the meeting's
+			// video, and a meeting that held it would take every later document
+			// without a check. The listing is read again on every run, so it is
+			// settled once a readable document arrives.
+			if (existing && existing.transcriptSourceUrl !== null) {
+				return { processed: 1, errors: 0 };
+			}
+
 			yield* storage.storeMeeting({
 				bodySlug: body.slug,
 				date: meetingDate,
@@ -1015,6 +1023,14 @@ function processFinalsiteListing(
 
 		if (allUnreadable) {
 			if (config.dryRun) return { processed: 1, errors: 0 };
+
+			// Documents with no text cannot be checked against the meeting's
+			// video, and a meeting that held them would take every later document
+			// without a check. The listing is read again on every run, so it is
+			// settled once a readable document arrives.
+			if (existing && existing.transcriptSourceUrl !== null) {
+				return { processed: 1, errors: 0 };
+			}
 
 			yield* storage.storeMeeting({
 				bodySlug: body.slug,

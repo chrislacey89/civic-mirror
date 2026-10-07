@@ -3421,6 +3421,7 @@ describe("runPipeline document regeneration", () => {
 		const run = async (
 			config: Omit<StubConfig, "log">,
 			body: Parameters<typeof runPipeline>[0]["bodies"][number] = COUNCIL,
+			unreadable = false,
 		) => {
 			const log = emptyCallLog();
 			const { captured, layer: loggerLayer } = buildLogCapture();
@@ -3432,10 +3433,13 @@ describe("runPipeline document regeneration", () => {
 					llmRetry: { attempts: 0, baseDelayMs: 0 },
 					// Each download is the same stub bytes, so the text is numbered
 					// per run to tell one document's from the next.
-					extractPdfText: async () => ({
-						text: `document text ${log.egovDownload.length + log.finalsiteDownload.length}`,
-						method: "text-layer",
-					}),
+					extractPdfText: async () =>
+						unreadable
+							? { text: "", method: "unreadable" }
+							: {
+									text: `document text ${log.egovDownload.length + log.finalsiteDownload.length}`,
+									method: "text-layer",
+								},
 					dryRun: false,
 					// Inside the zero-results window of the meetings stored here.
 					now: new Date("2025-06-01"),
@@ -3997,6 +4001,28 @@ describe("runPipeline document regeneration", () => {
 			expect((await videoRows(db)).held).toHaveLength(1);
 		});
 
+		it("leaves a meeting with a transcript and no documents untouched for an unreadable document, so a later readable one is still checked against the video", async () => {
+			const { db, rows, run } = await setup();
+			await seedVideoMeeting(db, COUNCIL_MEETING);
+			const before = { ...(await rows()), ...(await videoRows(db)) };
+
+			const unreadable = await run({ egovListings: [MINUTES] }, COUNCIL, true);
+
+			expect(unreadable.result.errors).toBe(0);
+			expect({ ...(await rows()), ...(await videoRows(db)) }).toEqual(before);
+
+			const readable = await run({
+				egovListings: [MINUTES],
+				summarizationResult: REGENERATED,
+				matchResult: HOLD,
+			});
+
+			expect(readable.log.match).toHaveLength(1);
+			const video = await videoRows(db);
+			expect(video.transcripts).toEqual([]);
+			expect(video.held).toHaveLength(1);
+		});
+
 		describe("on the Finalsite path", () => {
 			const LISTING: FinalsiteMeetingListing = {
 				date: "January 20, 2026",
@@ -4046,6 +4072,35 @@ describe("runPipeline document regeneration", () => {
 				expect(
 					findStageLog(captured, "finalsite.match.finish")?.annotations,
 				).toMatchObject({ meetingId, outcome: "match" });
+			});
+
+			it("leaves a meeting with a transcript and no documents untouched for an all-unreadable listing, so a later readable one is still checked against the video", async () => {
+				const { db, rows, run } = await setup();
+				await seedVideoMeeting(db, BOARD_MEETING);
+				const before = { ...(await rows()), ...(await videoRows(db)) };
+
+				const unreadable = await run(
+					{ finalsiteListings: [LISTING] },
+					BOARD,
+					true,
+				);
+
+				expect(unreadable.result.errors).toBe(0);
+				expect({ ...(await rows()), ...(await videoRows(db)) }).toEqual(before);
+
+				const readable = await run(
+					{
+						finalsiteListings: [LISTING],
+						summarizationResult: REGENERATED,
+						matchResult: HOLD,
+					},
+					BOARD,
+				);
+
+				expect(readable.log.match).toHaveLength(1);
+				const video = await videoRows(db);
+				expect(video.transcripts).toEqual([]);
+				expect(video.held).toHaveLength(1);
 			});
 
 			it("takes the documents-only summary, detaches the transcript with its drama assessment and holds the video when the check returns hold", async () => {
