@@ -305,10 +305,24 @@ describe("MeetingDetailView — summary sources", () => {
 			"The summary uses the documents' figure.",
 		);
 		const items = within(section).getAllByRole("listitem");
-		expect(items.map((item) => item.textContent)).toEqual([
-			"Paving bidThe documents say: $215,215.10The video says: $244,215.10",
-			"Wheel tax voteThe documents say: Passed 4–1The video says: Passed 5–0",
-		]);
+		const expected = [
+			{ topic: "Paving bid", documents: "$215,215.10", video: "$244,215.10" },
+			{ topic: "Wheel tax vote", documents: "Passed 4–1", video: "Passed 5–0" },
+		];
+		expect(items).toHaveLength(expected.length);
+		expected.forEach((want, i) => {
+			const item = items[i];
+			expect(within(item).getByText(want.topic)).toBeTruthy();
+			// Each value must sit in the line under its own label.
+			const documentsLine = within(item)
+				.getByText("The documents say:")
+				.closest("p");
+			const videoLine = within(item).getByText("The video says:").closest("p");
+			expect(documentsLine?.textContent).toContain(want.documents);
+			expect(documentsLine?.textContent).not.toContain(want.video);
+			expect(videoLine?.textContent).toContain(want.video);
+			expect(videoLine?.textContent).not.toContain(want.documents);
+		});
 	});
 
 	it("renders no disagreement section when the sources do not disagree", () => {
