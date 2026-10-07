@@ -998,26 +998,23 @@ function processPlaylistVideo(
 			// Only confirmed-disabled captions on a video past the grace period
 			// are a hold. Every other transcription failure stays an error, so
 			// the next run retries it. An unreadable publish date never holds.
-			Effect.catchIf(
-				(error) =>
-					error._tag === "TranscriptionError" &&
-					error.captionsDisabled === true &&
-					config.now.getTime() - Date.parse(video.publishedAt) >=
-						CAPTIONS_GRACE_DAYS * MS_PER_DAY,
-				() =>
-					hold({ reason: "no-captions", meetingDate: reading.date }).pipe(
-						Effect.as({ processed: 0, errors: 0 }),
-					),
-			),
-			// A disabled-captions reading that was not held is not yet trusted, so
-			// the operator's alert must not state it as fact.
-			Effect.mapError((error) =>
-				error._tag === "TranscriptionError" && error.captionsDisabled === true
-					? new TranscriptionError({
+			Effect.catchTag("TranscriptionError", (error) =>
+				Effect.gen(function* () {
+					if (error.captionsDisabled !== true) return yield* Effect.fail(error);
+					const graceElapsed =
+						config.now.getTime() - Date.parse(video.publishedAt) >=
+						CAPTIONS_GRACE_DAYS * MS_PER_DAY;
+					if (!graceElapsed) {
+						// A disabled-captions reading that was not held is not yet
+						// trusted, so the operator's alert must not state it as fact.
+						return yield* new TranscriptionError({
 							videoId: video.videoId,
 							message: `No captions found yet for "${video.title}"; the video is retried on a later run`,
-						})
-					: error,
+						});
+					}
+					yield* hold({ reason: "no-captions", meetingDate: reading.date });
+					return { processed: 0, errors: 0 };
+				}),
 			),
 		);
 	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
