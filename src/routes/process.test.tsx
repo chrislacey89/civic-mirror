@@ -20,7 +20,7 @@ describe("ProcessPage", () => {
 });
 
 describe("/drama", () => {
-	it("redirects to /process", () => {
+	it("permanently redirects to /process", () => {
 		let thrown: unknown;
 		try {
 			// biome-ignore lint/suspicious/noExplicitAny: the redirect ignores its context
@@ -30,6 +30,7 @@ describe("/drama", () => {
 		}
 
 		expect(isRedirect(thrown)).toBe(true);
+		expect((thrown as Response).status).toBe(301);
 		expect((thrown as { options: { to: string } }).options.to).toBe("/process");
 	});
 });
