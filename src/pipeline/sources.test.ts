@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
 	computeSourceFingerprint,
 	fingerprintOfSources,
+	kindsOfReadableSources,
 	kindsOfSources,
 	kindsOfUnfingerprintedSummary,
+	readableSources,
 	stampOfUnfingerprintedSummary,
 } from "#/pipeline/sources.ts";
 
@@ -76,6 +78,48 @@ describe("fingerprintOfSources", () => {
 		expect(fingerprintOfSources({ documents: [], transcriptUrl: VIDEO })).toBe(
 			computeSourceFingerprint([VIDEO]),
 		);
+	});
+});
+
+describe("readableSources", () => {
+	it("labels each source that has text, documents first, and leaves out the blank ones", () => {
+		expect(
+			readableSources({
+				documents: [
+					{ rawText: "Agenda." },
+					{ rawText: " \n" },
+					{ rawText: "Minutes." },
+				],
+				transcript: { rawText: "Transcript." },
+			}),
+		).toEqual([
+			{ kind: "documents", text: "Agenda." },
+			{ kind: "documents", text: "Minutes." },
+			{ kind: "transcript", text: "Transcript." },
+		]);
+	});
+
+	it("is empty when nothing held has text", () => {
+		expect(
+			readableSources({
+				documents: [{ rawText: "" }],
+				transcript: { rawText: "  " },
+			}),
+		).toEqual([]);
+		expect(readableSources({ documents: [], transcript: null })).toEqual([]);
+	});
+});
+
+describe("kindsOfReadableSources", () => {
+	it("names each kind once, documents before transcript", () => {
+		expect(
+			kindsOfReadableSources([
+				{ kind: "transcript", text: "Transcript." },
+				{ kind: "documents", text: "Agenda." },
+				{ kind: "documents", text: "Minutes." },
+			]),
+		).toEqual(["documents", "transcript"]);
+		expect(kindsOfReadableSources([])).toEqual([]);
 	});
 });
 

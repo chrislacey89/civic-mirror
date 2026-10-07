@@ -1,9 +1,12 @@
 import { Effect } from "effect";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
-import type { LabelledSource } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
-import { fingerprintOfSources, kindsOfSources } from "#/pipeline/sources.ts";
+import {
+	fingerprintOfSources,
+	kindsOfReadableSources,
+	readableSources,
+} from "#/pipeline/sources.ts";
 
 /**
  * Rebuilds a meeting's summary from every source it holds, and replaces the
@@ -16,8 +19,8 @@ import { fingerprintOfSources, kindsOfSources } from "#/pipeline/sources.ts";
  * does not make it due, so it is left alone: regenerating on that alone would
  * send every such meeting back through the summarizer. A caller that adds a
  * source to such a meeting must first stamp the summary with the fingerprint
- * and kinds of the sources it held (`stampSummaryFingerprint`), which makes
- * its fingerprint differ from the sources now held.
+ * of the sources it held and the one kind it read (`stampSummarySources`),
+ * which makes its fingerprint differ from the sources now held.
  */
 function regenerateMeetingSummary(input: {
 	meetingId: number;
@@ -42,12 +45,7 @@ function regenerateMeetingSummary(input: {
 			return { regenerated: false };
 		}
 
-		const sources: LabelledSource[] = held.documents
-			.filter((document) => document.rawText.trim() !== "")
-			.map((document) => ({ kind: "documents", text: document.rawText }));
-		if (held.transcript && held.transcript.rawText.trim() !== "") {
-			sources.push({ kind: "transcript", text: held.transcript.rawText });
-		}
+		const sources = readableSources(held);
 		if (sources.length === 0) return { regenerated: false };
 
 		const summary = yield* summarizer.summarize({
@@ -64,7 +62,7 @@ function regenerateMeetingSummary(input: {
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
-			sourceKinds: kindsOfSources(held),
+			sourceKinds: kindsOfReadableSources(sources),
 			sourceFingerprint,
 			sourceDisagreements: summary.sourceDisagreements,
 		});
