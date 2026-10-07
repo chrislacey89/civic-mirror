@@ -1,0 +1,41 @@
+{
+	"transcriptDate": "2025-05-27",
+	"documentsDate": "2025-05-27",
+	"sameMeeting": true,
+	"recordedProbability": 0.99,
+	"transcriptSummary": {
+		"highlights": [
+			"Town Council approved a bid of $244,215.10 for ENB Paving for the Community Crossing Matching Grant road improvements.",
+			"Ordinance 2025-13, which proposed rental fees for the Ellettsville Heritage Center (a $250 rental fee and a $500 deposit), was tabled for further discussion regarding resident/non-resident rates, fee waivers, and event insurance.",
+			"The Clerk-Treasurer announced the initiation of zero-based budgeting for the upcoming budget season and the development of a comprehensive financial plan."
+		],
+		"prose": "The Ellettsville Town Council convened on May 27, 2025, opening with a public hearing for the Community Crossing Matching Grant. The council approved the low bid of $244,215.10 from ENB Paving for road improvements under the grant, with the town responsible for a 25% match. Following this, minutes from previous meetings and accounts payable/payroll vouchers were approved. The first reading of Ordinance 2025-14, which re-certifies current legislative body districts, prompted discussion regarding population changes, unannexed areas within the town, and the need for future re-evaluation. Ordinance 2025-15, adopting construction standards and specifications for roadways, also had its first reading, with a minor amendment noted for a storm water management chapter reference. On its second reading, Ordinance 2025-13, proposing a $250 rental fee and a $500 deposit for the Ellettsville Heritage Center, sparked extensive debate. Concerns were raised about the affordability of the deposit, and the council decided to table the ordinance to further explore options for resident/non-resident fees, charitable waivers, and the possibility of accepting event insurance in lieu of a deposit. During supervisor comments, the Police Chief announced the Ellettsville Fire Department received a grant for a UTV and confirmed fireworks on July 5th, funded by donations. The Clerk-Treasurer detailed plans to implement zero-based budgeting for the next fiscal year and is working with Baker Tilly on a comprehensive financial plan, with budget forms and a calendar to be distributed soon. The Town Manager also announced a tentative ribbon-cutting and open house for the new Department of Public Works building on June 23rd.",
+		"fiscalDecisions": [
+			{
+				"title": "Approval of bid for Community Crossing Matching Grant",
+				"originalAmount": "$244,215.10"
+			},
+			{
+				"title": "Ordinance 2025-13 to set fees for the rental of Ellettsville Heritage Center",
+				"originalAmount": "$250",
+				"ordinanceNumber": "2025-13"
+			}
+		]
+	},
+	"documentsSummary": {
+		"highlights": [
+			"Approved a bid of $215,215.10 for E & B Paving for the Community Crossing Matching Grant.",
+			"Tabled Ordinance 2025-13 concerning rental fees for the Ellettsville Heritage Center for further amendments.",
+			"Discussed recertifying current legislative body districts (Ordinance 2025-14) and adopting construction standards for roadways (Ordinance 2025-15).",
+			"Received an update on the implementation of Zero Based Budgeting for future financial planning.",
+			"Addressed public concerns regarding speed limits on Lantern Lane and plans for traffic calming measures."
+		],
+		"prose": "The Ellettsville Town Council convened for a regular meeting on May 27, 2025, presided over by Scott Oldham. Key actions included the approval of a $215,215.10 bid from E & B Paving for the Community Crossing Matching Grant. The council also approved minutes from previous meetings and authorized the payment of Accounts Payable Vouchers and Payroll. Ordinance 2025-14, which recertifies the current legislative body districts, was introduced, and Ordinance 2025-15, proposing the adoption of the Town of Ellettsville Construction Standards & Specifications Manual for Roadways, was also introduced. Ordinance 2025-13, regarding rental fees for the Ellettsville Heritage Center (proposed at $250 with a $500 deposit), was tabled for amendments following discussions about resident/non-resident fees and event insurance. The Clerk Treasurer, Noelle Conyer, provided an update on a comprehensive financial plan and the adoption of Zero Based Budgeting. Public comments included a resident's concern about speed limits on Lantern Lane, with the Town Manager indicating that new street items to help reduce speeds were being explored. The meeting concluded with various departmental updates.",
+		"fiscalDecisions": [
+			{
+				"title": "Community Crossing Matching Grant Bid Approval",
+				"originalAmount": "$215,215.10"
+			}
+		]
+	}
+}

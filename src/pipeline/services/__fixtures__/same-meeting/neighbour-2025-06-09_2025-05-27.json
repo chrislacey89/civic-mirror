@@ -1,0 +1,40 @@
+{
+	"transcriptDate": "2025-06-09",
+	"documentsDate": "2025-05-27",
+	"sameMeeting": false,
+	"recordedProbability": 0.1,
+	"transcriptSummary": {
+		"highlights": [
+			"Ordinance 2025-13, setting rental fees for the Ellettsville Heritage Center, was approved.",
+			"Ordinance 2025-14, re-certifying legislative body districts, was approved.",
+			"Ordinance 2025-15, adopting town construction standards for roadways, was approved.",
+			"Jack Neil and Brandon Wright were reappointed to the Ellettsville Building Corporation board.",
+			"The Richland Township lease termination agreement was approved, with the town vacating the Park Street property by July 1st.",
+			"Residents expressed concerns about ongoing downtown flooding and requested action on Phase Two flood mitigation, particularly regarding the McNeely Street Bridge."
+		],
+		"prose": "The Ellettsville Town Council convened on June 9, 2025, opening with a prayer and pledge, followed by roll call. The minutes from the May 27, 2025 meeting were approved. Several ordinances were discussed and passed: Ordinance 2025-13 amended and approved fees for the Ellettsville Heritage Center rental, setting rates at $125/day for residents and $250/day for non-residents, with a $500 damage deposit option. Ordinance 2025-14, re-certifying the town's legislative body districts based on the last census, was approved. Ordinance 2025-15, adopting the town's construction standards and specifications manual for roadways, was also approved. Under new business, Jack Neil and Brandon Wright were reappointed to the Ellettsville Building Corporation board, with Carly Woodruff's reappointment tabled pending verification of residency. The council then approved the Richland Township lease termination agreement, formalizing the town's vacation of the Park Street property by July 1st. During the privilege of the floor, two local business owners, Carl Thurman and Chad Stevens, voiced significant concerns about persistent flooding in the downtown area, particularly near the McNeely Street Bridge, urging the council to prioritize Phase Two of flood mitigation, including the installation of culverts. The council acknowledged the county's jurisdiction over the bridge but committed to re-engaging with the Monroe County Highway Department on the issue. A resident attempted to appeal fines but was redirected to the Board of Zoning Appeals as the appropriate venue. The town manager reported on the ongoing move of utility and street departments to new facilities, with an open house scheduled for June 23rd, and discussed continuous challenges with Inflow and Infiltration (INI) at the wastewater treatment plant. The police chief announced fireworks on July 5th, funded by donations. The clerk-treasurer reported on a successful boundary update with the Census Bureau. Council comments included a suggestion to start planning for the country's 250th anniversary next year. The meeting was then adjourned.",
+		"fiscalDecisions": [
+			{
+				"title": "Adoption of Heritage Center Rental Fee Schedule",
+				"originalAmount": "$500",
+				"ordinanceNumber": "2025-13"
+			}
+		]
+	},
+	"documentsSummary": {
+		"highlights": [
+			"Approved a bid of $215,215.10 for E & B Paving for the Community Crossing Matching Grant.",
+			"Tabled Ordinance 2025-13 concerning rental fees for the Ellettsville Heritage Center for further amendments.",
+			"Discussed recertifying current legislative body districts (Ordinance 2025-14) and adopting construction standards for roadways (Ordinance 2025-15).",
+			"Received an update on the implementation of Zero Based Budgeting for future financial planning.",
+			"Addressed public concerns regarding speed limits on Lantern Lane and plans for traffic calming measures."
+		],
+		"prose": "The Ellettsville Town Council convened for a regular meeting on May 27, 2025, presided over by Scott Oldham. Key actions included the approval of a $215,215.10 bid from E & B Paving for the Community Crossing Matching Grant. The council also approved minutes from previous meetings and authorized the payment of Accounts Payable Vouchers and Payroll. Ordinance 2025-14, which recertifies the current legislative body districts, was introduced, and Ordinance 2025-15, proposing the adoption of the Town of Ellettsville Construction Standards & Specifications Manual for Roadways, was also introduced. Ordinance 2025-13, regarding rental fees for the Ellettsville Heritage Center (proposed at $250 with a $500 deposit), was tabled for amendments following discussions about resident/non-resident fees and event insurance. The Clerk Treasurer, Noelle Conyer, provided an update on a comprehensive financial plan and the adoption of Zero Based Budgeting. Public comments included a resident's concern about speed limits on Lantern Lane, with the Town Manager indicating that new street items to help reduce speeds were being explored. The meeting concluded with various departmental updates.",
+		"fiscalDecisions": [
+			{
+				"title": "Community Crossing Matching Grant Bid Approval",
+				"originalAmount": "$215,215.10"
+			}
+		]
+	}
+}
