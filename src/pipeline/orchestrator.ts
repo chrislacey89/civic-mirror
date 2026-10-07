@@ -2,6 +2,7 @@ import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import { readFinalsiteDate } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
+import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
 import {
 	type AlertScope,
 	AlertService,
@@ -386,6 +387,61 @@ function iterateWithAlertRecovery<TItem, R>(
 	});
 }
 
+/**
+ * Settles a listing's documents against a meeting that already has documents:
+ * attaches the ones the meeting lacks, then rebuilds the summary from every
+ * source the meeting now holds. No same-meeting check is needed, since the
+ * source dated both sets of documents itself.
+ *
+ * A listing is re-read on every run, so most calls bring nothing new. Those
+ * cost no summarize call: `regenerateMeetingSummary` compares fingerprints,
+ * and a summary stored without one is left alone until its meeting gains a
+ * source, because an empty fingerprint matches nothing and would otherwise
+ * send every such meeting back through the summarizer on a single run.
+ */
+function attachDocumentsAndRegenerate(input: {
+	meetingId: number;
+	meeting: Omit<
+		MeetingInput,
+		"summary" | "fiscalDecisions" | "budgetDiscussions"
+	>;
+	meetingContext: string;
+	config: ResolvedConfig;
+}): Effect.Effect<
+	void,
+	DatabaseError | LlmError,
+	StorageService | SummarizationService
+> {
+	return Effect.gen(function* () {
+		const storage = yield* StorageService;
+
+		const held = yield* storage.getMeetingSources(input.meetingId);
+		const heldUrls = new Set(held.documents.map((d) => d.sourceUrl));
+		const bringsNewDocument = input.meeting.documents.some(
+			(d) => !heldUrls.has(d.sourceUrl),
+		);
+		if (!bringsNewDocument && held.summary?.sourceFingerprint === "") return;
+
+		if (bringsNewDocument) yield* storage.storeMeeting(input.meeting);
+
+		yield* Effect.log("regenerate.start").pipe(
+			Effect.annotateLogs({ meetingId: input.meetingId, bringsNewDocument }),
+		);
+		const { regenerated } = yield* regenerateMeetingSummary({
+			meetingId: input.meetingId,
+			meetingContext: input.meetingContext,
+		}).pipe(
+			Effect.retry({
+				schedule: input.config.llmSchedule,
+				while: (error) => error._tag === "LlmError",
+			}),
+		);
+		yield* Effect.log("regenerate.finish").pipe(
+			Effect.annotateLogs({ meetingId: input.meetingId, regenerated }),
+		);
+	});
+}
+
 // ---------------------------------------------------------------------------
 // eGov path
 // ---------------------------------------------------------------------------
@@ -473,6 +529,38 @@ function processEgovListing(
 			Effect.annotateLogs({ method: extraction.method }),
 		);
 
+		// A meeting that already has documents takes this one as a further
+		// source of the same summary. One that has only a transcript falls
+		// through to the single-document path below.
+		const existing = config.dryRun
+			? null
+			: yield* storage.getMeetingSourceState({
+					bodySlug: body.slug,
+					date: meetingDate,
+					session: "",
+				});
+		if (existing?.hasDocuments) {
+			yield* attachDocumentsAndRegenerate({
+				meetingId: existing.meetingId,
+				meeting: {
+					bodySlug: body.slug,
+					date: meetingDate,
+					meetingType: "regular",
+					documents: [
+						{
+							sourceUrl: listing.downloadUrl,
+							rawText: extraction.text,
+							documentType: listing.documentType,
+							extractionMethod: extraction.method,
+						},
+					],
+				},
+				meetingContext: `${body.name}, ${meetingDate}`,
+				config,
+			});
+			return { processed: 1, errors: 0 };
+		}
+
 		// Unreadable branch: persist the document row so the meeting appears in
 		// listings with a link to the PDF, but skip summarization + fiscal
 		// extraction entirely. This is the "silent hole" the PRD is eliminating
@@ -525,6 +613,8 @@ function processEgovListing(
 				highlights: summary.highlights,
 				prose: summary.prose,
 				model: summary.model,
+				sourceKinds: ["documents"],
+				sourceFingerprint: computeSourceFingerprint([listing.downloadUrl]),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
@@ -663,6 +753,34 @@ function processFinalsiteListing(
 			}).pipe(Effect.annotateLogs({ uuid: doc.uuid, url: doc.downloadUrl }));
 		}
 
+		const meetingType = meetingTypeFromFinalsiteLabel(listing.meetingType);
+
+		// A meeting that already has documents takes these as further sources
+		// of the same summary. One that has only a transcript falls through to
+		// the paths below.
+		const existing = config.dryRun
+			? null
+			: yield* storage.getMeetingSourceState({
+					bodySlug: body.slug,
+					date: meetingDate,
+					session,
+				});
+		if (existing?.hasDocuments) {
+			yield* attachDocumentsAndRegenerate({
+				meetingId: existing.meetingId,
+				meeting: {
+					bodySlug: body.slug,
+					date: meetingDate,
+					session,
+					meetingType,
+					documents,
+				},
+				meetingContext: `${body.name}, ${listing.date}`,
+				config,
+			});
+			return { processed: 1, errors: 0 };
+		}
+
 		// If every document for the meeting came back unreadable, skip
 		// summarization and persist the meeting + document rows so the meeting
 		// still appears in listings with a PDF link. Otherwise summarize the
@@ -678,7 +796,7 @@ function processFinalsiteListing(
 				bodySlug: body.slug,
 				date: meetingDate,
 				session,
-				meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
+				meetingType,
 				documents,
 			});
 
@@ -700,12 +818,16 @@ function processFinalsiteListing(
 			bodySlug: body.slug,
 			date: meetingDate,
 			session,
-			meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
+			meetingType,
 			documents,
 			summary: {
 				highlights: summary.highlights,
 				prose: summary.prose,
 				model: summary.model,
+				sourceKinds: ["documents"],
+				sourceFingerprint: computeSourceFingerprint(
+					documents.map((d) => d.sourceUrl),
+				),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
