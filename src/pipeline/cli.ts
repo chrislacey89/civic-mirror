@@ -13,11 +13,13 @@ import {
 	parseSourcesFlag,
 } from "#/pipeline/composition.ts";
 import { resolveDetectMeeting } from "#/pipeline/detect-date.ts";
+import { formatHeldVideoLine } from "#/pipeline/held.ts";
 import {
 	PIPELINE_SOURCES,
 	runDramaDetectForVideo,
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
+import { StorageService } from "#/pipeline/services/StorageService.ts";
 
 /**
  * Effect teaching note: This file owns the CLI surface — `effect/cli` Command
@@ -225,6 +227,51 @@ const listBodiesCommand = Command.make("list-bodies", {}, () =>
 );
 
 // ---------------------------------------------------------------------------
+// `held:list` subcommand — prints the videos the pipeline holds and why, one
+// per line.
+// ---------------------------------------------------------------------------
+
+const heldBodySlug = Flag.String("body").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"Only list videos held for the body with this slug (defaults to all bodies).",
+	),
+);
+
+const heldListCommand = Command.make(
+	"held:list",
+	{ bodySlug: heldBodySlug },
+	({ bodySlug }) =>
+		Effect.gen(function* () {
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			const held = yield* Effect.gen(function* () {
+				const storage = yield* StorageService;
+				return yield* storage.listHeldVideos(
+					Option.match(bodySlug, {
+						onNone: () => ({}),
+						onSome: (slug) => ({ bodySlug: slug }),
+					}),
+				);
+			}).pipe(Effect.provide(layers));
+
+			if (held.length === 0) {
+				yield* Console.error("No held videos.");
+				return;
+			}
+			for (const video of held) {
+				yield* Console.log(formatHeldVideoLine(video));
+			}
+		}),
+);
+
+// ---------------------------------------------------------------------------
 // Command root and entrypoint
 // ---------------------------------------------------------------------------
 
@@ -233,7 +280,12 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		"Civic Mirror pipeline — run `pipeline run --help` or `pipeline list-bodies`.",
 	),
 ).pipe(
-	Command.withSubcommands([runCommand, listBodiesCommand, dramaDetectCommand]),
+	Command.withSubcommands([
+		runCommand,
+		listBodiesCommand,
+		dramaDetectCommand,
+		heldListCommand,
+	]),
 );
 
 Command.run(rootCommand, { version: "0.1.0" }).pipe(
