@@ -186,3 +186,36 @@ describe("MeetingDetailView — unreadable branch", () => {
 		expect(screen.getByText(/View minutes PDF/)).toBeDefined();
 	});
 });
+
+describe("MeetingDetailView — summary sources", () => {
+	const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+
+	it("says a summary with both kinds was built from the video and the documents, and links to both", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					summarySources: {
+						kinds: ["documents", "transcript"],
+						videoUrl: VIDEO_URL,
+					},
+				})}
+			/>,
+		);
+
+		expect(
+			screen.getByText(
+				"This summary was built from the meeting video and the official documents.",
+			),
+		).toBeDefined();
+		expect(
+			screen
+				.getByRole("link", { name: /Watch the meeting video/ })
+				.getAttribute("href"),
+		).toBe(VIDEO_URL);
+		expect(
+			screen
+				.getByRole("link", { name: /View minutes PDF/ })
+				.getAttribute("href"),
+		).toBe("https://example.gov/minutes.pdf");
+	});
+});

@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { FiscalDecisionDetail, MeetingDetail } from "#/db/queries.ts";
+import type { SourceKind } from "#/pipeline/sources.ts";
 import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
 
 /**
@@ -228,39 +229,93 @@ function MeetingHero({ meeting }: { meeting: MeetingDetail }) {
 				))}
 			</div>
 
-			{/* Primary sources */}
-			{meeting.documents.length > 0 && (
-				<div className="mt-6 border border-[var(--rule)] bg-[var(--paper)]">
-					<div className="mono border-b border-[var(--rule)] bg-[var(--paper-alt)] px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--ink)]">
-						Primary sources
-					</div>
-					{meeting.documents.map((doc, i) => (
-						<a
-							key={doc.sourceUrl}
-							href={doc.sourceUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							className={`grid grid-cols-[52px_1fr_auto] items-center gap-3 px-4 py-3 no-underline hover:bg-[var(--paper-alt)] ${
-								i < meeting.documents.length - 1
-									? "border-b border-dotted border-[var(--rule-dot)]"
-									: ""
-							}`}
-						>
-							<span className="mono bg-[var(--ink)] px-1.5 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--paper)]">
-								PDF
-							</span>
-							<span className="text-[14px] font-semibold text-[var(--ink)]">
-								View {doc.documentType} PDF
-							</span>
-							<span className="mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-soft)]">
-								{doc.extractionMethod}
-							</span>
-						</a>
-					))}
-				</div>
-			)}
+			<PrimarySources meeting={meeting} />
 		</section>
 	);
+}
+
+/**
+ * What the summary was built from, with a link to each source. Document links
+ * render even when there is no summary, so an unreadable meeting still leads
+ * to its PDFs.
+ */
+function PrimarySources({ meeting }: { meeting: MeetingDetail }) {
+	const { kinds, videoUrl } = meeting.summarySources;
+	const builtFrom = builtFromLine(kinds);
+
+	if (meeting.documents.length === 0 && !videoUrl) return null;
+
+	return (
+		<div className="mt-6 border border-[var(--rule)] bg-[var(--paper)]">
+			<div className="mono border-b border-[var(--rule)] bg-[var(--paper-alt)] px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--ink)]">
+				Primary sources
+			</div>
+			{builtFrom && (
+				<p className="m-0 border-b border-dotted border-[var(--rule-dot)] px-4 py-3 text-[14px] text-[var(--ink-mid)]">
+					{builtFrom}
+				</p>
+			)}
+			{videoUrl && (
+				<a
+					href={videoUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className={`grid grid-cols-[52px_1fr_auto] items-center gap-3 px-4 py-3 no-underline hover:bg-[var(--paper-alt)] ${
+						meeting.documents.length > 0
+							? "border-b border-dotted border-[var(--rule-dot)]"
+							: ""
+					}`}
+				>
+					<span className="mono bg-[var(--ink)] px-1.5 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--paper)]">
+						Video
+					</span>
+					<span className="text-[14px] font-semibold text-[var(--ink)]">
+						Watch the meeting video
+					</span>
+					<span className="mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-soft)]">
+						YouTube
+					</span>
+				</a>
+			)}
+			{meeting.documents.map((doc, i) => (
+				<a
+					key={doc.sourceUrl}
+					href={doc.sourceUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className={`grid grid-cols-[52px_1fr_auto] items-center gap-3 px-4 py-3 no-underline hover:bg-[var(--paper-alt)] ${
+						i < meeting.documents.length - 1
+							? "border-b border-dotted border-[var(--rule-dot)]"
+							: ""
+					}`}
+				>
+					<span className="mono bg-[var(--ink)] px-1.5 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--paper)]">
+						PDF
+					</span>
+					<span className="text-[14px] font-semibold text-[var(--ink)]">
+						View {doc.documentType} PDF
+					</span>
+					<span className="mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-soft)]">
+						{doc.extractionMethod}
+					</span>
+				</a>
+			))}
+		</div>
+	);
+}
+
+/** The sentence naming a summary's sources, or null when it recorded none. */
+function builtFromLine(kinds: SourceKind[]): string | null {
+	const fromVideo = kinds.includes("transcript");
+	const fromDocuments = kinds.includes("documents");
+	if (fromVideo && fromDocuments) {
+		return "This summary was built from the meeting video and the official documents.";
+	}
+	if (fromVideo) return "This summary was built from the meeting video.";
+	if (fromDocuments) {
+		return "This summary was built from the official documents.";
+	}
+	return null;
 }
 
 function SectionHead({ kicker, title }: { kicker: string; title: string }) {
