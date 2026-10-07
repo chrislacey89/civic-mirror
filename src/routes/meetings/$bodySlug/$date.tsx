@@ -250,7 +250,11 @@ function MeetingHero({ meeting }: { meeting: MeetingDetail }) {
  * render even when there is no summary, so an unreadable meeting still leads
  * to its PDFs.
  */
-function PrimarySources({ meeting }: { meeting: MeetingDetail }) {
+function PrimarySources({
+	meeting,
+}: {
+	meeting: Pick<MeetingDetail, "documents" | "summarySources">;
+}) {
 	const { kinds, videoUrl } = meeting.summarySources;
 	const builtFrom = builtFromLine(kinds);
 
