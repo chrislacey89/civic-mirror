@@ -18,7 +18,7 @@ The meeting page tells a resident what a summary was built from: the official do
 
 Slice #136 of PRD #127 added the sources line. Summaries written before #130 store `sourceKinds = []`, and the slice's boundary map said to derive the kinds for those "from the rows attached to the meeting". The first implementation credited every attached row.
 
-Review found the first wrong direction. When a video joins a meeting that already has a documents-only summary, `processYouTubeVideo` stores the transcript and then calls `regenerateWithRetry`. Until regeneration succeeds, the page said "built from the meeting video and the official documents" and linked the video. A failed regeneration leaves that state in place until a later run retries.
+Review found the first wrong direction. When a video joins a meeting that already has a documents-only summary, `matchVideoToMeeting` stores the transcript and then calls `regenerateWithRetry`. Until regeneration succeeds, the page said "built from the meeting video and the official documents" and linked the video. A failed regeneration leaves that state in place until a later run retries.
 
 The fix made documents win: a summary with no stored kinds is credited to the documents when any are attached. The re-review found the mirror image. Sibling slice #135 merged while this PR was in review, and its `attachDocumentsAndRegenerate` attaches a PDF to a video-only meeting before regenerating. An older video-only summary would then read "built from the official documents" with no video link.
 
@@ -45,7 +45,7 @@ The stored column existed (`summaries.source_kinds`). The gap was the `[]` defau
 
 - **Applies when:** a reader displays or branches on a property of a derived artifact (a summary, a report, a cache entry), the property depends on what the artifact was built from, and the inputs can change without the artifact being rebuilt in the same transaction.
 - **Inverts or does not apply when:** the artifact and its inputs are replaced atomically, so no reader can see one without the other; or the reader is asking about the inputs themselves ("which documents does this meeting have?"), where the attached rows are the fact and not a proxy for it.
-- **Extends a sibling's exemption:** `guessed-natural-key-on-unreadable-input-2026-10-06.md` allows a fallback for a descriptive field because it merges nothing. That holds for storage. A descriptive field that is published as a statement to readers is a different case: the guess merges nothing and still tells the public something false.
+- **Narrows a sibling's exemption:** `guessed-natural-key-on-unreadable-input-2026-10-06.md` allows a fallback for a descriptive field because it merges nothing. That holds for storage. A descriptive property of a derived artifact, published to readers and guessed from inputs that can change without a rebuild, is a different case: the guess merges nothing and still tells the public something false. A plain default such as a missing meeting type reading `"regular"` stays exempt.
 - **Sibling docs:** `guessed-natural-key-on-unreadable-input-2026-10-06.md` (a guess standing in for a key), `permanent-outcome-from-ambiguous-evidence-2026-10-06.md` (evidence that is true now and false later), `boundary-map-drift-between-slices-2026-04-10.md` (a sibling slice changing what a contract means), `tri-state-return-for-pipeline-outcomes-2026-04-13.md` (the union shape used for the page's four states).
 
 ## Solution
@@ -56,7 +56,7 @@ What this PR ships is a stopgap with one known wrong direction, stated here so n
 
 The wrong direction that remains: an older video-only summary whose meeting gains a PDF is credited to the documents until its regeneration succeeds.
 
-The correction belongs to the writer. Both places that call `stampSummaryFingerprint` (`processYouTubeVideo` and `attachDocumentsAndRegenerate` in `src/pipeline/orchestrator.ts`) already hold the sources the existing summary was built from, because they compute its fingerprint from them. Stamping the kinds in the same update records the fact before the attach changes the rows. Once no summary has `[]` kinds beside a non-empty fingerprint, the read-side fallback has nothing left to guess. Tracked as #149, which blocks the #137 backfill.
+The correction belongs to the writer. All three callers of `stampSummaryFingerprint` in `src/pipeline/orchestrator.ts` (`matchVideoToMeeting`, `attachDocumentsAndRegenerate` and `matchDocumentsToMeeting`) already hold the sources the existing summary was built from, because they compute its fingerprint from them. Stamping the kinds in the same update records the fact before the attach changes the rows. Once no summary has `[]` kinds beside a non-empty fingerprint, the read-side fallback has nothing left to guess. Tracked as #149, which blocks the #137 backfill.
 
 ## Prevention
 
