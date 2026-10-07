@@ -205,6 +205,8 @@ describe("MeetingDetailView — summary sources", () => {
 		screen.getByText(
 			"This summary was built from the meeting video and the official documents.",
 		);
+		expect(screen.queryByText(/video alone/)).toBeNull();
+		expect(screen.queryByText("Video only")).toBeNull();
 		expect(
 			screen
 				.getByRole("link", { name: /Watch the meeting video/ })
