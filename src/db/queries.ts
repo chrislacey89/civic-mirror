@@ -1,6 +1,7 @@
 import { and, desc, eq, sql, sum } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "#/db/schema.ts";
+import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
 
 export type MeetingType = "regular" | "special" | "workshop";
 export type FiscalStatus = "approved" | "denied" | "tabled";
@@ -574,6 +575,13 @@ export type MeetingDetail = {
 		extractionMethod: ExtractionMethod;
 	}>;
 	summary: { highlights: string[]; prose: string; model: string } | null;
+	/**
+	 * What the summary was built from. `videoUrl` is set only when the video is
+	 * one of those sources; `kinds` is empty when there is no summary.
+	 */
+	summarySources: { kinds: SourceKind[]; videoUrl: string | null };
+	/** Points where the documents and the video state different things. */
+	sourceDisagreements: SourceDisagreement[];
 	fiscalDecisions: Array<FiscalDecisionDetail>;
 	budgetDiscussions: Array<{
 		topic: string;
@@ -581,6 +589,21 @@ export type MeetingDetail = {
 		notes: string | null;
 	}>;
 };
+
+/**
+ * The kinds a summary was built from. A summary that recorded none takes them
+ * from the rows attached to its meeting.
+ */
+function summarySourceKinds(
+	stored: SourceKind[],
+	attached: { hasDocuments: boolean; hasTranscript: boolean },
+): SourceKind[] {
+	if (stored.length > 0) return stored;
+	const kinds: SourceKind[] = [];
+	if (attached.hasDocuments) kinds.push("documents");
+	if (attached.hasTranscript) kinds.push("transcript");
+	return kinds;
+}
 
 /**
  * Read-side query that assembles the full meeting detail from multiple tables.
@@ -641,6 +664,23 @@ export async function getMeetingByBodyAndDateQuery(
 
 	if (!summary && extractionMethod !== "unreadable") return null;
 
+	// Only the link is read: transcript text never leaves the server.
+	const transcriptLinks = await db
+		.select({ sourceUrl: schema.transcripts.sourceUrl })
+		.from(schema.transcripts)
+		.where(eq(schema.transcripts.meetingId, meeting.id))
+		.all();
+
+	const sourceKinds = summary
+		? summarySourceKinds(summary.sourceKinds, {
+				hasDocuments: docs.length > 0,
+				hasTranscript: transcriptLinks.length > 0,
+			})
+		: [];
+	const videoUrl = sourceKinds.includes("transcript")
+		? (transcriptLinks.find((t) => t.sourceUrl)?.sourceUrl ?? null)
+		: null;
+
 	const fiscals = await db
 		.select()
 		.from(schema.fiscalDecisions)
@@ -675,6 +715,8 @@ export async function getMeetingByBodyAndDateQuery(
 					model: summary.model,
 				}
 			: null,
+		summarySources: { kinds: sourceKinds, videoUrl },
+		sourceDisagreements: summary?.sourceDisagreements ?? [],
 		fiscalDecisions: fiscals.map((f) => ({
 			title: f.title,
 			description: f.description,

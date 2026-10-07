@@ -28,6 +28,8 @@ function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
 			prose: "Council discussed infrastructure.",
 			model: "gemini-2.5-flash",
 		},
+		summarySources: { kinds: ["documents"], videoUrl: null },
+		sourceDisagreements: [],
 		fiscalDecisions: [
 			{
 				title: "Sale Street Road Repairs",
