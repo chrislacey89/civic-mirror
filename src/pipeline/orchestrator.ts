@@ -22,6 +22,8 @@ import type { FinalsiteMeetingListing } from "#/pipeline/services/FinalsiteScrap
 import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
 import {
 	type MatchableSummary,
+	type MatchResult,
+	type MeetingMatchInput,
 	MeetingMatchService,
 } from "#/pipeline/services/MeetingMatchService.ts";
 import type { ExtractResult } from "#/pipeline/services/PdfExtractor.ts";
@@ -422,6 +424,39 @@ function iterateWithAlertRecovery<TItem, R>(
 }
 
 /**
+ * Asks the same-meeting check whether a transcript summary and a documents
+ * summary describe one meeting. The check runs under the LLM retry schedule
+ * and is bracketed by `<source>.match.start` and `<source>.match.finish` logs;
+ * the finish log carries the outcome, probability and shared identifiers.
+ * Retries that run out surface as the check's error.
+ */
+function runSameMeetingCheck(
+	source: "egov" | "finalsite" | "youtube",
+	meetingId: MeetingSourceState["meetingId"],
+	summaries: MeetingMatchInput,
+	config: ResolvedConfig,
+): Effect.Effect<MatchResult, MeetingMatchError, MeetingMatchService> {
+	return Effect.gen(function* () {
+		const matcher = yield* MeetingMatchService;
+		yield* Effect.log(`${source}.match.start`).pipe(
+			Effect.annotateLogs({ meetingId }),
+		);
+		const match = yield* matcher
+			.check(summaries)
+			.pipe(Effect.retry(config.llmSchedule));
+		yield* Effect.log(`${source}.match.finish`).pipe(
+			Effect.annotateLogs({
+				meetingId,
+				outcome: match.outcome,
+				probability: match.probability,
+				sharedIdentifiers: match.sharedIdentifiers,
+			}),
+		);
+		return match;
+	});
+}
+
+/**
  * Settles a listing's documents against a meeting that already has documents:
  * attaches the ones the meeting lacks, then rebuilds the summary from every
  * source the meeting now holds. No same-meeting check is needed, since the
@@ -541,26 +576,17 @@ function matchDocumentsToMeeting(input: {
 	const summary = input.documentsSummary;
 	return Effect.gen(function* () {
 		const storage = yield* StorageService;
-		const matcher = yield* MeetingMatchService;
 
 		const transcriptSummary = yield* storage.getMatchableSummary(
 			meeting.meetingId,
 		);
 		if (transcriptSummary === null) return { settled: false };
 
-		yield* Effect.log(`${source}.match.start`).pipe(
-			Effect.annotateLogs({ meetingId: meeting.meetingId }),
-		);
-		const match = yield* matcher
-			.check({ transcriptSummary, documentsSummary: summary })
-			.pipe(Effect.retry(config.llmSchedule));
-		yield* Effect.log(`${source}.match.finish`).pipe(
-			Effect.annotateLogs({
-				meetingId: meeting.meetingId,
-				outcome: match.outcome,
-				probability: match.probability,
-				sharedIdentifiers: match.sharedIdentifiers,
-			}),
+		const match = yield* runSameMeetingCheck(
+			source,
+			meeting.meetingId,
+			{ transcriptSummary, documentsSummary: summary },
+			config,
 		);
 
 		if (match.outcome === "match") {
@@ -1523,7 +1549,6 @@ function matchVideoToMeeting(input: {
 	const { body, video, meeting, config } = input;
 	return Effect.gen(function* () {
 		const storage = yield* StorageService;
-		const matcher = yield* MeetingMatchService;
 
 		const { transcript, summary } = yield* transcribeAndSummarize(
 			body,
@@ -1531,22 +1556,14 @@ function matchVideoToMeeting(input: {
 			config,
 		);
 
-		yield* Effect.log("youtube.match.start").pipe(
-			Effect.annotateLogs({ meetingId: meeting.meetingId }),
-		);
-		const match = yield* matcher
-			.check({
+		const match = yield* runSameMeetingCheck(
+			"youtube",
+			meeting.meetingId,
+			{
 				transcriptSummary: summary,
 				documentsSummary: input.documentsSummary,
-			})
-			.pipe(Effect.retry(config.llmSchedule));
-		yield* Effect.log("youtube.match.finish").pipe(
-			Effect.annotateLogs({
-				meetingId: meeting.meetingId,
-				outcome: match.outcome,
-				probability: match.probability,
-				sharedIdentifiers: match.sharedIdentifiers,
-			}),
+			},
+			config,
 		);
 
 		if (match.outcome !== "match") {
