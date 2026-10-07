@@ -1,5 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
-import type { FiscalDecisionDetail, MeetingDetail } from "#/db/queries.ts";
+import type {
+	FiscalDecisionDetail,
+	MeetingDetail,
+	SummarySources,
+} from "#/db/queries.ts";
+import type { SourceDisagreement } from "#/pipeline/sources.ts";
 import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
 
 /**
@@ -11,7 +16,8 @@ import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
  * Three render branches keyed on `meeting.extractionMethod`:
  *   - `text-layer`: full Ledger layout (highlights, summary, receipts table)
  *   - `ocr`:        full layout plus OCR trust-disclosure banner and per-figure `?` badge
- *   - `unreadable`: status card + source PDF links only (no generated content)
+ *   - `unreadable`: status card + source PDF links only (no generated content),
+ *                   unless a summary exists (one built from the meeting video)
  */
 export const Route = createFileRoute("/meetings/$bodySlug/$date")({
 	validateSearch: (search: Record<string, unknown>): { session?: string } =>
@@ -69,6 +75,7 @@ function MeetingDetailPage() {
 export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 	const isOcr = meeting.extractionMethod === "ocr";
 	const isUnreadable = meeting.extractionMethod === "unreadable";
+	const isVideoOnly = meeting.summarySources.origin === "video";
 
 	return (
 		<main className="page-wrap px-4 pb-8 pt-6">
@@ -80,6 +87,9 @@ export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 			) : (
 				<>
 					{isOcr && <OcrBanner />}
+					{isVideoOnly && (
+						<VideoOnlyNotice minutesPosted={meeting.documents.length > 0} />
+					)}
 					{meeting.summary && (
 						<>
 							<section className="mt-10">
@@ -112,6 +122,10 @@ export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 								</div>
 							</section>
 						</>
+					)}
+
+					{meeting.sourceDisagreements.length > 0 && (
+						<SourceDisagreements disagreements={meeting.sourceDisagreements} />
 					)}
 
 					{meeting.fiscalDecisions.length > 0 && (
@@ -228,46 +242,169 @@ function MeetingHero({ meeting }: { meeting: MeetingDetail }) {
 				))}
 			</div>
 
-			{/* Primary sources */}
-			{meeting.documents.length > 0 && (
-				<div className="mt-6 border border-[var(--rule)] bg-[var(--paper)]">
-					<div className="mono border-b border-[var(--rule)] bg-[var(--paper-alt)] px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--ink)]">
-						Primary sources
-					</div>
-					{meeting.documents.map((doc, i) => (
-						<a
-							key={doc.sourceUrl}
-							href={doc.sourceUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							className={`grid grid-cols-[52px_1fr_auto] items-center gap-3 px-4 py-3 no-underline hover:bg-[var(--paper-alt)] ${
-								i < meeting.documents.length - 1
-									? "border-b border-dotted border-[var(--rule-dot)]"
-									: ""
-							}`}
-						>
-							<span className="mono bg-[var(--ink)] px-1.5 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--paper)]">
-								PDF
-							</span>
-							<span className="text-[14px] font-semibold text-[var(--ink)]">
-								View {doc.documentType} PDF
-							</span>
-							<span className="mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-soft)]">
-								{doc.extractionMethod}
-							</span>
-						</a>
-					))}
-				</div>
-			)}
+			<PrimarySources meeting={meeting} />
 		</section>
 	);
 }
 
-function SectionHead({ kicker, title }: { kicker: string; title: string }) {
+/**
+ * What the summary was built from, with a link to each source. Document links
+ * render even when there is no summary, so an unreadable meeting still leads
+ * to its PDFs.
+ */
+function PrimarySources({
+	meeting,
+}: {
+	meeting: Pick<MeetingDetail, "documents" | "summarySources">;
+}) {
+	const sources = meeting.summarySources;
+	const builtFrom = builtFromLine(sources);
+	const videoUrl =
+		sources.origin === "video" || sources.origin === "both"
+			? sources.videoUrl
+			: null;
+
+	if (meeting.documents.length === 0 && !videoUrl) return null;
+
+	return (
+		<div className="mt-6 border border-[var(--rule)] bg-[var(--paper)]">
+			<div className="mono border-b border-[var(--rule)] bg-[var(--paper-alt)] px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-[var(--ink)]">
+				Primary sources
+			</div>
+			{builtFrom && (
+				<p className="m-0 border-b border-dotted border-[var(--rule-dot)] px-4 py-3 text-[14px] text-[var(--ink-mid)]">
+					{builtFrom}
+				</p>
+			)}
+			{videoUrl && (
+				<a
+					href={videoUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className={`grid grid-cols-[52px_1fr_auto] items-center gap-3 px-4 py-3 no-underline hover:bg-[var(--paper-alt)] ${
+						meeting.documents.length > 0
+							? "border-b border-dotted border-[var(--rule-dot)]"
+							: ""
+					}`}
+				>
+					<span className="mono bg-[var(--ink)] px-1.5 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--paper)]">
+						Video
+					</span>
+					<span className="text-[14px] font-semibold text-[var(--ink)]">
+						Watch the meeting video
+					</span>
+					<span className="mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-soft)]">
+						YouTube
+					</span>
+				</a>
+			)}
+			{meeting.documents.map((doc, i) => (
+				<a
+					key={doc.sourceUrl}
+					href={doc.sourceUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					className={`grid grid-cols-[52px_1fr_auto] items-center gap-3 px-4 py-3 no-underline hover:bg-[var(--paper-alt)] ${
+						i < meeting.documents.length - 1
+							? "border-b border-dotted border-[var(--rule-dot)]"
+							: ""
+					}`}
+				>
+					<span className="mono bg-[var(--ink)] px-1.5 py-1 text-center text-[10px] font-bold uppercase tracking-[0.12em] text-[var(--paper)]">
+						PDF
+					</span>
+					<span className="text-[14px] font-semibold text-[var(--ink)]">
+						View {doc.documentType} PDF
+					</span>
+					<span className="mono text-[10px] uppercase tracking-[0.08em] text-[var(--ink-soft)]">
+						{doc.extractionMethod}
+					</span>
+				</a>
+			))}
+		</div>
+	);
+}
+
+/** The sentence naming a summary's sources, or null when it recorded none. */
+function builtFromLine(sources: SummarySources): string | null {
+	switch (sources.origin) {
+		case "both":
+			return "This summary was built from the meeting video and the official documents.";
+		case "documents":
+			return "This summary was built from the official documents.";
+		// The video-only notice already says so.
+		case "video":
+			return null;
+		case "none":
+			return null;
+	}
+}
+
+const DISAGREEMENTS_HEADING_ID = "source-disagreements-heading";
+
+/**
+ * Points where the video and the documents state different things. Nobody
+ * adjudicates them: the summary reports the documents' figure, and this list
+ * tells the reader that figure is in question.
+ */
+function SourceDisagreements({
+	disagreements,
+}: {
+	disagreements: readonly SourceDisagreement[];
+}) {
+	return (
+		<section className="mt-10" aria-labelledby={DISAGREEMENTS_HEADING_ID}>
+			<SectionHead
+				id={DISAGREEMENTS_HEADING_ID}
+				kicker="Check the sources"
+				title="Where the video and the documents differ"
+			/>
+			<p className="mt-3 text-[14px] leading-[1.55] text-[var(--ink-mid)]">
+				The meeting video and the official documents state different things on
+				the points below. The summary uses the documents' figure.
+			</p>
+			<ul className="m-0 mt-2 list-none p-0">
+				{disagreements.map((d, i) => (
+					<li
+						key={`${d.topic}-${d.documentsSay}-${d.transcriptSays}`}
+						className={`py-4 ${
+							i === 0
+								? "border-t border-[var(--rule)]"
+								: "border-t border-dotted border-[var(--rule-dot)]"
+						}`}
+					>
+						<p className="display m-0 text-[18px]">{d.topic}</p>
+						<p className="mt-2 text-[14px] leading-[1.55] text-[var(--ink)]">
+							<span className="font-semibold">The documents say:</span>{" "}
+							{d.documentsSay}
+						</p>
+						<p className="mt-1 text-[14px] leading-[1.55] text-[var(--ink)]">
+							<span className="font-semibold">The video says:</span>{" "}
+							{d.transcriptSays}
+						</p>
+					</li>
+				))}
+			</ul>
+		</section>
+	);
+}
+
+function SectionHead({
+	kicker,
+	title,
+	id,
+}: {
+	kicker: string;
+	title: string;
+	id?: string;
+}) {
 	return (
 		<div className="rule-double border-t-[3px] border-double border-[var(--rule)] pt-4">
 			<p className="kicker">{kicker}</p>
-			<h2 className="display mt-1 text-[26px] leading-tight tracking-[-0.01em]">
+			<h2
+				id={id}
+				className="display mt-1 text-[26px] leading-tight tracking-[-0.01em]"
+			>
 				{title}
 			</h2>
 		</div>
@@ -386,6 +523,22 @@ function OcrBanner() {
 				<span>
 					Extracted via OCR from a scanned PDF. Verify figures against the
 					original document.
+				</span>
+			</div>
+		</output>
+	);
+}
+
+function VideoOnlyNotice({ minutesPosted }: { minutesPosted: boolean }) {
+	return (
+		<output className="rise-in mt-6 block border border-[var(--rule)]">
+			<div className="mono flex items-center gap-3 bg-[var(--paper)] px-4 py-3 text-[12px] text-[var(--ink-mid)]">
+				<span className="mono shrink-0 bg-[var(--ink)] px-2 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-[var(--highlight)]">
+					Video only
+				</span>
+				<span>
+					This summary was built from the meeting video alone.
+					{minutesPosted ? "" : " Official minutes are not yet posted."}
 				</span>
 			</div>
 		</output>

@@ -1,6 +1,7 @@
 import { and, desc, eq, sql, sum } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "#/db/schema.ts";
+import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
 
 export type MeetingType = "regular" | "special" | "workshop";
 export type FiscalStatus = "approved" | "denied" | "tabled";
@@ -16,14 +17,18 @@ function parseExtractionMethod(raw: string): ExtractionMethod {
 
 /**
  * Derive meeting-level extraction method from per-document methods.
- * "unreadable" only if every document is unreadable (or there are none);
- * "ocr" if any readable doc came through OCR; "text-layer" otherwise.
+ * "unreadable" only if there is nothing to show: every document is unreadable
+ * (or there are none) and no summary exists. A meeting with a summary but no
+ * readable document (e.g. one built from the video alone) is "text-layer";
+ * otherwise "ocr" if any readable doc came through OCR, else "text-layer".
  */
 function deriveMeetingExtractionMethod(
 	methods: ExtractionMethod[],
+	hasSummary: boolean,
 ): ExtractionMethod {
-	if (methods.length === 0) return "unreadable";
-	if (methods.every((m) => m === "unreadable")) return "unreadable";
+	if (methods.every((m) => m === "unreadable")) {
+		return hasSummary ? "text-layer" : "unreadable";
+	}
 	if (methods.some((m) => m === "ocr")) return "ocr";
 	return "text-layer";
 }
@@ -152,15 +157,16 @@ export async function listRecentMeetingsQuery(
 			.where(eq(schema.documents.meetingId, m.id))
 			.all();
 
-		const extractionMethod = deriveMeetingExtractionMethod(
-			docs.map((d) => parseExtractionMethod(d.extractionMethod)),
-		);
-
 		const summary = await db
 			.select()
 			.from(schema.summaries)
 			.where(eq(schema.summaries.meetingId, m.id))
 			.get();
+
+		const extractionMethod = deriveMeetingExtractionMethod(
+			docs.map((d) => parseExtractionMethod(d.extractionMethod)),
+			summary !== undefined,
+		);
 
 		// Readable meetings without a summary are a broken mid-pipeline state —
 		// skip them. Unreadable meetings legitimately have no summary and must
@@ -555,6 +561,17 @@ export type FiscalDecisionDetail = {
 };
 
 /**
+ * What a meeting's summary was built from. Only a summary built from the video
+ * carries a video link, and that link is null when the transcript recorded no
+ * URL. `none` is a meeting with no summary, or one with nothing attached.
+ */
+export type SummarySources =
+	| { origin: "none" }
+	| { origin: "documents" }
+	| { origin: "video"; videoUrl: string | null }
+	| { origin: "both"; videoUrl: string | null };
+
+/**
  * The "read shape" — a fully assembled meeting with all related records
  * joined together. This is what the server function returns to the UI.
  */
@@ -574,6 +591,10 @@ export type MeetingDetail = {
 		extractionMethod: ExtractionMethod;
 	}>;
 	summary: { highlights: string[]; prose: string; model: string } | null;
+	/** What the summary was built from. */
+	summarySources: SummarySources;
+	/** Points where the documents and the video state different things. */
+	sourceDisagreements: readonly SourceDisagreement[];
 	fiscalDecisions: Array<FiscalDecisionDetail>;
 	budgetDiscussions: Array<{
 		topic: string;
@@ -581,6 +602,38 @@ export type MeetingDetail = {
 		notes: string | null;
 	}>;
 };
+
+/**
+ * The kinds a summary was built from. A summary that recorded none predates
+ * video summaries, so it was built from the documents when the meeting has any;
+ * only a meeting with no documents falls back to its transcript.
+ */
+function summarySourceKinds(
+	stored: SourceKind[],
+	attached: { hasDocuments: boolean; hasTranscript: boolean },
+): SourceKind[] {
+	if (stored.length > 0) return stored;
+	if (attached.hasDocuments) return ["documents"];
+	if (attached.hasTranscript) return ["transcript"];
+	return [];
+}
+
+/**
+ * The one place that decides what a summary was built from. `videoUrl` is the
+ * meeting's transcript link, and reaches the result only when the video is one
+ * of the summary's sources.
+ */
+function summarySourcesOf(
+	kinds: readonly SourceKind[],
+	videoUrl: string | null,
+): SummarySources {
+	const fromVideo = kinds.includes("transcript");
+	const fromDocuments = kinds.includes("documents");
+	if (fromVideo && fromDocuments) return { origin: "both", videoUrl };
+	if (fromVideo) return { origin: "video", videoUrl };
+	if (fromDocuments) return { origin: "documents" };
+	return { origin: "none" };
+}
 
 /**
  * Read-side query that assembles the full meeting detail from multiple tables.
@@ -631,7 +684,6 @@ export async function getMeetingByBodyAndDateQuery(
 		.all();
 
 	const docMethods = docs.map((d) => parseExtractionMethod(d.extractionMethod));
-	const extractionMethod = deriveMeetingExtractionMethod(docMethods);
 
 	const summary = await db
 		.select()
@@ -639,7 +691,30 @@ export async function getMeetingByBodyAndDateQuery(
 		.where(eq(schema.summaries.meetingId, meeting.id))
 		.get();
 
+	const extractionMethod = deriveMeetingExtractionMethod(
+		docMethods,
+		summary !== undefined,
+	);
+
 	if (!summary && extractionMethod !== "unreadable") return null;
+
+	// Only the link is read: transcript text never leaves the server.
+	const transcriptLinks = await db
+		.select({ sourceUrl: schema.transcripts.sourceUrl })
+		.from(schema.transcripts)
+		.where(eq(schema.transcripts.meetingId, meeting.id))
+		.all();
+
+	const sourceKinds = summary
+		? summarySourceKinds(summary.sourceKinds, {
+				hasDocuments: docs.length > 0,
+				hasTranscript: transcriptLinks.length > 0,
+			})
+		: [];
+	const summarySources = summarySourcesOf(
+		sourceKinds,
+		transcriptLinks.find((t) => t.sourceUrl)?.sourceUrl ?? null,
+	);
 
 	const fiscals = await db
 		.select()
@@ -675,6 +750,8 @@ export async function getMeetingByBodyAndDateQuery(
 					model: summary.model,
 				}
 			: null,
+		summarySources,
+		sourceDisagreements: summary?.sourceDisagreements ?? [],
 		fiscalDecisions: fiscals.map((f) => ({
 			title: f.title,
 			description: f.description,

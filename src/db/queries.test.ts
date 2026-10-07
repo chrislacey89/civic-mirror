@@ -24,8 +24,10 @@ async function createTestDb() {
 	return db;
 }
 
+type TestDb = Awaited<ReturnType<typeof createTestDb>>;
+
 async function seedBody(
-	db: Awaited<ReturnType<typeof createTestDb>>,
+	db: TestDb,
 	overrides: Partial<typeof schema.governingBodies.$inferInsert> = {},
 ) {
 	return await db
@@ -41,7 +43,7 @@ async function seedBody(
 }
 
 async function seedMeetingWithSummary(
-	db: Awaited<ReturnType<typeof createTestDb>>,
+	db: TestDb,
 	bodyId: number,
 	date: string,
 	opts: {
@@ -391,7 +393,7 @@ describe("listNotableFiscalDecisionsQuery", () => {
 
 describe("getMeetingByBodyAndDateQuery — extractionMethod", () => {
 	async function seedMeetingWithDocs(
-		db: Awaited<ReturnType<typeof createTestDb>>,
+		db: TestDb,
 		bodyId: number,
 		date: string,
 		docs: Array<{
@@ -793,7 +795,7 @@ describe("aggregateFiscalByCategoryForBodyQuery", () => {
 
 describe("meetings that share a date", () => {
 	async function seedSession(
-		db: Awaited<ReturnType<typeof createTestDb>>,
+		db: TestDb,
 		bodyId: number,
 		date: string,
 		session: string,
@@ -889,5 +891,327 @@ describe("meetings that share a date", () => {
 			["decision of board-of-finance", "board-of-finance"],
 			["decision of regular-meeting", "regular-meeting"],
 		]);
+	});
+});
+
+describe("getMeetingByBodyAndDateQuery — summary sources", () => {
+	const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+	const TRANSCRIPT_TEXT = "TRANSCRIPT-TEXT-THAT-MUST-STAY-ON-THE-SERVER";
+
+	async function seedSourcedMeeting(
+		db: TestDb,
+		bodyId: number,
+		opts: {
+			date?: string;
+			session?: string;
+			documentUrls?: string[];
+			videoUrl?: string | null;
+			summary?: Partial<typeof schema.summaries.$inferInsert>;
+		} = {},
+	) {
+		const meeting = await db
+			.insert(schema.meetings)
+			.values({
+				bodyId,
+				date: opts.date ?? "2026-03-23",
+				session: opts.session ?? "",
+				meetingType: "regular",
+			})
+			.returning()
+			.get();
+
+		for (const sourceUrl of opts.documentUrls ?? []) {
+			await db
+				.insert(schema.documents)
+				.values({
+					meetingId: meeting.id,
+					sourceUrl,
+					rawText: "Document text.",
+					documentType: "minutes",
+					extractionMethod: "text-layer",
+				})
+				.run();
+		}
+
+		if (opts.videoUrl !== undefined) {
+			await db
+				.insert(schema.transcripts)
+				.values({
+					meetingId: meeting.id,
+					source: "captions",
+					rawText: TRANSCRIPT_TEXT,
+					segments: [{ start: 0, text: TRANSCRIPT_TEXT }],
+					sourceUrl: opts.videoUrl,
+				})
+				.run();
+		}
+
+		await db
+			.insert(schema.summaries)
+			.values({
+				meetingId: meeting.id,
+				highlights: ["h1"],
+				prose: "prose",
+				model: "gemini-2.5-flash",
+				...opts.summary,
+			})
+			.run();
+
+		return meeting;
+	}
+
+	it("does not call a meeting with a summary and no readable document unreadable, on the detail and list queries", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSourcedMeeting(db, body.id, {
+			videoUrl: VIDEO_URL,
+			summary: { sourceKinds: ["transcript"] },
+		});
+		const scanned = await seedSourcedMeeting(db, body.id, {
+			date: "2026-04-13",
+			videoUrl: VIDEO_URL,
+			summary: { sourceKinds: ["transcript"] },
+		});
+		await db
+			.insert(schema.documents)
+			.values({
+				meetingId: scanned.id,
+				sourceUrl: "https://example.gov/scan.pdf",
+				rawText: "",
+				documentType: "minutes",
+				extractionMethod: "unreadable",
+			})
+			.run();
+
+		const detail = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-03-23",
+		);
+		const scannedDetail = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-04-13",
+		);
+		const list = await listRecentMeetingsQuery(db);
+
+		expect(detail?.extractionMethod).not.toBe("unreadable");
+		expect(scannedDetail?.extractionMethod).not.toBe("unreadable");
+		expect(list).toHaveLength(2);
+		for (const row of list) {
+			expect(row.extractionMethod).not.toBe("unreadable");
+		}
+	});
+
+	it("still calls a meeting with no documents and no summary unreadable", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await db
+			.insert(schema.meetings)
+			.values({
+				bodyId: body.id,
+				date: "2026-03-23",
+				meetingType: "regular",
+			})
+			.run();
+
+		const detail = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-03-23",
+		);
+		const list = await listRecentMeetingsQuery(db);
+
+		expect(detail?.extractionMethod).toBe("unreadable");
+		expect(list.map((r) => r.extractionMethod)).toEqual(["unreadable"]);
+	});
+
+	it("returns the stored kinds and the video link, and no transcript text", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSourcedMeeting(db, body.id, {
+			documentUrls: ["https://example.gov/minutes.pdf"],
+			videoUrl: VIDEO_URL,
+			summary: { sourceKinds: ["documents", "transcript"] },
+		});
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-03-23",
+		);
+
+		expect(result?.summarySources).toEqual({
+			origin: "both",
+			videoUrl: VIDEO_URL,
+		});
+		expect(JSON.stringify(result)).not.toContain(TRANSCRIPT_TEXT);
+	});
+
+	it("derives the kinds from the attached rows when the summary stored none, never crediting a video that joined later", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSourcedMeeting(db, body.id, {
+			date: "2026-03-23",
+			documentUrls: ["https://example.gov/minutes.pdf"],
+		});
+		await seedSourcedMeeting(db, body.id, {
+			date: "2026-04-13",
+			videoUrl: VIDEO_URL,
+		});
+		await seedSourcedMeeting(db, body.id, {
+			date: "2026-04-27",
+			documentUrls: ["https://example.gov/april.pdf"],
+			videoUrl: VIDEO_URL,
+		});
+
+		const sourcesOn = async (date: string) =>
+			(await getMeetingByBodyAndDateQuery(db, body.slug, date))?.summarySources;
+
+		expect(await sourcesOn("2026-03-23")).toEqual({
+			origin: "documents",
+		});
+		expect(await sourcesOn("2026-04-13")).toEqual({
+			origin: "video",
+			videoUrl: VIDEO_URL,
+		});
+		expect(await sourcesOn("2026-04-27")).toEqual({
+			origin: "documents",
+		});
+	});
+
+	it("gives no video link when the summary was built from the documents alone", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSourcedMeeting(db, body.id, {
+			documentUrls: ["https://example.gov/minutes.pdf"],
+			videoUrl: VIDEO_URL,
+			summary: { sourceKinds: ["documents"] },
+		});
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2026-03-23",
+		);
+
+		expect(result?.summarySources).toEqual({
+			origin: "documents",
+		});
+	});
+
+	it("credits the video but gives no link when the transcript's sourceUrl is null", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSourcedMeeting(db, body.id, {
+			videoUrl: null,
+			summary: { sourceKinds: ["transcript"] },
+		});
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2026-03-23",
+		);
+
+		expect(result?.summarySources).toEqual({
+			origin: "video",
+			videoUrl: null,
+		});
+	});
+
+	it("returns a video-only meeting, which has no documents, with its summary", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSourcedMeeting(db, body.id, {
+			videoUrl: VIDEO_URL,
+			summary: { sourceKinds: ["transcript"], prose: "from the video" },
+		});
+
+		const result = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2026-03-23",
+		);
+
+		expect(result?.documents).toEqual([]);
+		expect(result?.summary?.prose).toBe("from the video");
+		expect(result?.summarySources).toEqual({
+			origin: "video",
+			videoUrl: VIDEO_URL,
+		});
+	});
+
+	it("returns the summary's source disagreements, and none when it stored none", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		const disagreement = {
+			topic: "Paving bid",
+			documentsSay: "$215,215.10",
+			transcriptSays: "$244,215.10",
+		};
+		await seedSourcedMeeting(db, body.id, {
+			date: "2026-03-23",
+			documentUrls: ["https://example.gov/minutes.pdf"],
+			videoUrl: VIDEO_URL,
+			summary: {
+				sourceKinds: ["documents", "transcript"],
+				sourceDisagreements: [disagreement],
+			},
+		});
+		await seedSourcedMeeting(db, body.id, {
+			date: "2026-04-13",
+			documentUrls: ["https://example.gov/april.pdf"],
+		});
+
+		const march = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2026-03-23",
+		);
+		const april = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2026-04-13",
+		);
+
+		expect(march?.sourceDisagreements).toEqual([disagreement]);
+		expect(april?.sourceDisagreements).toEqual([]);
+	});
+
+	it("gives each session on a shared date its own sources", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSourcedMeeting(db, body.id, {
+			session: "",
+			documentUrls: ["https://example.gov/minutes.pdf"],
+			summary: { sourceKinds: ["documents"] },
+		});
+		await seedSourcedMeeting(db, body.id, {
+			session: "work-session",
+			videoUrl: "https://www.youtube.com/watch?v=worksession",
+			summary: { sourceKinds: ["transcript"] },
+		});
+
+		const regular = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2026-03-23",
+			"",
+		);
+		const workSession = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2026-03-23",
+			"work-session",
+		);
+
+		expect(regular?.summarySources).toEqual({
+			origin: "documents",
+		});
+		expect(workSession?.summarySources).toEqual({
+			origin: "video",
+			videoUrl: "https://www.youtube.com/watch?v=worksession",
+		});
 	});
 });

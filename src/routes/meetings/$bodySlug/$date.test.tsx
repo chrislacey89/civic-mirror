@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import { MeetingDetailView } from "./$date.tsx";
@@ -28,6 +28,8 @@ function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
 			prose: "Council discussed infrastructure.",
 			model: "gemini-2.5-flash",
 		},
+		summarySources: { origin: "documents" },
+		sourceDisagreements: [],
 		fiscalDecisions: [
 			{
 				title: "Sale Street Road Repairs",
@@ -182,5 +184,156 @@ describe("MeetingDetailView — unreadable branch", () => {
 
 		// Source PDF link still present
 		expect(screen.getByText(/View minutes PDF/)).toBeDefined();
+	});
+});
+
+describe("MeetingDetailView — summary sources", () => {
+	const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+
+	it("says a summary with both kinds was built from the video and the documents, and links to both", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					summarySources: {
+						origin: "both",
+						videoUrl: VIDEO_URL,
+					},
+				})}
+			/>,
+		);
+
+		screen.getByText(
+			"This summary was built from the meeting video and the official documents.",
+		);
+		expect(
+			screen
+				.getByRole("link", { name: /Watch the meeting video/ })
+				.getAttribute("href"),
+		).toBe(VIDEO_URL);
+		expect(
+			screen
+				.getByRole("link", { name: /View minutes PDF/ })
+				.getAttribute("href"),
+		).toBe("https://example.gov/minutes.pdf");
+	});
+
+	it("says a documents-only summary was built from the official documents, with no video link or notice", () => {
+		render(<MeetingDetailView meeting={makeMeeting()} />);
+
+		screen.getByText("This summary was built from the official documents.");
+		screen.getByRole("link", { name: /View minutes PDF/ });
+		expect(screen.queryByRole("link", { name: /video/i })).toBeNull();
+		expect(screen.queryByText(/video alone/)).toBeNull();
+		screen.getByText("Key Highlights");
+	});
+
+	it("tells the reader a video-only summary came from the video alone and that minutes are not yet posted", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					documents: [],
+					summarySources: { origin: "video", videoUrl: VIDEO_URL },
+				})}
+			/>,
+		);
+
+		expect(screen.getByRole("status").textContent).toContain(
+			"This summary was built from the meeting video alone. Official minutes are not yet posted.",
+		);
+		expect(
+			screen
+				.getByRole("link", { name: /Watch the meeting video/ })
+				.getAttribute("href"),
+		).toBe(VIDEO_URL);
+		screen.getByText("Key Highlights");
+		screen.getByText("Sale Street Road Repairs");
+		expect(screen.queryByText(/couldn't extract readable text/)).toBeNull();
+	});
+
+	it("does not claim minutes are unposted when a document is attached to a video-only summary", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					summarySources: { origin: "video", videoUrl: VIDEO_URL },
+				})}
+			/>,
+		);
+
+		expect(screen.getByRole("status").textContent).toContain(
+			"This summary was built from the meeting video alone.",
+		);
+		expect(screen.queryByText(/not yet posted/)).toBeNull();
+		screen.getByRole("link", { name: /View minutes PDF/ });
+	});
+
+	it("lists each disagreement with what the documents and the video say, and says the summary uses the documents' figure", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					summarySources: {
+						origin: "both",
+						videoUrl: VIDEO_URL,
+					},
+					sourceDisagreements: [
+						{
+							topic: "Paving bid",
+							documentsSay: "$215,215.10",
+							transcriptSays: "$244,215.10",
+						},
+						{
+							topic: "Wheel tax vote",
+							documentsSay: "Passed 4–1",
+							transcriptSays: "Passed 5–0",
+						},
+					],
+				})}
+			/>,
+		);
+
+		const section = screen.getByRole("region", {
+			name: "Where the video and the documents differ",
+		});
+		expect(section.textContent).toContain(
+			"The summary uses the documents' figure.",
+		);
+		const items = within(section).getAllByRole("listitem");
+		const expected = [
+			{ topic: "Paving bid", documents: "$215,215.10", video: "$244,215.10" },
+			{ topic: "Wheel tax vote", documents: "Passed 4–1", video: "Passed 5–0" },
+		];
+		expect(items).toHaveLength(expected.length);
+		expected.forEach((want, i) => {
+			const item = items[i];
+			within(item).getByText(want.topic);
+			// Each value must sit in the line under its own label.
+			const documentsLine = within(item)
+				.getByText("The documents say:")
+				.closest("p");
+			const videoLine = within(item).getByText("The video says:").closest("p");
+			expect(documentsLine?.textContent).toContain(want.documents);
+			expect(documentsLine?.textContent).not.toContain(want.video);
+			expect(videoLine?.textContent).toContain(want.video);
+			expect(videoLine?.textContent).not.toContain(want.documents);
+		});
+	});
+
+	it("renders no disagreement section when the sources do not disagree", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					summarySources: {
+						origin: "both",
+						videoUrl: VIDEO_URL,
+					},
+				})}
+			/>,
+		);
+
+		expect(
+			screen.queryByRole("region", {
+				name: "Where the video and the documents differ",
+			}),
+		).toBeNull();
+		expect(screen.queryByText(/documents' figure/)).toBeNull();
 	});
 });
