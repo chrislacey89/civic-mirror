@@ -3421,16 +3421,19 @@ describe("runPipeline document regeneration", () => {
 		});
 		/** One pipeline run over the given listings, against the database. */
 		const run = async (
-			config: Omit<StubConfig, "log">,
+			{
+				crawlDelayMs = 0,
+				...config
+			}: Omit<StubConfig, "log"> & { crawlDelayMs?: number },
 			body: Parameters<typeof runPipeline>[0]["bodies"][number] = COUNCIL,
 			unreadable = false,
 		) => {
 			const log = emptyCallLog();
 			const { captured, layer: loggerLayer } = buildLogCapture();
-			const result = await Effect.runPromise(
+			const { sleeps, effect } = withRecordedSleeps(
 				runPipeline({
 					bodies: [body],
-					crawlDelayMs: 0,
+					crawlDelayMs,
 					networkRetry: { attempts: 0, baseDelayMs: 0 },
 					llmRetry: { attempts: 0, baseDelayMs: 0 },
 					// Each download is the same stub bytes, so the text is numbered
@@ -3456,7 +3459,8 @@ describe("runPipeline document regeneration", () => {
 					Effect.provide(loggerLayer),
 				),
 			);
-			return { log, result, captured };
+			const result = await Effect.runPromise(effect);
+			return { log, result, captured, sleeps };
 		};
 		return { db, rows, run };
 	}
@@ -3716,6 +3720,117 @@ describe("runPipeline document regeneration", () => {
 		expect(await rows()).toEqual(after);
 	});
 
+	describe("an eGov listing whose document the meeting already holds", () => {
+		it("is not downloaded again and spends no crawl delay", async () => {
+			const { rows, run } = await setup();
+			await run({ egovListings: [AGENDA] });
+			const before = await rows();
+
+			const { log, result, sleeps } = await run({
+				egovListings: [AGENDA],
+				crawlDelayMs: 300_000,
+			});
+
+			expect(log.egovDownload).toEqual([]);
+			expect(sleeps).toEqual([]);
+			expect(result).toEqual({ processed: 0, errors: 0 });
+			expect(await rows()).toEqual(before);
+		});
+
+		it("leaves the download and one crawl delay to the listing beside it that the meeting does not hold", async () => {
+			const { rows, run } = await setup();
+			await run({ egovListings: [AGENDA] });
+
+			const { log, result, sleeps } = await run({
+				egovListings: [AGENDA, MINUTES],
+				crawlDelayMs: 300_000,
+			});
+
+			expect(log.egovDownload).toEqual([MINUTES.downloadUrl]);
+			expect(sleeps).toEqual([300_000]);
+			expect(result).toEqual({ processed: 1, errors: 0 });
+			expect((await rows()).documents.map((d) => d.sourceUrl)).toEqual([
+				AGENDA.downloadUrl,
+				MINUTES.downloadUrl,
+			]);
+		});
+
+		it("is not downloaded again when it was stored unreadable", async () => {
+			const { rows, run } = await setup();
+			await run({ egovListings: [MINUTES] }, COUNCIL, true);
+			const before = await rows();
+			expect(before.documents.map((d) => d.extractionMethod)).toEqual([
+				"unreadable",
+			]);
+
+			const { log, sleeps } = await run({
+				egovListings: [MINUTES],
+				crawlDelayMs: 300_000,
+			});
+
+			expect(log.egovDownload).toEqual([]);
+			expect(sleeps).toEqual([]);
+			expect(await rows()).toEqual(before);
+		});
+
+		it("still rebuilds a summary a failed run left behind, without downloading", async () => {
+			const { rows, run } = await setup();
+			await run({ egovListings: [AGENDA] });
+			await run({
+				egovListings: [AGENDA, MINUTES],
+				summarizationError: new Error("quota exceeded"),
+			});
+
+			const { log, result, sleeps } = await run({
+				egovListings: [AGENDA, MINUTES],
+				summarizationResult: REGENERATED,
+				crawlDelayMs: 300_000,
+			});
+
+			expect(log.egovDownload).toEqual([]);
+			expect(sleeps).toEqual([]);
+			expect(result.errors).toBe(0);
+			expect(log.summarize).toHaveLength(1);
+			expect((await rows()).summaries[0]).toMatchObject({
+				highlights: ["Regenerated highlight"],
+				sourceFingerprint: computeSourceFingerprint([
+					AGENDA.downloadUrl,
+					MINUTES.downloadUrl,
+				]),
+			});
+		});
+
+		it("logs egov.listing.skipped with the meeting, its date, the url and a reason", async () => {
+			const { db, run } = await setup();
+			await run({ egovListings: [AGENDA] });
+			const [meeting] = await db.select().from(schema.meetings).all();
+
+			const { captured } = await run({ egovListings: [AGENDA] });
+
+			expect(
+				findStageLog(captured, "egov.listing.skipped")?.annotations,
+			).toMatchObject({
+				body: COUNCIL.slug,
+				source: "egov",
+				url: AGENDA.downloadUrl,
+				meetingId: meeting.id,
+				date: "2025-05-27",
+				reason: "already-stored",
+			});
+		});
+
+		it("is downloaded when the same url is held only by another meeting", async () => {
+			const { run } = await setup();
+			await run({ egovListings: [AGENDA] });
+
+			const { log } = await run({
+				egovListings: [{ ...AGENDA, meetingDate: "2025-06-10" }],
+			});
+
+			expect(log.egovDownload).toEqual([AGENDA.downloadUrl]);
+		});
+	});
+
 	describe("a listing for a meeting that has a transcript and no documents", () => {
 		const VIDEO_URL = "https://www.youtube.com/watch?v=council-video";
 		const FROM_VIDEO: MatchableSummary = {
@@ -3936,6 +4051,43 @@ describe("runPipeline document regeneration", () => {
 			expect(videoRun.log.transcribe).toEqual([]);
 			expect(videoRun.log.match).toEqual([]);
 			expect({ ...(await rows()), ...(await videoRows(db)) }).toEqual(afterPdf);
+		});
+
+		it("downloads the listing again on the next run when the check failed and nothing was stored", async () => {
+			const { db, rows, run } = await setup();
+			await seedVideoMeeting(db, COUNCIL_MEETING);
+
+			const failed = await run({
+				egovListings: [MINUTES],
+				matchResult: new MeetingMatchError({ message: "model unavailable" }),
+			});
+			expect(failed.result.errors).toBe(1);
+			expect((await rows()).documents).toEqual([]);
+
+			const { log, sleeps } = await run({
+				egovListings: [MINUTES],
+				crawlDelayMs: 300_000,
+			});
+
+			expect(log.egovDownload).toEqual([MINUTES.downloadUrl]);
+			expect(sleeps).toEqual([300_000]);
+			expect((await rows()).documents.map((d) => d.sourceUrl)).toEqual([
+				MINUTES.downloadUrl,
+			]);
+		});
+
+		it("downloads the listing again on the next run when it was unreadable and skipped for the video", async () => {
+			const { db, rows, run } = await setup();
+			await seedVideoMeeting(db, COUNCIL_MEETING);
+			await run({ egovListings: [MINUTES] }, COUNCIL, true);
+			expect((await rows()).documents).toEqual([]);
+
+			const { log } = await run({ egovListings: [MINUTES] });
+
+			expect(log.egovDownload).toEqual([MINUTES.downloadUrl]);
+			expect((await rows()).documents.map((d) => d.sourceUrl)).toEqual([
+				MINUTES.downloadUrl,
+			]);
 		});
 
 		it("[QA-MAINT] emits egov.match.start and egov.match.finish with the outcome, probability and shared identifiers", async () => {

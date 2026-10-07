@@ -732,6 +732,38 @@ function processEgovListing(
 			);
 		}
 
+		const existing = config.dryRun
+			? null
+			: yield* storage.getMeetingSourceState({
+					bodySlug: body.slug,
+					date: meetingDate,
+					session: "",
+				});
+
+		// The summary's fingerprint is built from source URLs, so a document the
+		// meeting already holds under this URL cannot change it, and downloading
+		// it again would spend a request and the crawl delay to store nothing.
+		// Regeneration still runs: it is how a summary left behind by a failed
+		// run catches up, and it asks nothing of the portal.
+		if (existing?.hasDocuments) {
+			const held = yield* storage.getMeetingSources(existing.meetingId);
+			if (held.documents.some((d) => d.sourceUrl === listing.downloadUrl)) {
+				yield* Effect.log("egov.listing.skipped").pipe(
+					Effect.annotateLogs({
+						meetingId: existing.meetingId,
+						date: meetingDate,
+						reason: "already-stored",
+					}),
+				);
+				yield* regenerateWithRetry({
+					meetingId: existing.meetingId,
+					meetingContext: `${body.name}, ${meetingDate}`,
+					config,
+				});
+				return SETTLED_WITHOUT_REQUEST;
+			}
+		}
+
 		yield* Effect.log("egov.download.start");
 		const bytes = yield* scraper
 			.downloadDocument(listing.downloadUrl)
@@ -755,13 +787,6 @@ function processEgovListing(
 		// A meeting that already has documents takes this one as a further
 		// source of the same summary. One that has only a transcript is
 		// settled below, once this document has a summary of its own.
-		const existing = config.dryRun
-			? null
-			: yield* storage.getMeetingSourceState({
-					bodySlug: body.slug,
-					date: meetingDate,
-					session: "",
-				});
 		if (existing?.hasDocuments) {
 			yield* attachDocumentsAndRegenerate({
 				meetingId: existing.meetingId,
