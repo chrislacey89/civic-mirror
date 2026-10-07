@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DRAMA_CATEGORIES } from "#/lib/drama-levels.ts";
 import { buildProductionLayers } from "#/pipeline/composition.ts";
 import { DramaDetectionService } from "#/pipeline/services/DramaDetectionService.ts";
+import { formatTranscriptWithTimestamps } from "#/pipeline/services/transcriptFormatting.ts";
 
 const { generateText } = vi.hoisted(() => ({ generateText: vi.fn() }));
 
@@ -41,7 +42,16 @@ describe("buildProductionLayers process rubric", () => {
 			Effect.gen(function* () {
 				const detector = yield* DramaDetectionService;
 				return yield* detector.detect({
-					sourceText: "[00:00] Call to order.",
+					// The shape production sends: captions-only transcript, offsets
+					// only in `segments`, formatted by the orchestrator.
+					sourceText: formatTranscriptWithTimestamps({
+						source: "captions",
+						rawText: "Call to order. Roll call.",
+						segments: [
+							{ text: "Call to order.", startMs: 0, durationMs: 2000 },
+							{ text: "Roll call.", startMs: 45000, durationMs: 2000 },
+						],
+					}),
 					meetingContext: "Town Council, regular meeting",
 				});
 			}).pipe(Effect.provide(buildProductionLayers({ dryRun: true }))),
@@ -50,6 +60,8 @@ describe("buildProductionLayers process rubric", () => {
 		const { system } = generateText.mock.calls[0][0] as { system: string };
 		expect(rubricCategories(system)).toEqual([...DRAMA_CATEGORIES]);
 		expect(system).not.toMatch(/drama/i);
+		const { prompt } = generateText.mock.calls[0][0] as { prompt: string };
+		expect(prompt).toContain("[00:00] Call to order. [00:45] Roll call.");
 		expect(result.promptVersion).toBe("v2");
 	});
 });

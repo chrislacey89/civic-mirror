@@ -51,7 +51,13 @@ type DramaAssessmentResult = DramaAssessmentOutput & {
  * what we care about is the word sequence.
  */
 function normalize(text: string): string {
-	return text.toLowerCase().replace(/\s+/g, " ").trim();
+	// Inline `[MM:SS]` stamps are not spoken words; a quote that spans one must
+	// still match.
+	return text
+		.replace(/\[\d+:\d{2}\]/g, " ")
+		.toLowerCase()
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 /**

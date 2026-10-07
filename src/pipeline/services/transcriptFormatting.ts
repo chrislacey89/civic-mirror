@@ -4,7 +4,11 @@ export function formatTranscriptWithTimestamps(
 	transcript: TranscriptResult,
 ): string {
 	if (transcript.source === "captions") {
-		return transcript.rawText;
+		// Production captions carry offsets only in `segments`; `rawText` has no
+		// time markers, so the minutes-based rubric categories need them inlined.
+		return transcript.segments.length > 0
+			? stampCaptionSegments(transcript.segments)
+			: transcript.rawText;
 	}
 
 	if (
@@ -16,6 +20,24 @@ export function formatTranscriptWithTimestamps(
 	}
 
 	return transcript.rawText;
+}
+
+/** Caption segments are a few seconds long; stamp at most this often. */
+const CAPTION_STAMP_INTERVAL_MS = 30_000;
+
+function stampCaptionSegments(
+	segments: Array<{ text: string; startMs: number }>,
+): string {
+	const parts: string[] = [];
+	let lastStampMs = Number.NEGATIVE_INFINITY;
+	for (const segment of segments) {
+		if (segment.startMs - lastStampMs >= CAPTION_STAMP_INTERVAL_MS) {
+			parts.push(`[${formatTimestamp(segment.startMs)}]`);
+			lastStampMs = segment.startMs;
+		}
+		parts.push(segment.text);
+	}
+	return parts.join(" ");
 }
 
 function reconstructWithTimestamps(

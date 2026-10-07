@@ -26,6 +26,15 @@ const ZERO_CATEGORY_SCORES = {
 };
 
 describe("verifyEvidenceQuotes", () => {
+	it("verifies a quote that spans an inline timestamp marker", () => {
+		const verified = verifyEvidenceQuotes(
+			{ score: 1, evidence_quotes: ["we will table this until next month"] },
+			"[00:00] Chair: we will table this [00:30] until next month",
+		);
+		expect(verified.score).toBe(1);
+		expect(verified.evidence_quotes).toHaveLength(1);
+	});
+
 	it("keeps quotes that appear verbatim in the source text", () => {
 		const verified = verifyEvidenceQuotes(
 			{
