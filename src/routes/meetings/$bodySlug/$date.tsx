@@ -88,7 +88,11 @@ export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 				<>
 					{isOcr && <OcrBanner />}
 					{isVideoOnly && (
-						<VideoOnlyNotice minutesPosted={meeting.documents.length > 0} />
+						<VideoOnlyNotice
+							minutesPosted={meeting.documents.some(
+								(d) => d.documentType === "minutes",
+							)}
+						/>
 					)}
 					{meeting.summary && (
 						<>

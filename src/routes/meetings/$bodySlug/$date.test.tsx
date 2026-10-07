@@ -250,7 +250,30 @@ describe("MeetingDetailView — summary sources", () => {
 		expect(screen.queryByText(/couldn't extract readable text/)).toBeNull();
 	});
 
-	it("does not claim minutes are unposted when a document is attached to a video-only summary", () => {
+	it("still says minutes are not yet posted when a video-only summary's only document is an agenda", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					documents: [
+						{
+							sourceUrl: "https://example.gov/agenda.pdf",
+							rawText: "Agenda text.",
+							documentType: "agenda",
+							extractionMethod: "text-layer",
+						},
+					],
+					summarySources: { origin: "video", videoUrl: VIDEO_URL },
+				})}
+			/>,
+		);
+
+		expect(screen.getByRole("status").textContent).toContain(
+			"This summary was built from the meeting video alone. Official minutes are not yet posted.",
+		);
+		screen.getByRole("link", { name: /View agenda PDF/ });
+	});
+
+	it("does not claim minutes are unposted when minutes are attached to a video-only summary", () => {
 		render(
 			<MeetingDetailView
 				meeting={makeMeeting({
