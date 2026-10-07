@@ -39,9 +39,25 @@ class TranscriptionService extends Context.Service<
 
 type CaptionSegment = { text: string; duration: number; offset: number };
 
-type YouTubeCaptionProviderConfig = {
+type CaptionFetchConfig = {
 	fetchTranscriptFn?: (videoId: string) => Promise<CaptionSegment[]>;
+	confirmCaptionsDisabledFn?: (videoId: string) => Promise<boolean>;
 };
+
+type YouTubeCaptionProviderConfig = CaptionFetchConfig;
+
+/**
+ * The caption fetch reported that the video has no caption tracks. This is a
+ * claim, not proof: youtube-transcript says the same for unavailable videos
+ * and for pages YouTube served differently to a blocked client, so callers
+ * confirm it against the watch page before treating captions as disabled.
+ */
+class CaptionTracksMissingError extends Error {
+	constructor(videoId: string) {
+		super(`No caption tracks reported for video ${videoId}`);
+		this.name = "CaptionTracksMissingError";
+	}
+}
 
 /**
  * youtube-transcript returns [] rather than throwing when YouTube serves a
@@ -56,44 +72,193 @@ function assertCaptionText(segments: CaptionSegment[]) {
 }
 
 /**
+ * Extracts the JSON object assigned to `var ytInitialPlayerResponse` in a
+ * watch page. Brace matching skips braces inside string literals, since video
+ * titles and descriptions can contain them. Returns null when the assignment
+ * is missing or the JSON doesn't parse.
+ */
+function parsePlayerResponse(html: string): unknown {
+	const startToken = "var ytInitialPlayerResponse = ";
+	const startIndex = html.indexOf(startToken);
+	if (startIndex === -1) return null;
+	const jsonStart = startIndex + startToken.length;
+
+	let depth = 0;
+	let inString = false;
+	for (let i = jsonStart; i < html.length; i++) {
+		const char = html[i];
+		if (inString) {
+			if (char === "\\") i++;
+			else if (char === '"') inString = false;
+		} else if (char === '"') {
+			inString = true;
+		} else if (char === "{") {
+			depth++;
+		} else if (char === "}") {
+			depth--;
+			if (depth === 0) {
+				try {
+					return JSON.parse(html.slice(jsonStart, i + 1));
+				} catch {
+					return null;
+				}
+			}
+		}
+	}
+	return null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+/**
+ * True only when the watch page positively shows a playable video with no
+ * caption tracks: status OK, the requested video's own details, and streaming
+ * data. youtube-transcript reports "disabled" for any page without caption
+ * tracks, including unavailable videos and pages YouTube served differently to
+ * a blocked client, so every other shape (missing or unparseable player
+ * response, another status, a different video, tracks present) is false and
+ * stays retryable.
+ */
+function readCaptionsDisabled(watchPageHtml: string, videoId: string): boolean {
+	const player = parsePlayerResponse(watchPageHtml);
+	if (!isRecord(player)) return false;
+
+	const { playabilityStatus, videoDetails, streamingData, captions } = player;
+	if (!isRecord(playabilityStatus) || playabilityStatus.status !== "OK") {
+		return false;
+	}
+	if (!isRecord(videoDetails) || videoDetails.videoId !== videoId) {
+		return false;
+	}
+	if (!isRecord(streamingData)) return false;
+
+	const renderer = isRecord(captions)
+		? captions.playerCaptionsTracklistRenderer
+		: undefined;
+	const tracks = isRecord(renderer) ? renderer.captionTracks : undefined;
+	return !(Array.isArray(tracks) && tracks.length > 0);
+}
+
+/**
  * Effect teaching note: The fetchTranscriptFn injection follows the same
  * pattern as YouTubeScraper's fetchFn — accept a function parameter so tests
  * can substitute a mock, while production uses the real youtube-transcript call.
  */
 function YouTubeCaptionProviderLive(config: YouTubeCaptionProviderConfig = {}) {
-	const fetchTranscript = config.fetchTranscriptFn ?? defaultFetchTranscript;
-
 	return Layer.succeed(TranscriptionService, {
-		transcribe: (videoId) =>
-			Effect.tryPromise({
-				try: async () => {
-					const segments = await fetchTranscript(videoId);
-					assertCaptionText(segments);
-					const rawText = segments.map((s) => s.text).join(" ");
-					return {
-						source: "captions" as const,
-						rawText,
-						segments: segments.map((s) => ({
-							text: s.text,
-							startMs: s.offset,
-							durationMs: s.duration,
-						})),
-					};
-				},
-				catch: (error) =>
-					new TranscriptionError({
-						videoId,
-						message: error instanceof Error ? error.message : String(error),
-					}),
-			}),
+		transcribe: (videoId) => captionsAttempt(config, videoId),
 	});
+}
+
+/**
+ * Fetches captions and shapes them into a TranscriptResult. Shared by the
+ * caption provider and the captions-then-Whisper chain so both classify
+ * failures the same way. Only a "no caption tracks" report that the watch page
+ * confirms sets captionsDisabled; every other failure, including a
+ * confirmation that fails or disagrees, is an ordinary retryable error.
+ */
+function captionsAttempt(
+	config: CaptionFetchConfig,
+	videoId: string,
+): Effect.Effect<TranscriptResult, TranscriptionError> {
+	const fetchTranscript = config.fetchTranscriptFn ?? defaultFetchTranscript;
+	const confirmCaptionsDisabled =
+		config.confirmCaptionsDisabledFn ?? defaultConfirmCaptionsDisabled;
+
+	/**
+	 * Resolves a "no caption tracks" report into a classified error. The watch
+	 * page check is best effort: if it throws, the report stays unconfirmed.
+	 */
+	const classifyMissingTracks = async (
+		error: CaptionTracksMissingError,
+	): Promise<TranscriptionError> => {
+		const confirmed = await confirmCaptionsDisabled(videoId).catch(() => false);
+		return confirmed
+			? new TranscriptionError({
+					videoId,
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				})
+			: new TranscriptionError({
+					videoId,
+					message: `${error.message} (captions disabled not confirmed)`,
+				});
+	};
+
+	return Effect.tryPromise({
+		try: async () => {
+			let segments: CaptionSegment[];
+			try {
+				segments = await fetchTranscript(videoId);
+			} catch (error) {
+				if (error instanceof CaptionTracksMissingError) {
+					throw await classifyMissingTracks(error);
+				}
+				throw error;
+			}
+			assertCaptionText(segments);
+			const rawText = segments.map((s) => s.text).join(" ");
+			return {
+				source: "captions" as const,
+				rawText,
+				segments: segments.map((s) => ({
+					text: s.text,
+					startMs: s.offset,
+					durationMs: s.duration,
+				})),
+			};
+		},
+		catch: (error) =>
+			error instanceof TranscriptionError
+				? error
+				: new TranscriptionError({ videoId, message: errorMessage(error) }),
+	});
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
 async function defaultFetchTranscript(
 	videoId: string,
 ): Promise<CaptionSegment[]> {
-	const { YoutubeTranscript } = await import("youtube-transcript");
-	return YoutubeTranscript.fetchTranscript(videoId);
+	const { YoutubeTranscript, YoutubeTranscriptDisabledError } = await import(
+		"youtube-transcript"
+	);
+	try {
+		return await YoutubeTranscript.fetchTranscript(videoId);
+	} catch (error) {
+		if (error instanceof YoutubeTranscriptDisabledError) {
+			throw new CaptionTracksMissingError(videoId);
+		}
+		throw error;
+	}
+}
+
+/**
+ * Loads the watch page the way a desktop browser would and checks whether it
+ * positively shows a playable video without caption tracks. Network failures
+ * and non-2xx responses throw, which the caller treats as unconfirmed.
+ */
+async function defaultConfirmCaptionsDisabled(
+	videoId: string,
+): Promise<boolean> {
+	const response = await fetch(
+		`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`,
+		{
+			headers: {
+				"User-Agent":
+					"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+				"Accept-Language": "en",
+			},
+		},
+	);
+	if (!response.ok) {
+		throw new Error(`Watch page request failed with ${response.status}`);
+	}
+	return readCaptionsDisabled(await response.text(), videoId);
 }
 
 // ---------------------------------------------------------------------------
@@ -250,41 +415,15 @@ async function defaultRunWhisper(videoId: string): Promise<WhisperResult> {
  * Callers just see TranscriptionService — they don't know about the fallback.
  */
 
-type TranscriptionServiceLiveConfig = {
-	fetchTranscriptFn?: (videoId: string) => Promise<CaptionSegment[]>;
+type TranscriptionServiceLiveConfig = CaptionFetchConfig & {
 	runWhisperFn?: (videoId: string) => Promise<WhisperResult>;
 };
 
 function TranscriptionServiceLive(config: TranscriptionServiceLiveConfig = {}) {
 	return Layer.succeed(TranscriptionService, {
-		transcribe: (videoId) => {
-			// Try captions first
-			const captionsAttempt = Effect.tryPromise({
-				try: async () => {
-					const fetchTranscript =
-						config.fetchTranscriptFn ?? defaultFetchTranscript;
-					const segments = await fetchTranscript(videoId);
-					assertCaptionText(segments);
-					const rawText = segments.map((s) => s.text).join(" ");
-					return {
-						source: "captions" as const,
-						rawText,
-						segments: segments.map((s) => ({
-							text: s.text,
-							startMs: s.offset,
-							durationMs: s.duration,
-						})),
-					};
-				},
-				catch: (error) =>
-					new TranscriptionError({
-						videoId,
-						message: error instanceof Error ? error.message : String(error),
-					}),
-			});
-
-			// Fall back to Whisper on caption failure
-			return captionsAttempt.pipe(
+		transcribe: (videoId) =>
+			// Try captions first, fall back to Whisper on any caption failure
+			captionsAttempt(config, videoId).pipe(
 				Effect.catchTag("TranscriptionError", () =>
 					Effect.tryPromise({
 						try: async () => {
@@ -299,16 +438,17 @@ function TranscriptionServiceLive(config: TranscriptionServiceLiveConfig = {}) {
 						catch: (error) =>
 							new TranscriptionError({
 								videoId,
-								message: error instanceof Error ? error.message : String(error),
+								message: errorMessage(error),
 							}),
 					}),
 				),
-			);
-		},
+			),
 	});
 }
 
 export {
+	CaptionTracksMissingError,
+	readCaptionsDisabled,
 	TranscriptionService,
 	YouTubeCaptionProviderLive,
 	WhisperLocalProviderLive,

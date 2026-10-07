@@ -23,9 +23,17 @@ export class ParseError extends Data.TaggedError("ParseError")<{
 	readonly message: string;
 }> {}
 
-/** YouTube caption fetch or Whisper speech-to-text failed. */
+/**
+ * YouTube caption fetch or Whisper speech-to-text failed. Failures are
+ * retryable unless `captionsDisabled` is set.
+ */
 export class TranscriptionError extends Data.TaggedError("TranscriptionError")<{
 	readonly videoId?: string;
+	/**
+	 * True only when the video was confirmed playable with no caption tracks.
+	 * Absent for every other failure, which is retryable.
+	 */
+	readonly captionsDisabled?: boolean;
 	readonly message: string;
 }> {}
 

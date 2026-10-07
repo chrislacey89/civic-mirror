@@ -55,6 +55,7 @@ pnpm pipeline list-bodies                     # show configured bodies
 pnpm pipeline:dry                             # full run, no writes or alerts
 pnpm pipeline:run                             # full run
 pnpm pipeline run --body ellettsville-town-council   # one body only
+pnpm pipeline held:list                       # videos the pipeline holds, and why
 ```
 
 Ellettsville's eGov portal enforces a 300-second delay between PDF downloads, so a full run can take about an hour. `--skip-crawl-delay` is for local testing only.

@@ -1,11 +1,18 @@
 import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
-import { readFinalsiteDate } from "#/pipeline/dates.ts";
-import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
+import { extractLongFormDate, readFinalsiteDate } from "#/pipeline/dates.ts";
+import {
+	type DatabaseError,
+	type LlmError,
+	type NetworkError,
+	type ParseError,
+	TranscriptionError,
+} from "#/pipeline/errors.ts";
 import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
 import {
 	type AlertScope,
 	AlertService,
+	formatHeldVideoAlert,
 	formatPipelineErrorAlert,
 	formatZeroResultsAlert,
 } from "#/pipeline/services/AlertService.ts";
@@ -17,6 +24,7 @@ import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts"
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
 import type {
 	DramaCategoryScoreInput,
+	HeldVideoInput,
 	MeetingInput,
 } from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
@@ -33,6 +41,14 @@ import { readVideoTitle } from "#/pipeline/video-title.ts";
 /** Threshold (in days) beyond which the zero-results anomaly alert fires. */
 const ZERO_RESULTS_THRESHOLD_DAYS = 30;
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+/**
+ * Days a video must have been published before missing caption tracks count
+ * as disabled captions. YouTube generates automatic captions some time after
+ * upload, so a fresh video without tracks looks the same as one that will
+ * never have them, and a hold is permanent.
+ */
+const CAPTIONS_GRACE_DAYS = 7;
 
 function detectZeroResultsAnomaly(input: {
 	body: BodyConfig;
@@ -912,6 +928,9 @@ function processPlaylistVideo(
 	| AlertService
 > {
 	return Effect.gen(function* () {
+		const hold = (videoHold: VideoHold) =>
+			holdVideoAndAlert(body, video, videoHold, config);
+
 		// The publish date is the day the recording reached the playlist, which
 		// trails the meeting and is shared by videos posted together, and a
 		// playlist can carry another body's recording. A title that is not this
@@ -919,13 +938,13 @@ function processPlaylistVideo(
 		const titlePrefix = body.youtubeTitlePrefix ?? body.name;
 		const reading = readVideoTitle(video.title, titlePrefix);
 		if (reading.kind === "unrecognized") {
-			return yield* Effect.fail(
-				new UndatedListingError({
-					title: video.title,
-					uploadDate: video.publishedAt.slice(0, 10),
-					expectedForm: `${titlePrefix}[ qualifier], Month D, YYYY`,
-				}),
-			);
+			// The date is recorded for the operator reading the held list; it
+			// keys nothing, so any long-form date in the title will do.
+			yield* hold({
+				reason: "unrecognized-title",
+				meetingDate: extractLongFormDate(video.title),
+			});
+			return SETTLED_WITHOUT_REQUEST;
 		}
 
 		if (body.youtubeSince && reading.date < body.youtubeSince) {
@@ -933,7 +952,10 @@ function processPlaylistVideo(
 		}
 
 		const storage = yield* StorageService;
-		if (yield* storage.hasTranscriptForVideo(videoUrl(video.videoId))) {
+		if (
+			(yield* storage.hasTranscriptForVideo(videoUrl(video.videoId))) ||
+			(yield* storage.isVideoHeld(video.videoId))
+		) {
 			return SETTLED_WITHOUT_REQUEST;
 		}
 
@@ -972,7 +994,85 @@ function processPlaylistVideo(
 				meetingType: meetingTypeFromFinalsiteLabel(reading.qualifier ?? ""),
 			},
 			config,
+		).pipe(
+			// Only confirmed-disabled captions on a video past the grace period
+			// are a hold. Every other transcription failure stays an error, so
+			// the next run retries it. An unreadable publish date never holds.
+			Effect.catchTag("TranscriptionError", (error) =>
+				Effect.gen(function* () {
+					if (error.captionsDisabled !== true) return yield* Effect.fail(error);
+					const graceElapsed =
+						config.now.getTime() - Date.parse(video.publishedAt) >=
+						CAPTIONS_GRACE_DAYS * MS_PER_DAY;
+					if (!graceElapsed) {
+						// A disabled-captions reading that was not held is not yet
+						// trusted, so the operator's alert must not state it as fact.
+						return yield* new TranscriptionError({
+							videoId: video.videoId,
+							message: `No captions found yet for "${video.title}"; the video is retried on a later run`,
+						});
+					}
+					yield* hold({ reason: "no-captions", meetingDate: reading.date });
+					return { processed: 0, errors: 0 };
+				}),
+			),
 		);
+	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
+}
+
+/** Why a video is held, and what the same-meeting check found when it ran. */
+type VideoHold = Pick<
+	HeldVideoInput,
+	| "reason"
+	| "meetingDate"
+	| "probability"
+	| "sharedIdentifiers"
+	| "candidateMeetingId"
+>;
+
+/**
+ * Records `video` as held and alerts the operator the first time only. The
+ * playlist is re-read on every run, so the alert follows the write, not the
+ * decision to hold. A dry run writes and alerts nothing, so it only reports
+ * what it would hold.
+ */
+function holdVideoAndAlert(
+	body: BodyConfig,
+	video: VideoRef,
+	hold: VideoHold,
+	options: { readonly dryRun: boolean },
+): Effect.Effect<void, DatabaseError, StorageService | AlertService> {
+	return Effect.gen(function* () {
+		if (options.dryRun) {
+			yield* Effect.log("youtube.video.would-hold").pipe(
+				Effect.annotateLogs({ reason: hold.reason }),
+			);
+			return;
+		}
+		const storage = yield* StorageService;
+		const { created } = yield* storage.holdVideo({
+			bodySlug: body.slug,
+			videoId: video.videoId,
+			title: video.title,
+			...hold,
+		});
+		if (!created) return;
+
+		yield* Effect.log("youtube.video.held").pipe(
+			Effect.annotateLogs({ reason: hold.reason }),
+		);
+		const alert = yield* AlertService;
+		yield* alert
+			.sendAlert(
+				formatHeldVideoAlert({
+					bodyName: body.name,
+					videoTitle: video.title,
+					videoUrl: videoUrl(video.videoId),
+					reason: hold.reason,
+					meetingDate: hold.meetingDate,
+				}),
+			)
+			.pipe(Effect.catch(() => Effect.void));
 	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
 }
 
@@ -1003,9 +1103,14 @@ function processYouTubeVideo(
 		const storage = yield* StorageService;
 
 		yield* Effect.log("youtube.transcribe.start");
-		const transcript = yield* transcription
-			.transcribe(video.videoId)
-			.pipe(Effect.retry(config.networkSchedule));
+		// Disabled captions are a property of the video, so asking again
+		// cannot succeed.
+		const transcript = yield* transcription.transcribe(video.videoId).pipe(
+			Effect.retry({
+				schedule: config.networkSchedule,
+				while: (error) => error.captionsDisabled !== true,
+			}),
+		);
 		yield* Effect.log("youtube.transcribe.finish").pipe(
 			Effect.annotateLogs({ source: transcript.source }),
 		);
@@ -1163,14 +1268,9 @@ class UndatedListingError {
 	constructor(input: {
 		title: string;
 		uploadDate: string | null;
-		/** The form the title had to take, when the source has a single one. */
-		expectedForm?: string;
 	}) {
 		const uploaded = input.uploadDate ? ` (uploaded ${input.uploadDate})` : "";
-		const expected = input.expectedForm
-			? ` Expected the form "${input.expectedForm}".`
-			: "";
-		this.message = `No meeting date could be read from "${input.title}"${uploaded}.${expected} The listing was not ingested.`;
+		this.message = `No meeting date could be read from "${input.title}"${uploaded}. The listing was not ingested.`;
 	}
 }
 
@@ -1184,11 +1284,11 @@ class UnsessionedListingError {
 }
 
 type TaggedPipelineError =
-	| { readonly _tag: "NetworkError"; readonly message: string }
-	| { readonly _tag: "ParseError"; readonly message: string }
-	| { readonly _tag: "TranscriptionError"; readonly message: string }
-	| { readonly _tag: "LlmError"; readonly message: string }
-	| { readonly _tag: "DatabaseError"; readonly message: string }
+	| NetworkError
+	| ParseError
+	| TranscriptionError
+	| LlmError
+	| DatabaseError
 	| PipelineExtractError
 	| UndatedListingError
 	| UnsessionedListingError;
@@ -1312,7 +1412,12 @@ function runDramaDetectForVideo(input: {
 	);
 }
 
-export { PIPELINE_SOURCES, runDramaDetectForVideo, runPipeline };
+export {
+	holdVideoAndAlert,
+	PIPELINE_SOURCES,
+	runDramaDetectForVideo,
+	runPipeline,
+};
 export type {
 	BodyConfig,
 	PipelineSource,

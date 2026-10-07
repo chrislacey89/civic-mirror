@@ -2,8 +2,13 @@ import { Clock, Duration, Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
-import { LlmError, NetworkError } from "#/pipeline/errors.ts";
 import {
+	LlmError,
+	NetworkError,
+	TranscriptionError,
+} from "#/pipeline/errors.ts";
+import {
+	holdVideoAndAlert,
 	runDramaDetectForVideo,
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
@@ -17,6 +22,7 @@ import { FinalsiteScraper } from "#/pipeline/services/FinalsiteScraper.ts";
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
 import type {
+	HeldVideoInput,
 	Meeting,
 	MeetingInput,
 	MeetingSourceState,
@@ -54,6 +60,8 @@ type CallLog = {
 	transcripts: Array<{ meetingId: number; sourceUrl?: string }>;
 	alert: Array<{ subject: string; body: string }>;
 	drama: number;
+	/** Videos the storage stub was asked to hold and did not already hold. */
+	held: Array<HeldVideoInput>;
 };
 
 function emptyCallLog(): CallLog {
@@ -70,6 +78,7 @@ function emptyCallLog(): CallLog {
 		transcripts: [],
 		alert: [],
 		drama: 0,
+		held: [],
 	};
 }
 
@@ -91,6 +100,10 @@ type StubConfig = {
 	}) => MeetingSourceState | null;
 	/** Video URLs storage already holds a transcript for. */
 	storedVideoUrls?: string[];
+	/** Videos whose transcription fails, by video ID. */
+	transcriptionErrors?: Record<string, TranscriptionError>;
+	/** Video IDs storage already holds as held videos. */
+	heldVideoIds?: string[];
 	/** Replaces the storage stub, for tests that run against a real database. */
 	storage?: Layer.Layer<StorageService>;
 	dramaDetectionResult?: DramaAssessmentResult;
@@ -146,13 +159,15 @@ function buildStubLayers(config: StubConfig) {
 
 	const transcription = Layer.succeed(TranscriptionService, {
 		transcribe: (videoId) =>
-			Effect.sync(() => {
+			Effect.suspend(() => {
 				config.log.transcribe.push(videoId);
-				return {
+				const error = config.transcriptionErrors?.[videoId];
+				if (error) return Effect.fail(error);
+				return Effect.succeed({
 					source: "captions" as const,
 					rawText: `transcript for ${videoId}`,
 					segments: [],
-				};
+				});
 			}),
 	});
 
@@ -173,6 +188,10 @@ function buildStubLayers(config: StubConfig) {
 					}),
 			}),
 	});
+
+	const isHeld = (videoId: string) =>
+		(config.heldVideoIds ?? []).includes(videoId) ||
+		config.log.held.some((h) => h.videoId === videoId);
 
 	const storage = Layer.succeed(StorageService, {
 		storeMeeting: (input) =>
@@ -197,6 +216,14 @@ function buildStubLayers(config: StubConfig) {
 			Effect.sync(() => config.meetingSourceState?.(key) ?? null),
 		hasTranscriptForVideo: (sourceUrl) =>
 			Effect.sync(() => (config.storedVideoUrls ?? []).includes(sourceUrl)),
+		holdVideo: (input) =>
+			Effect.sync(() => {
+				if (isHeld(input.videoId)) return { created: false };
+				config.log.held.push(input);
+				return { created: true };
+			}),
+		isVideoHeld: (videoId) => Effect.sync(() => isHeld(videoId)),
+		listHeldVideos: () => Effect.succeed([]),
 		getMeetingSources: () =>
 			Effect.succeed({ documents: [], transcript: null, summary: null }),
 		replaceMeetingSummary: () => Effect.void,
@@ -1169,12 +1196,18 @@ describe("runPipeline", () => {
 		expect(log.transcribe).toEqual(["dated"]);
 		expect(log.summarize).toHaveLength(1);
 		expect(log.store.map((s) => s.date)).toEqual(["2026-07-14"]);
+		expect(log.held.map((h) => [h.videoId, h.reason, h.meetingDate])).toEqual([
+			["undated", "unrecognized-title", null],
+		]);
 		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].subject).toContain("unrecognized-title");
 		expect(log.alert[0].body).toContain(
-			"Ellettsville Town Council Special Session",
+			"Title: Ellettsville Town Council Special Session",
 		);
-		expect(log.alert[0].body).toContain("2026-07-16");
-		expect(result).toEqual({ processed: 1, errors: 1 });
+		expect(log.alert[0].body).toContain(
+			"Meeting date: not readable from the title",
+		);
+		expect(result).toEqual({ processed: 1, errors: 0 });
 	});
 
 	it("does not block transcript storage when drama detection fails", async () => {
@@ -1573,12 +1606,16 @@ describe("runPipeline video path", () => {
 	};
 	const url = (videoId: string) => `https://www.youtube.com/watch?v=${videoId}`;
 
-	function run(layers: ReturnType<typeof buildStubLayers>, youtubeDelayMs = 0) {
+	function run(
+		layers: ReturnType<typeof buildStubLayers>,
+		youtubeDelayMs = 0,
+		networkRetry = { attempts: 0, baseDelayMs: 0 },
+	) {
 		return runPipeline({
 			bodies: [TOWN_COUNCIL],
 			crawlDelayMs: 0,
 			youtubeDelayMs,
-			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			networkRetry,
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
 			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
 			dryRun: false,
@@ -1620,7 +1657,7 @@ describe("runPipeline video path", () => {
 		]);
 	});
 
-	it("fails a video titled for another body without transcribing or storing it, and continues", async () => {
+	it("holds a video titled for another body as unrecognized-title without transcribing it, counts no error, and continues", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
 			log,
@@ -1638,15 +1675,19 @@ describe("runPipeline video path", () => {
 
 		expect(log.transcribe).toEqual(["regular"]);
 		expect(log.storeInputs.map((i) => i.date)).toEqual(["2025-08-25"]);
-		expect(log.transcripts.map((t) => t.sourceUrl)).toEqual([url("regular")]);
-		expect(log.alert).toHaveLength(1);
-		expect(log.alert[0].body).toContain(
-			"Ellettsville Plan Commission, August 25, 2025",
-		);
-		expect(result).toEqual({ processed: 1, errors: 1 });
+		expect(log.held).toEqual([
+			{
+				bodySlug: "ellettsville-town-council",
+				videoId: "plan",
+				title: "Ellettsville Plan Commission, August 25, 2025",
+				meetingDate: "2025-08-25",
+				reason: "unrecognized-title",
+			},
+		]);
+		expect(result).toEqual({ processed: 1, errors: 0 });
 	});
 
-	it("fails a video whose title carries only a numeric date without transcribing it", async () => {
+	it("holds a video whose title carries only a numeric date with a null meeting date, without transcribing it", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
 			log,
@@ -1659,8 +1700,10 @@ describe("runPipeline video path", () => {
 
 		expect(log.transcribe).toEqual([]);
 		expect(log.store).toEqual([]);
-		expect(log.alert).toHaveLength(1);
-		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(log.held.map((h) => [h.reason, h.meetingDate])).toEqual([
+			["unrecognized-title", null],
+		]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
 	});
 
 	it("ignores a video dated before youtubeSince and takes one dated on it", async () => {
@@ -1766,6 +1809,298 @@ describe("runPipeline video path", () => {
 		expect(log.transcribe).toEqual([]);
 		expect(log.store).toEqual([]);
 		expect(result).toEqual({ processed: 0, errors: 0 });
+	});
+
+	it("skips a held video before transcription", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR, WORK_SESSION],
+			heldVideoIds: ["regular"],
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.transcribe).toEqual(["work"]);
+		expect(log.held).toEqual([]);
+		expect(log.alert).toEqual([]);
+		expect(result).toEqual({ processed: 1, errors: 0 });
+	});
+
+	it("holds a video whose captions are disabled as no-captions, once, with its meeting date, and counts no error", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR, WORK_SESSION],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			run(layers, 0, { attempts: 2, baseDelayMs: 0 }),
+		);
+
+		expect(log.held).toEqual([
+			{
+				bodySlug: "ellettsville-town-council",
+				videoId: "regular",
+				title: REGULAR.title,
+				meetingDate: "2025-08-25",
+				reason: "no-captions",
+			},
+		]);
+		// A disabled video is asked for once: retrying cannot change the answer.
+		expect(log.transcribe).toEqual(["regular", "work"]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].subject).toContain("no-captions");
+		expect(log.storeInputs.map((i) => i.session)).toEqual([
+			"budget-work-session",
+		]);
+		expect(result).toEqual({ processed: 1, errors: 0 });
+	});
+
+	it("leaves a recently published video with disabled captions unheld and counts an error, so a later run retries it", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [{ ...REGULAR, publishedAt: "2025-08-27T00:00:00Z" }],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			runPipeline({
+				bodies: [TOWN_COUNCIL],
+				crawlDelayMs: 0,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+				dryRun: false,
+				now: new Date("2025-08-28T00:00:00Z"),
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(log.held).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain(REGULAR.title);
+		expect(log.alert[0].body).toContain("retried on a later run");
+		expect(log.alert[0].body).not.toContain("Captions are disabled");
+	});
+
+	describe("the captions grace period boundary", () => {
+		// Published 2025-08-27T00:00:00Z. Six days later is 2025-09-02, exactly
+		// seven days later is 2025-09-03. The dates are literal on purpose.
+		async function runAt(now: Date) {
+			const log = emptyCallLog();
+			const layers = buildStubLayers({
+				log,
+				youtubeVideos: [REGULAR],
+				transcriptionErrors: {
+					regular: new TranscriptionError({
+						videoId: "regular",
+						message: "Captions are disabled for this video",
+						captionsDisabled: true,
+					}),
+				},
+			});
+			const result = await Effect.runPromise(
+				runPipeline({
+					bodies: [TOWN_COUNCIL],
+					crawlDelayMs: 0,
+					youtubeDelayMs: 0,
+					networkRetry: { attempts: 0, baseDelayMs: 0 },
+					llmRetry: { attempts: 0, baseDelayMs: 0 },
+					extractPdfText: async () => ({
+						text: "unused",
+						method: "text-layer",
+					}),
+					dryRun: false,
+					now,
+				}).pipe(Effect.provide(layers)),
+			);
+			return { log, result };
+		}
+
+		it("does not hold a video six days after it was published", async () => {
+			const { log, result } = await runAt(new Date("2025-09-02T00:00:00Z"));
+
+			expect(log.held).toEqual([]);
+			expect(result).toEqual({ processed: 0, errors: 1 });
+		});
+
+		it("holds a video exactly seven days after it was published", async () => {
+			const { log, result } = await runAt(new Date("2025-09-03T00:00:00Z"));
+
+			expect(log.held).toEqual([
+				{
+					bodySlug: "ellettsville-town-council",
+					videoId: "regular",
+					title: REGULAR.title,
+					meetingDate: "2025-08-25",
+					reason: "no-captions",
+				},
+			]);
+			expect(result).toEqual({ processed: 0, errors: 0 });
+		});
+	});
+
+	it("leaves a video with an unreadable publish date unheld and counts an error, however disabled its captions", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [{ ...REGULAR, publishedAt: "" }],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			run(layers, 0, { attempts: 0, baseDelayMs: 0 }),
+		);
+
+		expect(log.held).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 1 });
+	});
+
+	it("counts an error and leaves the video unheld when the caption fetch fails for any other reason", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message:
+						"No caption tracks reported (captions disabled not confirmed)",
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.held).toEqual([]);
+		expect(log.store).toEqual([]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].subject).toContain("transcribe failed");
+		expect(result).toEqual({ processed: 0, errors: 1 });
+	});
+
+	it("retries an ordinary caption failure up to the retry budget before counting an error", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Transient YouTube failure",
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			run(layers, 0, { attempts: 2, baseDelayMs: 0 }),
+		);
+
+		// One call plus two retries: only disabled captions skip the retries.
+		expect(log.transcribe).toEqual(["regular", "regular", "regular"]);
+		expect(log.held).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 1 });
+	});
+
+	it("records no hold and sends no alert on a dry run", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{ ...REGULAR, videoId: "plan", title: "Plan Commission, May 1, 2026" },
+				REGULAR,
+			],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			runPipeline({
+				bodies: [TOWN_COUNCIL],
+				crawlDelayMs: 0,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+				dryRun: true,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(log.held).toEqual([]);
+		expect(log.alert).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
+	});
+
+	describe("holdVideoAndAlert", () => {
+		const hold = { reason: "no-captions" as const, meetingDate: "2025-08-25" };
+
+		it("sends exactly one alert naming the title, reason and meeting date when a video is held for the first time", async () => {
+			const log = emptyCallLog();
+
+			await Effect.runPromise(
+				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold, { dryRun: false }).pipe(
+					Effect.provide(buildStubLayers({ log })),
+				),
+			);
+
+			expect(log.held.map((h) => h.videoId)).toEqual(["regular"]);
+			expect(log.alert).toHaveLength(1);
+			expect(log.alert[0].body).toContain(`Title: ${REGULAR.title}`);
+			expect(log.alert[0].body).toContain("Reason: no-captions");
+			expect(log.alert[0].body).toContain("Meeting date: 2025-08-25");
+		});
+
+		it("sends no alert when the video is already held", async () => {
+			const log = emptyCallLog();
+
+			await Effect.runPromise(
+				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold, { dryRun: false }).pipe(
+					Effect.provide(buildStubLayers({ log, heldVideoIds: ["regular"] })),
+				),
+			);
+
+			expect(log.alert).toEqual([]);
+		});
+
+		it("records no hold and sends no alert on a dry run", async () => {
+			const log = emptyCallLog();
+
+			await Effect.runPromise(
+				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold, { dryRun: true }).pipe(
+					Effect.provide(buildStubLayers({ log })),
+				),
+			);
+
+			expect(log.held).toEqual([]);
+			expect(log.alert).toEqual([]);
+		});
 	});
 
 	it("paces only the videos it transcribes", async () => {
@@ -1874,6 +2209,7 @@ describe("runPipeline video path", () => {
 				summaries: (await db.select().from(schema.summaries).all()).length,
 				transcripts: (await db.select().from(schema.transcripts).all()).length,
 				drama: (await db.select().from(schema.dramaAssessments).all()).length,
+				held: (await db.select().from(schema.heldVideos).all()).length,
 			});
 			return { db, counts };
 		}
@@ -1945,6 +2281,59 @@ describe("runPipeline video path", () => {
 			expect(second.summarize).toEqual([]);
 			expect(second.drama).toBe(0);
 			expect(result).toEqual({ processed: 0, errors: 0 });
+			expect(await counts()).toEqual(afterFirst);
+		});
+
+		it("[QA-RELI] leaves held_videos unchanged and sends no second alert on a second run over a playlist with held videos", async () => {
+			const { db, counts } = await setup();
+			const videos = [
+				{
+					...REGULAR,
+					videoId: "plan",
+					title: "Ellettsville Plan Commission, August 25, 2025",
+				},
+				REGULAR,
+				WORK_SESSION,
+			];
+			const runOnce = async () => {
+				const log = emptyCallLog();
+				const result = await Effect.runPromise(
+					run(
+						buildStubLayers({
+							log,
+							youtubeVideos: videos,
+							storage: StorageServiceLive(db),
+							transcriptionErrors: {
+								regular: new TranscriptionError({
+									videoId: "regular",
+									message: "Captions are disabled for this video",
+									captionsDisabled: true,
+								}),
+							},
+						}),
+					),
+				);
+				return { log, result };
+			};
+
+			// The run also raises its no-new-content alert, which is not about
+			// any one video.
+			const holdAlerts = (log: CallLog) =>
+				log.alert.map((a) => a.subject).filter((s) => s.includes("held"));
+
+			const first = await runOnce();
+			expect(holdAlerts(first.log)).toEqual([
+				expect.stringContaining("unrecognized-title"),
+				expect.stringContaining("no-captions"),
+			]);
+			const afterFirst = await counts();
+			expect(afterFirst.held).toBe(2);
+
+			const second = await runOnce();
+
+			expect(second.log.transcribe).toEqual([]);
+			expect(holdAlerts(second.log)).toEqual([]);
+			expect(second.result).toEqual({ processed: 0, errors: 0 });
 			expect(await counts()).toEqual(afterFirst);
 		});
 

@@ -49,7 +49,7 @@ Two decisions combined.
 - **Applies when:** the unreadable field is part of a natural key, a join key, or anything the storage layer uses to decide that two inputs are the same record. Dates, slugs, external IDs and owner attribution all qualify.
 - **Inverts or does not apply when:** the field is descriptive only. A missing meeting type defaulting to `"regular"` merges nothing. A fallback is also fine when the substitute is unique per row (for example the source's own document ID), because it cannot collide.
 - **Applies to the hold as well:** before replacing a guess with hold-and-alert, check whether the source re-serves the same rows on every run. A page-1-only listing ages a bad row out; a source that is re-read in full does not. For the second kind, a row that will never be readable needs its own outcome, or the alert becomes weekly noise that hides the next real failure.
-- **Sibling docs:** `empty-output-silent-degradation-2026-04-11.md` (throw, do not log, when a stage produces nothing), `tri-state-return-for-pipeline-outcomes-2026-04-13.md` (when the caller needs a third outcome), `shared-source-row-level-attribution-2026-04-23.md` (characterize the live input distribution before trusting a filter).
+- **Sibling docs:** `empty-output-silent-degradation-2026-04-11.md` (throw, do not log, when a stage produces nothing), `tri-state-return-for-pipeline-outcomes-2026-04-13.md` (when the caller needs a third outcome), `shared-source-row-level-attribution-2026-04-23.md` (characterize the live input distribution before trusting a filter), `permanent-outcome-from-ambiguous-evidence-2026-10-06.md` (what the permanent outcome itself must be sure of before it is recorded).
 
 ## Solution
 
