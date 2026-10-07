@@ -11,7 +11,7 @@ const NAV = [
 			period: undefined,
 		} as const,
 	},
-	{ to: "/drama", label: "Drama Watch" },
+	{ to: "/process", label: "Process Watch" },
 	{ to: "/bodies", label: "Bodies" },
 	{ to: "/about", label: "About" },
 ] as const;
@@ -19,7 +19,7 @@ const NAV = [
 const TAB_BAR = [
 	{ to: "/", label: "Front", icon: "◉", match: /^\/$/ },
 	{ to: "/spending", label: "Ledger", icon: "$", match: /^\/spending/ },
-	{ to: "/drama", label: "Drama", icon: "★", match: /^\/drama/ },
+	{ to: "/process", label: "Process", icon: "§", match: /^\/process/ },
 	{ to: "/bodies", label: "Bodies", icon: "⌂", match: /^\/bodies/ },
 	{ to: "/about", label: "About", icon: "?", match: /^\/about/ },
 ] as const;
