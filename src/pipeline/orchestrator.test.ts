@@ -2,7 +2,9 @@ import { Clock, Duration, Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
+import type { DramaCategory } from "#/lib/drama-levels.ts";
 import {
+	DatabaseError,
 	LlmError,
 	MeetingMatchError,
 	NetworkError,
@@ -12,6 +14,8 @@ import {
 	holdVideoAndAlert,
 	runDramaDetectForVideo,
 	runPipeline,
+	videoIdFromUrl,
+	videoUrl,
 } from "#/pipeline/orchestrator.ts";
 import { AlertService } from "#/pipeline/services/AlertService.ts";
 import {
@@ -29,6 +33,7 @@ import {
 import type { EgovDocumentListing } from "#/pipeline/services/ScraperService.ts";
 import { EgovScraper } from "#/pipeline/services/ScraperService.ts";
 import type {
+	DramaCategoryScoreInput,
 	HeldVideoInput,
 	Meeting,
 	MeetingInput,
@@ -294,6 +299,7 @@ function buildStubLayers(config: StubConfig) {
 			Effect.sync(() => {
 				config.log.stamped.push(input.meetingId);
 			}),
+		detachTranscript: () => Effect.succeed(null),
 	});
 
 	const meetingMatch = Layer.succeed(MeetingMatchService, {
@@ -3415,10 +3421,12 @@ describe("runPipeline document regeneration", () => {
 		});
 		/** One pipeline run over the given listings, against the database. */
 		const run = async (
-			config: Omit<StubConfig, "log" | "storage">,
-			body: typeof COUNCIL | typeof BOARD = COUNCIL,
+			config: Omit<StubConfig, "log">,
+			body: Parameters<typeof runPipeline>[0]["bodies"][number] = COUNCIL,
+			unreadable = false,
 		) => {
 			const log = emptyCallLog();
+			const { captured, layer: loggerLayer } = buildLogCapture();
 			const result = await Effect.runPromise(
 				runPipeline({
 					bodies: [body],
@@ -3427,10 +3435,13 @@ describe("runPipeline document regeneration", () => {
 					llmRetry: { attempts: 0, baseDelayMs: 0 },
 					// Each download is the same stub bytes, so the text is numbered
 					// per run to tell one document's from the next.
-					extractPdfText: async () => ({
-						text: `document text ${log.egovDownload.length + log.finalsiteDownload.length}`,
-						method: "text-layer",
-					}),
+					extractPdfText: async () =>
+						unreadable
+							? { text: "", method: "unreadable" }
+							: {
+									text: `document text ${log.egovDownload.length + log.finalsiteDownload.length}`,
+									method: "text-layer",
+								},
 					dryRun: false,
 					// Inside the zero-results window of the meetings stored here.
 					now: new Date("2025-06-01"),
@@ -3439,12 +3450,13 @@ describe("runPipeline document regeneration", () => {
 						buildStubLayers({
 							...config,
 							log,
-							storage: StorageServiceLive(db),
+							storage: config.storage ?? StorageServiceLive(db),
 						}),
 					),
+					Effect.provide(loggerLayer),
 				),
 			);
-			return { log, result };
+			return { log, result, captured };
 		};
 		return { db, rows, run };
 	}
@@ -3704,40 +3716,466 @@ describe("runPipeline document regeneration", () => {
 		expect(await rows()).toEqual(after);
 	});
 
-	it("leaves a transcript-only meeting's summary as it is when a document arrives for it", async () => {
-		const { db, rows, run } = await setup();
-		await Effect.runPromise(
-			Effect.gen(function* () {
-				const storage = yield* StorageService;
-				const meeting = yield* storage.storeMeeting({
-					bodySlug: COUNCIL.slug,
-					date: "2025-05-27",
-					meetingType: "regular",
-					documents: [],
-					summary: {
-						highlights: ["From the video"],
-						prose: "p",
+	describe("a listing for a meeting that has a transcript and no documents", () => {
+		const VIDEO_URL = "https://www.youtube.com/watch?v=council-video";
+		const FROM_VIDEO: MatchableSummary = {
+			highlights: ["From the video"],
+			prose: "Prose from the video",
+			fiscalDecisions: [{ title: "Video decision", originalAmount: "$5" }],
+		};
+		const HOLD: MatchResult = {
+			outcome: "hold",
+			reason: "check-failed",
+			probability: 0.02,
+			sharedIdentifiers: 0,
+		};
+
+		/** A meeting stored from a video alone, with its drama assessment. */
+		async function seedVideoMeeting(
+			db: Awaited<ReturnType<typeof createMigratedTestDb>>,
+			key: { bodySlug: string; date: string; session?: string },
+			sourceFingerprint = computeSourceFingerprint([VIDEO_URL]),
+		) {
+			const meeting = await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					const categoryScores = {
+						procedural_breakdown: { score: 0, evidenceQuotes: [] },
+						question_looping: { score: 0, evidenceQuotes: [] },
+						defensive_hedging: { score: 0, evidenceQuotes: [] },
+						timeline_pressure: { score: 0, evidenceQuotes: [] },
+						improvised_workarounds: { score: 0, evidenceQuotes: [] },
+						visible_dissent: { score: 0, evidenceQuotes: [] },
+						post_hoc_corrections: { score: 0, evidenceQuotes: [] },
+					} satisfies Record<DramaCategory, DramaCategoryScoreInput>;
+					const stored = yield* storage.storeMeeting({
+						...key,
+						meetingType: "regular",
+						documents: [],
+						summary: {
+							highlights: FROM_VIDEO.highlights,
+							prose: FROM_VIDEO.prose,
+							model: "m",
+							sourceKinds: ["transcript"],
+							sourceFingerprint,
+						},
+						fiscalDecisions: [
+							{
+								...REGENERATED.fiscalDecisions[0],
+								title: "Video decision",
+								originalAmount: "$5",
+							},
+						],
+					});
+					yield* storage.storeTranscript({
+						meetingId: stored.id,
+						source: "captions",
+						rawText: "transcript text",
+						sourceUrl: VIDEO_URL,
+					});
+					yield* storage.storeDramaAssessment({
+						meetingId: stored.id,
+						level: "routine",
+						confidence: 0.8,
+						promptVersion: "v1",
 						model: "m",
-						sourceKinds: ["transcript"],
-						sourceFingerprint: computeSourceFingerprint(["https://v/1"]),
+						headline: "Routine meeting",
+						narrative: "Nothing notable.",
+						categoryScores,
+					});
+					return stored;
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+			return meeting.id;
+		}
+
+		const COUNCIL_MEETING = { bodySlug: COUNCIL.slug, date: "2025-05-27" };
+
+		/** Every row a video contributes to a meeting, and the holds. */
+		const videoRows = async (
+			db: Awaited<ReturnType<typeof createMigratedTestDb>>,
+		) => ({
+			transcripts: await db.select().from(schema.transcripts).all(),
+			drama: await db.select().from(schema.dramaAssessments).all(),
+			dramaScores: await db.select().from(schema.dramaCategoryScores).all(),
+			held: await db.select().from(schema.heldVideos).all(),
+		});
+
+		it("attaches the documents and replaces the summary with one built from both kinds when the check returns match, keeping the transcript and drama assessment", async () => {
+			const { db, rows, run } = await setup();
+			const meetingId = await seedVideoMeeting(db, COUNCIL_MEETING);
+			const videoBefore = await videoRows(db);
+
+			const { log, result } = await run({
+				egovListings: [MINUTES],
+				summarizationResult: REGENERATED,
+			});
+
+			expect(result).toEqual({ processed: 1, errors: 0 });
+			expect(log.match).toHaveLength(1);
+			expect(log.match[0].transcriptSummary).toEqual(FROM_VIDEO);
+			expect(log.match[0].documentsSummary).toMatchObject({
+				highlights: REGENERATED.highlights,
+			});
+			// Once for the check, once for the summary that is stored.
+			expect(log.summarize.map((c) => c.sources.map((s) => s.kind))).toEqual([
+				["documents"],
+				["documents", "transcript"],
+			]);
+			const after = await rows();
+			expect(after.documents.map((d) => [d.meetingId, d.sourceUrl])).toEqual([
+				[meetingId, MINUTES.downloadUrl],
+			]);
+			expect(after.summaries).toHaveLength(1);
+			expect(after.summaries[0]).toMatchObject({
+				meetingId,
+				highlights: REGENERATED.highlights,
+				sourceKinds: ["documents", "transcript"],
+				sourceFingerprint: computeSourceFingerprint([
+					MINUTES.downloadUrl,
+					VIDEO_URL,
+				]),
+			});
+			expect(await videoRows(db)).toEqual(videoBefore);
+			expect(videoBefore.transcripts).toHaveLength(1);
+			expect(videoBefore.drama).toHaveLength(1);
+		});
+
+		it("attaches the documents, takes the documents-only summary, detaches the transcript with its drama assessment and holds the video when the check returns hold", async () => {
+			const { db, rows, run } = await setup();
+			const meetingId = await seedVideoMeeting(db, COUNCIL_MEETING);
+
+			const { log, result } = await run({
+				egovListings: [MINUTES],
+				summarizationResult: REGENERATED,
+				matchResult: HOLD,
+			});
+
+			expect(result).toEqual({ processed: 1, errors: 0 });
+			// The documents' own summary is the one stored; nothing is rebuilt.
+			expect(log.summarize.map((c) => c.sources.map((s) => s.kind))).toEqual([
+				["documents"],
+			]);
+			const after = await rows();
+			expect(after.documents.map((d) => [d.meetingId, d.sourceUrl])).toEqual([
+				[meetingId, MINUTES.downloadUrl],
+			]);
+			expect(after.summaries).toHaveLength(1);
+			expect(after.summaries[0]).toMatchObject({
+				meetingId,
+				highlights: REGENERATED.highlights,
+				prose: REGENERATED.prose,
+				sourceKinds: ["documents"],
+				sourceFingerprint: computeSourceFingerprint([MINUTES.downloadUrl]),
+			});
+			expect(after.fiscalDecisions.map((d) => d.title)).toEqual([
+				"Regenerated decision",
+			]);
+			const video = await videoRows(db);
+			expect(video.transcripts).toEqual([]);
+			expect(video.drama).toEqual([]);
+			expect(video.dramaScores).toEqual([]);
+			expect(video.held).toHaveLength(1);
+			expect(video.held[0]).toMatchObject({
+				videoId: "council-video",
+				reason: "check-failed",
+				probability: 0.02,
+				sharedIdentifiers: 0,
+				meetingDate: "2025-05-27",
+				candidateMeetingId: meetingId,
+			});
+			expect(log.alert.filter((a) => a.subject.includes("held"))).toHaveLength(
+				1,
+			);
+		});
+
+		it("counts an error and leaves the transcript, summary and documents exactly as they were when the check fails, and checks again on the next run", async () => {
+			const { db, rows, run } = await setup();
+			await seedVideoMeeting(db, COUNCIL_MEETING);
+			const before = { ...(await rows()), ...(await videoRows(db)) };
+			const config = {
+				egovListings: [MINUTES],
+				matchResult: new MeetingMatchError({ message: "model unavailable" }),
+			};
+
+			const first = await run(config);
+
+			expect(first.result).toEqual({ processed: 0, errors: 1 });
+			expect({ ...(await rows()), ...(await videoRows(db)) }).toEqual(before);
+			expect(before.documents).toEqual([]);
+			expect(before.held).toEqual([]);
+
+			const second = await run(config);
+
+			expect(second.log.match).toHaveLength(1);
+		});
+
+		it("[QA-RELI] does not transcribe or attach a video again on the next video run after the PDF path detached and held it", async () => {
+			const { db, rows, run } = await setup();
+			await seedVideoMeeting(db, COUNCIL_MEETING);
+			const body = {
+				...COUNCIL,
+				youtubePlaylistId: "PL_council",
+				youtubeTitlePrefix: "Town Council",
+			};
+			const video: YouTubeVideo = {
+				videoId: "council-video",
+				title: "Town Council, May 27, 2025",
+				publishedAt: "2025-05-29T00:00:00Z",
+				hasCaptions: true,
+			};
+
+			await run({ egovListings: [MINUTES], matchResult: HOLD }, body);
+			const afterPdf = { ...(await rows()), ...(await videoRows(db)) };
+			expect(afterPdf.transcripts).toEqual([]);
+			expect(afterPdf.held.map((h) => h.videoId)).toEqual(["council-video"]);
+
+			const videoRun = await run({ youtubeVideos: [video] }, body);
+
+			expect(videoRun.log.youtubeList).toEqual(["PL_council"]);
+			expect(videoRun.log.transcribe).toEqual([]);
+			expect(videoRun.log.match).toEqual([]);
+			expect({ ...(await rows()), ...(await videoRows(db)) }).toEqual(afterPdf);
+		});
+
+		it("[QA-MAINT] emits egov.match.start and egov.match.finish with the outcome, probability and shared identifiers", async () => {
+			const { db, run } = await setup();
+			const meetingId = await seedVideoMeeting(db, COUNCIL_MEETING);
+
+			const { captured } = await run({
+				egovListings: [MINUTES],
+				matchResult: HOLD,
+			});
+
+			expect(
+				findStageLog(captured, "egov.match.start")?.annotations,
+			).toMatchObject({ body: COUNCIL.slug, source: "egov", meetingId });
+			expect(
+				findStageLog(captured, "egov.match.finish")?.annotations,
+			).toMatchObject({
+				meetingId,
+				outcome: "hold",
+				probability: 0.02,
+				sharedIdentifiers: 0,
+			});
+		});
+
+		it.each([
+			["stored without a fingerprint", ""],
+			["stored with the video's fingerprint", undefined],
+		])("takes the documents-only summary on a later run when attaching the documents failed after the transcript was detached, for a summary %s", async (_name, fingerprint) => {
+			const { db, rows, run } = await setup();
+			await seedVideoMeeting(db, COUNCIL_MEETING, fingerprint);
+			const config = {
+				egovListings: [MINUTES],
+				summarizationResult: REGENERATED,
+				matchResult: HOLD,
+			};
+			const attachFails = Layer.effect(
+				StorageService,
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return {
+						...storage,
+						storeMeeting: () =>
+							Effect.fail(
+								new DatabaseError({
+									operation: "storeMeeting",
+									message: "database unavailable",
+								}),
+							),
+					};
+				}),
+			).pipe(Layer.provide(StorageServiceLive(db)));
+
+			const failed = await run({ ...config, storage: attachFails });
+			expect(failed.result.errors).toBe(1);
+			expect((await videoRows(db)).transcripts).toEqual([]);
+			expect((await rows()).documents).toEqual([]);
+
+			await run(config);
+			await run(config);
+
+			const after = await rows();
+			expect(after.documents.map((d) => d.sourceUrl)).toEqual([
+				MINUTES.downloadUrl,
+			]);
+			expect(after.summaries).toHaveLength(1);
+			expect(after.summaries[0]).toMatchObject({
+				highlights: REGENERATED.highlights,
+				sourceKinds: ["documents"],
+			});
+			expect((await videoRows(db)).held).toHaveLength(1);
+		});
+
+		it("leaves a meeting with a transcript and no documents untouched for an unreadable document, so a later readable one is still checked against the video", async () => {
+			const { db, rows, run } = await setup();
+			await seedVideoMeeting(db, COUNCIL_MEETING);
+			const before = { ...(await rows()), ...(await videoRows(db)) };
+
+			const unreadable = await run({ egovListings: [MINUTES] }, COUNCIL, true);
+
+			expect(unreadable.result.errors).toBe(0);
+			expect({ ...(await rows()), ...(await videoRows(db)) }).toEqual(before);
+
+			const readable = await run({
+				egovListings: [MINUTES],
+				summarizationResult: REGENERATED,
+				matchResult: HOLD,
+			});
+
+			expect(readable.log.match).toHaveLength(1);
+			const video = await videoRows(db);
+			expect(video.transcripts).toEqual([]);
+			expect(video.held).toHaveLength(1);
+		});
+
+		describe("on the Finalsite path", () => {
+			const LISTING: FinalsiteMeetingListing = {
+				date: "January 20, 2026",
+				meetingType: "Regular Meeting",
+				year: 2026,
+				documents: [
+					{
+						uuid: "uuid-minutes",
+						documentType: "minutes",
+						downloadUrl: "/fs/resource-manager/view/uuid-minutes",
+						fileName: "minutes.pdf",
 					},
+				],
+			};
+			const BOARD_MEETING = {
+				bodySlug: BOARD.slug,
+				date: "2026-01-20",
+				session: "regular-meeting",
+			};
+
+			it("attaches the documents to the session's meeting and rebuilds the summary from both kinds when the check returns match", async () => {
+				const { db, rows, run } = await setup();
+				const meetingId = await seedVideoMeeting(db, BOARD_MEETING);
+				// The same date under another session is a different meeting.
+				const otherId = await seedVideoMeeting(db, {
+					...BOARD_MEETING,
+					session: "work-session",
 				});
-				yield* storage.storeTranscript({
-					meetingId: meeting.id,
-					source: "captions",
-					rawText: "transcript text",
-					sourceUrl: "https://v/1",
+				const videoBefore = await videoRows(db);
+
+				const { log, result, captured } = await run(
+					{ finalsiteListings: [LISTING], summarizationResult: REGENERATED },
+					BOARD,
+				);
+
+				expect(result).toEqual({ processed: 1, errors: 0 });
+				expect(log.match).toHaveLength(1);
+				const after = await rows();
+				expect(after.documents.map((d) => d.meetingId)).toEqual([meetingId]);
+				expect(
+					after.summaries.map((s) => [s.meetingId, s.sourceKinds]).sort(),
+				).toEqual([
+					[meetingId, ["documents", "transcript"]],
+					[otherId, ["transcript"]],
+				]);
+				expect(await videoRows(db)).toEqual(videoBefore);
+				expect(
+					findStageLog(captured, "finalsite.match.finish")?.annotations,
+				).toMatchObject({ meetingId, outcome: "match" });
+			});
+
+			it("leaves a meeting with a transcript and no documents untouched for an all-unreadable listing, so a later readable one is still checked against the video", async () => {
+				const { db, rows, run } = await setup();
+				await seedVideoMeeting(db, BOARD_MEETING);
+				const before = { ...(await rows()), ...(await videoRows(db)) };
+
+				const unreadable = await run(
+					{ finalsiteListings: [LISTING] },
+					BOARD,
+					true,
+				);
+
+				expect(unreadable.result.errors).toBe(0);
+				expect({ ...(await rows()), ...(await videoRows(db)) }).toEqual(before);
+
+				const readable = await run(
+					{
+						finalsiteListings: [LISTING],
+						summarizationResult: REGENERATED,
+						matchResult: HOLD,
+					},
+					BOARD,
+				);
+
+				expect(readable.log.match).toHaveLength(1);
+				const video = await videoRows(db);
+				expect(video.transcripts).toEqual([]);
+				expect(video.held).toHaveLength(1);
+			});
+
+			it("takes the documents-only summary, detaches the transcript with its drama assessment and holds the video when the check returns hold", async () => {
+				const { db, rows, run } = await setup();
+				const meetingId = await seedVideoMeeting(db, BOARD_MEETING);
+
+				const { result, captured } = await run(
+					{
+						finalsiteListings: [LISTING],
+						summarizationResult: REGENERATED,
+						matchResult: { ...HOLD, reason: "signals-disagree" },
+					},
+					BOARD,
+				);
+
+				expect(result).toEqual({ processed: 1, errors: 0 });
+				const after = await rows();
+				expect(after.documents.map((d) => d.meetingId)).toEqual([meetingId]);
+				expect(after.summaries).toHaveLength(1);
+				expect(after.summaries[0]).toMatchObject({
+					meetingId,
+					highlights: REGENERATED.highlights,
+					sourceKinds: ["documents"],
+					sourceFingerprint: computeSourceFingerprint(
+						after.documents.map((d) => d.sourceUrl),
+					),
 				});
-			}).pipe(Effect.provide(StorageServiceLive(db))),
+				const video = await videoRows(db);
+				expect(video.transcripts).toEqual([]);
+				expect(video.drama).toEqual([]);
+				expect(video.dramaScores).toEqual([]);
+				expect(video.held).toHaveLength(1);
+				expect(video.held[0]).toMatchObject({
+					videoId: "council-video",
+					reason: "signals-disagree",
+					meetingDate: "2026-01-20",
+					candidateMeetingId: meetingId,
+				});
+				expect(
+					findStageLog(captured, "finalsite.match.start")?.annotations,
+				).toMatchObject({ meetingId, source: "finalsite" });
+				expect(
+					findStageLog(captured, "finalsite.match.finish")?.annotations,
+				).toMatchObject({
+					meetingId,
+					outcome: "hold",
+					probability: 0.02,
+					sharedIdentifiers: 0,
+				});
+			});
+		});
+	});
+});
+
+describe("videoIdFromUrl", () => {
+	it("reads back the id that videoUrl put in the stored URL", () => {
+		for (const id of ["dQw4w9WgXcQ", "a-b_c1234XY", "-0123456789"]) {
+			expect(videoIdFromUrl(videoUrl(id))).toBe(id);
+		}
+	});
+
+	it("reads the id when v is not the first query parameter", () => {
+		expect(videoIdFromUrl("https://www.youtube.com/watch?t=5&v=abc123")).toBe(
+			"abc123",
 		);
-		const before = await rows();
+	});
 
-		await run({ egovListings: [MINUTES], summarizationResult: REGENERATED });
-
-		const after = await rows();
-		expect(after.documents.map((d) => d.sourceUrl)).toEqual([
-			MINUTES.downloadUrl,
-		]);
-		expect(after.summaries).toEqual(before.summaries);
+	it("returns undefined when the URL carries no video id", () => {
+		expect(videoIdFromUrl("https://example.com/minutes.pdf")).toBeUndefined();
 	});
 });
