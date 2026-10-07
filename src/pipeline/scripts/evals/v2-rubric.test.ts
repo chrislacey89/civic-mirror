@@ -43,7 +43,8 @@ describe("v2 rubric", () => {
 		expect(tiers.map((t) => t.level)).toEqual([...DRAMA_LEVELS]);
 		expect(tiers[0].lo).toBe(0);
 		expect(tiers[tiers.length - 1].hi).toBe(DRAMA_CATEGORIES.length * 3);
-		for (const { lo, hi, level } of tiers) {
+		for (const [i, { lo, hi, level }] of tiers.entries()) {
+			if (i > 0) expect(lo).toBe(tiers[i - 1].hi + 1);
 			expect(mapSumToLevel(lo)).toBe(level);
 			expect(mapSumToLevel(hi)).toBe(level);
 		}

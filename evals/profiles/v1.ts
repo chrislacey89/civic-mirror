@@ -4,7 +4,7 @@
  * The eval harness loads every `evals/profiles/*.ts` and runs the production
  * `createGeminiDramaDetector` against each profile so prompt iteration is
  * type-checked and source-controlled. Production composition imports the
- * blessed profile (today: `v1`) directly so the harness and prod path share
+ * blessed profile directly so the harness and prod path share
  * exactly one detector implementation — no parallel eval-only factory.
  */
 type EvalProfile = {
