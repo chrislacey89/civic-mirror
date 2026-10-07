@@ -3956,9 +3956,12 @@ describe("runPipeline document regeneration", () => {
 			});
 		});
 
-		it("takes the documents-only summary on a later run when attaching the documents failed after the transcript was detached, for a summary stored without a fingerprint", async () => {
+		it.each([
+			["stored without a fingerprint", ""],
+			["stored with the video's fingerprint", undefined],
+		])("takes the documents-only summary on a later run when attaching the documents failed after the transcript was detached, for a summary %s", async (_name, fingerprint) => {
 			const { db, rows, run } = await setup();
-			await seedVideoMeeting(db, COUNCIL_MEETING, "");
+			await seedVideoMeeting(db, COUNCIL_MEETING, fingerprint);
 			const config = {
 				egovListings: [MINUTES],
 				summarizationResult: REGENERATED,
