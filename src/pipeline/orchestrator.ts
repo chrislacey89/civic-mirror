@@ -929,7 +929,7 @@ function processPlaylistVideo(
 > {
 	return Effect.gen(function* () {
 		const hold = (videoHold: VideoHold) =>
-			holdVideoAndAlert(body, video, videoHold, config.dryRun);
+			holdVideoAndAlert(body, video, videoHold, config);
 
 		// The publish date is the day the recording reached the playlist, which
 		// trails the meeting and is shared by videos posted together, and a
@@ -1043,10 +1043,10 @@ function holdVideoAndAlert(
 	body: BodyConfig,
 	video: VideoRef,
 	hold: VideoHold,
-	dryRun: boolean,
+	options: { readonly dryRun: boolean },
 ): Effect.Effect<void, DatabaseError, StorageService | AlertService> {
 	return Effect.gen(function* () {
-		if (dryRun) {
+		if (options.dryRun) {
 			yield* Effect.log("youtube.video.would-hold").pipe(
 				Effect.annotateLogs({ reason: hold.reason }),
 			);
