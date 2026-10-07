@@ -14,6 +14,8 @@ import {
 	holdVideoAndAlert,
 	runDramaDetectForVideo,
 	runPipeline,
+	videoIdFromUrl,
+	videoUrl,
 } from "#/pipeline/orchestrator.ts";
 import { AlertService } from "#/pipeline/services/AlertService.ts";
 import {
@@ -4155,5 +4157,23 @@ describe("runPipeline document regeneration", () => {
 				});
 			});
 		});
+	});
+});
+
+describe("videoIdFromUrl", () => {
+	it("reads back the id that videoUrl put in the stored URL", () => {
+		for (const id of ["dQw4w9WgXcQ", "a-b_c1234XY", "-0123456789"]) {
+			expect(videoIdFromUrl(videoUrl(id))).toBe(id);
+		}
+	});
+
+	it("reads the id when v is not the first query parameter", () => {
+		expect(videoIdFromUrl("https://www.youtube.com/watch?t=5&v=abc123")).toBe(
+			"abc123",
+		);
+	});
+
+	it("returns undefined when the URL carries no video id", () => {
+		expect(videoIdFromUrl("https://example.com/minutes.pdf")).toBeUndefined();
 	});
 });

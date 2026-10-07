@@ -577,7 +577,7 @@ function matchDocumentsToMeeting(input: {
 		// find the video neither attached nor held and transcribe it again.
 		// The stored transcript carries no title, so the URL stands in for it.
 		const transcriptUrl = meeting.transcriptSourceUrl;
-		const videoId = transcriptUrl?.match(/[?&]v=([^&]+)/)?.[1];
+		const videoId = transcriptUrl && videoIdFromUrl(transcriptUrl);
 		if (transcriptUrl && videoId) {
 			yield* holdVideoAndAlert(
 				body,
@@ -1132,6 +1132,11 @@ function runYouTubeForBody(
 
 function videoUrl(videoId: string): string {
 	return `https://www.youtube.com/watch?v=${videoId}`;
+}
+
+/** The inverse of `videoUrl`: the video id in a stored video URL, if any. */
+function videoIdFromUrl(url: string): string | undefined {
+	return url.match(/[?&]v=([^&]+)/)?.[1];
 }
 
 /**
@@ -1848,6 +1853,8 @@ export {
 	PIPELINE_SOURCES,
 	runDramaDetectForVideo,
 	runPipeline,
+	videoIdFromUrl,
+	videoUrl,
 };
 export type {
 	BodyConfig,
