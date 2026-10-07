@@ -1006,11 +1006,13 @@ function processPlaylistVideo(
 			existing.hasDocuments &&
 			!existing.summarySourceKinds.includes("transcript")
 		) {
-			yield* regenerateWithRetry({
-				meetingId: existing.meetingId,
-				meetingContext: `${body.name}, ${video.title}`,
-				config,
-			});
+			if (!config.dryRun) {
+				yield* regenerateWithRetry({
+					meetingId: existing.meetingId,
+					meetingContext: `${body.name}, ${video.title}`,
+					config,
+				});
+			}
 			return SETTLED_WITHOUT_REQUEST;
 		}
 

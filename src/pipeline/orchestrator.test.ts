@@ -2063,6 +2063,53 @@ describe("runPipeline video path", () => {
 		}
 	});
 
+	it("rebuilds nothing on a dry run for a meeting whose summary lacks this video's transcript", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			meetingSourceState: (key) => ({
+				meetingId: 7,
+				date: key.date,
+				session: key.session,
+				hasDocuments: true,
+				transcriptSourceUrl: url("regular"),
+				summarySourceKinds: ["documents"],
+			}),
+			meetingSources: {
+				documents: [
+					{
+						sourceUrl: "https://example.com/minutes.pdf",
+						rawText: "minutes text",
+						documentType: "minutes",
+						extractionMethod: "text-layer",
+					},
+				],
+				transcript: { sourceUrl: url("regular"), rawText: "transcript text" },
+				summary: { sourceKinds: ["documents"], sourceFingerprint: "stale" },
+			},
+		});
+
+		const result = await Effect.runPromise(
+			runPipeline({
+				bodies: [TOWN_COUNCIL],
+				crawlDelayMs: 0,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({
+					text: "unused",
+					method: "text-layer",
+				}),
+				dryRun: true,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(log.summarize).toEqual([]);
+		expect(log.replaced).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
+	});
+
 	it("holds a video as near-date before transcription when documents-only meetings lie near a title date that has no meeting", async () => {
 		const nearby = (meetingId: number, date: string): MeetingSourceState => ({
 			meetingId,
