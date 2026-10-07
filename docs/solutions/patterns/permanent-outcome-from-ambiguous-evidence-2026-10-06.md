@@ -58,17 +58,7 @@ Three conditions now stand between a library error and a `no-captions` hold.
 2. **A second, positive reading confirms it.** `readCaptionsDisabled` returns true only when the watch page shows status `OK`, the requested video's own details, stream data, and no caption tracks. Every other shape, including a confirmation that itself fails, is an ordinary retryable `TranscriptionError`.
 3. **The reading must be old enough to be stable.** The orchestrator holds only when the playlist entry is at least `CAPTIONS_GRACE_DAYS` (7) old. A younger video stays a retryable error.
 
-```typescript
-// src/pipeline/orchestrator.ts — the hold needs both the confirmed flag and the age
-Effect.catchIf(
-	(error) =>
-		error._tag === "TranscriptionError" &&
-		error.captionsDisabled === true &&
-		config.now.getTime() - Date.parse(video.publishedAt) >=
-			CAPTIONS_GRACE_DAYS * MS_PER_DAY,
-	() => hold({ reason: "no-captions", meetingDate: reading.date }),
-)
-```
+The hold needs both the confirmed flag and the age. The threshold is `CAPTIONS_GRACE_DAYS` in `src/pipeline/orchestrator.ts`, and the check is the `TranscriptionError` handler in `processPlaylistVideo` in the same file.
 
 ## Prevention
 
