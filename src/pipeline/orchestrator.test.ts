@@ -294,6 +294,7 @@ function buildStubLayers(config: StubConfig) {
 			Effect.sync(() => {
 				config.log.stamped.push(input.meetingId);
 			}),
+		detachTranscript: () => Effect.succeed(null),
 	});
 
 	const meetingMatch = Layer.succeed(MeetingMatchService, {

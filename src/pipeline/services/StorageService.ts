@@ -268,6 +268,15 @@ interface StorageServiceInterface {
 		sourceDisagreements: SourceDisagreement[];
 	}): Effect.Effect<void, DatabaseError>;
 	/**
+	 * Delete a meeting's transcript rows and its drama assessments, with their
+	 * category scores, in one transaction. Returns the detached video URL, or
+	 * null when the meeting had no transcript. Documents, the summary and the
+	 * meeting itself are not touched.
+	 */
+	detachTranscript(
+		meetingId: number,
+	): Effect.Effect<{ sourceUrl: string | null } | null, DatabaseError>;
+	/**
 	 * Record the fingerprint of the sources a summary was built from, on a
 	 * summary stored without one. A summary that already has a fingerprint, and
 	 * a meeting with no summary, are left as they are. Nothing else is touched.
@@ -549,6 +558,15 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		detachTranscript: (meetingId) =>
+			Effect.tryPromise({
+				try: () => detachTranscriptTransaction(db, meetingId),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "detachTranscript",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 		stampSummaryFingerprint: (input) =>
 			Effect.tryPromise({
 				try: async () => {
@@ -820,6 +838,51 @@ async function replaceMeetingSummaryTransaction(
 			ocrDocument !== undefined,
 		);
 		await insertBudgetDiscussions(tx, input.meetingId, input.budgetDiscussions);
+	});
+}
+
+/**
+ * Remove a meeting's transcript and the drama assessments scored from it.
+ * Deletes run child-first. The transcript is read inside the transaction; a
+ * meeting with no transcript deletes nothing.
+ */
+async function detachTranscriptTransaction(
+	db: LibSQLDatabase<typeof schema>,
+	meetingId: number,
+): Promise<{ sourceUrl: string | null } | null> {
+	return await db.transaction(async (tx) => {
+		// The first transcript by id, the same one getMeetingSourcesQuery reports.
+		const transcript = await tx
+			.select({ sourceUrl: schema.transcripts.sourceUrl })
+			.from(schema.transcripts)
+			.where(eq(schema.transcripts.meetingId, meetingId))
+			.orderBy(schema.transcripts.id)
+			.limit(1)
+			.get();
+		if (transcript === undefined) return null;
+
+		await tx
+			.delete(schema.dramaCategoryScores)
+			.where(
+				inArray(
+					schema.dramaCategoryScores.assessmentId,
+					tx
+						.select({ id: schema.dramaAssessments.id })
+						.from(schema.dramaAssessments)
+						.where(eq(schema.dramaAssessments.meetingId, meetingId)),
+				),
+			)
+			.run();
+		await tx
+			.delete(schema.dramaAssessments)
+			.where(eq(schema.dramaAssessments.meetingId, meetingId))
+			.run();
+		await tx
+			.delete(schema.transcripts)
+			.where(eq(schema.transcripts.meetingId, meetingId))
+			.run();
+
+		return { sourceUrl: transcript.sourceUrl };
 	});
 }
 

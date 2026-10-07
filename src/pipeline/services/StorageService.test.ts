@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createClient } from "@libsql/client";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { Effect } from "effect";
@@ -1707,6 +1707,195 @@ describe("StorageService", () => {
 			expect(summaries).toHaveLength(1);
 			expect(summaries[0].meetingId).toBe(meeting.id);
 			expect(summaries[0].prose).toBe("A rewritten summary.");
+		});
+	});
+
+	describe("detachTranscript", () => {
+		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+		const ZERO_SCORES = {
+			procedural_breakdown: { score: 0 as const, evidenceQuotes: [] },
+			question_looping: { score: 0 as const, evidenceQuotes: [] },
+			defensive_hedging: { score: 0 as const, evidenceQuotes: [] },
+			timeline_pressure: { score: 0 as const, evidenceQuotes: [] },
+			improvised_workarounds: { score: 0 as const, evidenceQuotes: [] },
+			visible_dissent: { score: 0 as const, evidenceQuotes: [] },
+			post_hoc_corrections: { score: 0 as const, evidenceQuotes: [] },
+		};
+
+		function run<A>(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			use: (
+				storage: Effect.Success<typeof StorageService>,
+			) => Effect.Effect<A, unknown>,
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					return yield* use(yield* StorageService);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		function seedMeeting(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			date: string,
+			withTranscript: boolean,
+		) {
+			return run(db, (storage) =>
+				Effect.gen(function* () {
+					const meeting = yield* storage.storeMeeting({
+						...testMeetingInput,
+						date,
+						summary: {
+							...testMeetingInput.summary,
+							sourceKinds: ["documents", "transcript"],
+							sourceFingerprint: "fingerprint-1",
+						},
+					});
+					if (withTranscript) {
+						yield* storage.storeTranscript({
+							meetingId: meeting.id,
+							source: "captions",
+							rawText: "transcript text",
+							sourceUrl: `${VIDEO_URL}-${date}`,
+						});
+						yield* storage.storeDramaAssessment({
+							meetingId: meeting.id,
+							level: "routine",
+							confidence: 0.85,
+							promptVersion: "v1",
+							model: "gemini-2.5-flash",
+							headline: "h",
+							narrative: "n",
+							categoryScores: ZERO_SCORES,
+						});
+					}
+					return meeting;
+				}),
+			);
+		}
+
+		async function counts(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			meetingId: number,
+		) {
+			const assessments = await db
+				.select()
+				.from(schema.dramaAssessments)
+				.where(eq(schema.dramaAssessments.meetingId, meetingId))
+				.all();
+			const scores = await db.select().from(schema.dramaCategoryScores).all();
+			const transcripts = await db
+				.select()
+				.from(schema.transcripts)
+				.where(eq(schema.transcripts.meetingId, meetingId))
+				.all();
+			return {
+				transcripts: transcripts.length,
+				assessments: assessments.length,
+				scores: scores.filter((s) =>
+					assessments.some((a) => a.id === s.assessmentId),
+				).length,
+			};
+		}
+
+		it("removes the transcript, drama assessment, and category scores, returns the video URL, and keeps documents and summary", async () => {
+			const db = await createTestDb();
+			const meeting = await seedMeeting(db, "2026-03-23", true);
+			expect(await counts(db, meeting.id)).toEqual({
+				transcripts: 1,
+				assessments: 1,
+				scores: 7,
+			});
+
+			const result = await run(db, (storage) =>
+				storage.detachTranscript(meeting.id),
+			);
+
+			expect(result).toEqual({ sourceUrl: `${VIDEO_URL}-2026-03-23` });
+			expect(await counts(db, meeting.id)).toEqual({
+				transcripts: 0,
+				assessments: 0,
+				scores: 0,
+			});
+			const sources = await run(db, (storage) =>
+				storage.getMeetingSources(meeting.id),
+			);
+			expect(sources.transcript).toBeNull();
+			expect(sources.documents).toHaveLength(1);
+			expect(sources.summary).toEqual({
+				sourceKinds: ["documents", "transcript"],
+				sourceFingerprint: "fingerprint-1",
+			});
+		});
+
+		it("leaves another meeting's transcript and drama assessment alone", async () => {
+			const db = await createTestDb();
+			const meeting = await seedMeeting(db, "2026-03-23", true);
+			const other = await seedMeeting(db, "2026-04-13", true);
+
+			await run(db, (storage) => storage.detachTranscript(meeting.id));
+
+			expect(await counts(db, other.id)).toEqual({
+				transcripts: 1,
+				assessments: 1,
+				scores: 7,
+			});
+			const otherSources = await run(db, (storage) =>
+				storage.getMeetingSources(other.id),
+			);
+			expect(otherSources.transcript?.sourceUrl).toBe(
+				`${VIDEO_URL}-2026-04-13`,
+			);
+		});
+
+		it("returns null and deletes nothing for a meeting with no transcript", async () => {
+			const db = await createTestDb();
+			const meeting = await seedMeeting(db, "2026-03-23", false);
+			await run(db, (storage) =>
+				storage.storeDramaAssessment({
+					meetingId: meeting.id,
+					level: "routine",
+					confidence: 0.85,
+					promptVersion: "v1",
+					model: "gemini-2.5-flash",
+					headline: "h",
+					narrative: "n",
+					categoryScores: ZERO_SCORES,
+				}),
+			);
+
+			const result = await run(db, (storage) =>
+				storage.detachTranscript(meeting.id),
+			);
+
+			expect(result).toBeNull();
+			expect(await counts(db, meeting.id)).toEqual({
+				transcripts: 0,
+				assessments: 1,
+				scores: 7,
+			});
+		});
+
+		it("keeps the transcript, assessment, and category scores when a later delete fails", async () => {
+			const db = await createTestDb();
+			const meeting = await seedMeeting(db, "2026-03-23", true);
+			// Deleting transcripts is the last step, after the score and
+			// assessment deletes have already run in the transaction.
+			await db.run(
+				sql`CREATE TRIGGER fail_transcript_delete BEFORE DELETE ON transcripts BEGIN SELECT RAISE(ABORT, 'transcript delete blocked'); END`,
+			);
+
+			const error = await run(db, (storage) =>
+				Effect.flip(storage.detachTranscript(meeting.id)),
+			);
+
+			expect(error).toBeInstanceOf(DatabaseError);
+			expect(error).toMatchObject({ operation: "detachTranscript" });
+			expect(await counts(db, meeting.id)).toEqual({
+				transcripts: 1,
+				assessments: 1,
+				scores: 7,
+			});
 		});
 	});
 
