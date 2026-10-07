@@ -1,6 +1,9 @@
 import { Clock, Duration, Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
-import type { MeetingDetail } from "#/db/queries.ts";
+import {
+	getMeetingByBodyAndDateQuery,
+	type MeetingDetail,
+} from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
 import type { DramaCategory } from "#/lib/drama-levels.ts";
 import {
@@ -2943,6 +2946,27 @@ describe("runPipeline video path", () => {
 			expect(third.log.summarize).toEqual([]);
 		});
 
+		it("still reads a summary stored without kinds as built from the official documents when regeneration fails after a video is attached", async () => {
+			const { db } = await setup();
+			await seedMinutesMeeting(db, "2025-08-25");
+
+			const { result } = await runAgainst(db, {
+				summarizationFailsWhen: (input) => input.sources.length > 1,
+			});
+
+			expect(result).toEqual({ processed: 0, errors: 1 });
+			expect(await db.select().from(schema.transcripts).all()).toHaveLength(1);
+			const [stale] = await db.select().from(schema.summaries).all();
+			expect(stale.prose).toBe("p");
+			expect(stale.sourceKinds).toEqual(["documents"]);
+			const page = await getMeetingByBodyAndDateQuery(
+				db,
+				TOWN_COUNCIL.slug,
+				"2025-08-25",
+			);
+			expect(page?.summarySources).toEqual({ origin: "documents" });
+		});
+
 		it("holds a video titled July 14, 2026 as near-date when the town's document is dated July 13, and creates no second meeting", async () => {
 			const { db, counts } = await setup();
 			const meetingId = await seedMinutesMeeting(db, "2026-07-13");
@@ -3887,6 +3911,83 @@ describe("runPipeline document regeneration", () => {
 			expect(log.alert.filter((a) => a.subject.includes("held"))).toHaveLength(
 				1,
 			);
+		});
+
+		/** A video-only meeting whose summary recorded neither kinds nor a fingerprint. */
+		async function seedVideoMeetingWithoutKinds(
+			db: Awaited<ReturnType<typeof createMigratedTestDb>>,
+		) {
+			const meetingId = await seedVideoMeeting(db, COUNCIL_MEETING, "");
+			await db.update(schema.summaries).set({ sourceKinds: [] }).run();
+			return meetingId;
+		}
+
+		it("still reads a summary stored without kinds as built from the video, with its link, when regeneration fails after a PDF is attached", async () => {
+			const { db, rows, run } = await setup();
+			await seedVideoMeetingWithoutKinds(db);
+
+			const { result } = await run({
+				egovListings: [MINUTES],
+				summarizationFailsWhen: (input) => input.sources.length > 1,
+			});
+
+			expect(result.errors).toBe(1);
+			const after = await rows();
+			expect(after.documents.map((d) => d.sourceUrl)).toEqual([
+				MINUTES.downloadUrl,
+			]);
+			expect(after.summaries[0].prose).toBe(FROM_VIDEO.prose);
+			const page = await getMeetingByBodyAndDateQuery(
+				db,
+				COUNCIL.slug,
+				COUNCIL_MEETING.date,
+			);
+			expect(page?.summarySources).toEqual({
+				origin: "video",
+				videoUrl: VIDEO_URL,
+			});
+		});
+
+		it("reads a summary stored without kinds as built from the video while the documents' summary has not replaced it after a hold", async () => {
+			const { db, rows, run } = await setup();
+			await seedVideoMeetingWithoutKinds(db);
+			const live = StorageServiceLive(db);
+			const replaceFails = Layer.effect(
+				StorageService,
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return {
+						...storage,
+						replaceMeetingSummary: () =>
+							Effect.fail(
+								new DatabaseError({
+									operation: "replaceMeetingSummary",
+									message: "database unavailable",
+								}),
+							),
+					};
+				}),
+			).pipe(Layer.provide(live));
+
+			const { result } = await run({
+				egovListings: [MINUTES],
+				matchResult: HOLD,
+				storage: replaceFails,
+			});
+
+			expect(result.errors).toBe(1);
+			const after = await rows();
+			expect(after.documents.map((d) => d.sourceUrl)).toEqual([
+				MINUTES.downloadUrl,
+			]);
+			expect(after.summaries[0].prose).toBe(FROM_VIDEO.prose);
+			const page = await getMeetingByBodyAndDateQuery(
+				db,
+				COUNCIL.slug,
+				COUNCIL_MEETING.date,
+			);
+			// The held video's transcript is detached, so there is no link to give.
+			expect(page?.summarySources).toEqual({ origin: "video", videoUrl: null });
 		});
 
 		it("counts an error and leaves the transcript, summary and documents exactly as they were when the check fails, and checks again on the next run", async () => {

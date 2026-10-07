@@ -46,7 +46,11 @@ import { TranscriptionService } from "#/pipeline/services/TranscriptionService.t
 import { formatTranscriptWithTimestamps } from "#/pipeline/services/transcriptFormatting.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
-import { fingerprintOfSources, sessionSlug } from "#/pipeline/sources.ts";
+import {
+	fingerprintOfSources,
+	kindsOfSources,
+	sessionSlug,
+} from "#/pipeline/sources.ts";
 import { readVideoTitle } from "#/pipeline/video-title.ts";
 
 /** Threshold (in days) beyond which the zero-results anomaly alert fires. */
@@ -495,7 +499,8 @@ function attachDocumentsAndRegenerate(input: {
 			// fingerprint alone, and it would look current after the attach, so a
 			// failed regeneration would never be retried. Stamping it with the
 			// fingerprint of the sources it was built from first makes the attach
-			// leave it visibly behind and due.
+			// leave it visibly behind and due. Their kinds go in the same stamp:
+			// after the attach, the meeting's rows no longer say what it read.
 			if (held.summary?.sourceFingerprint === "") {
 				yield* storage.stampSummaryFingerprint({
 					meetingId: input.meetingId,
@@ -503,6 +508,7 @@ function attachDocumentsAndRegenerate(input: {
 						documents: held.documents,
 						transcriptUrl: held.transcript?.sourceUrl,
 					}),
+					sourceKinds: kindsOfSources(held),
 				});
 			}
 			yield* storage.storeMeeting(input.meeting);
@@ -624,13 +630,15 @@ function matchDocumentsToMeeting(input: {
 		}
 
 		// A summary stored without a fingerprint would look current once the
-		// documents are attached, so it is stamped as the transcript's first.
+		// documents are attached, so it is stamped as the transcript's first,
+		// kinds included: it stays the stored summary until the replace below.
 		yield* storage.stampSummaryFingerprint({
 			meetingId: meeting.meetingId,
 			sourceFingerprint: fingerprintOfSources({
 				documents: [],
 				transcriptUrl: transcriptUrl ?? undefined,
 			}),
+			sourceKinds: ["transcript"],
 		});
 		yield* storage.detachTranscript(meeting.meetingId);
 		yield* Effect.log(`${source}.transcript.detached`).pipe(
@@ -1602,7 +1610,8 @@ function matchVideoToMeeting(input: {
 
 		// `regenerateMeetingSummary` leaves a summary stored without a
 		// fingerprint alone. Stamping it with the fingerprint of the sources it
-		// was built from makes the attach below leave it visibly behind.
+		// was built from makes the attach below leave it visibly behind, and
+		// stamping their kinds keeps the transcript from being credited to it.
 		const held = yield* storage.getMeetingSources(meeting.meetingId);
 		if (held.summary?.sourceFingerprint === "") {
 			yield* storage.stampSummaryFingerprint({
@@ -1611,6 +1620,7 @@ function matchVideoToMeeting(input: {
 					documents: held.documents,
 					transcriptUrl: held.transcript?.sourceUrl,
 				}),
+				sourceKinds: kindsOfSources(held),
 			});
 		}
 

@@ -1448,21 +1448,27 @@ describe("StorageService", () => {
 	});
 
 	describe("stampSummaryFingerprint", () => {
-		it("sets the fingerprint on a summary stored without one and changes nothing else", async () => {
+		it("sets the fingerprint and the source kinds on a summary stored without them and changes nothing else", async () => {
 			const db = await createTestDb();
 			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));
 			const before = await db.select().from(schema.summaries).all();
 			expect(before[0].sourceFingerprint).toBe("");
+			expect(before[0].sourceKinds).toEqual([]);
 
 			await run(db, (s) =>
 				s.stampSummaryFingerprint({
 					meetingId: meeting.id,
 					sourceFingerprint: "stamped",
+					sourceKinds: ["transcript"],
 				}),
 			);
 
 			expect(await db.select().from(schema.summaries).all()).toEqual([
-				{ ...before[0], sourceFingerprint: "stamped" },
+				{
+					...before[0],
+					sourceFingerprint: "stamped",
+					sourceKinds: ["transcript"],
+				},
 			]);
 		});
 
@@ -1478,15 +1484,18 @@ describe("StorageService", () => {
 				}),
 			);
 
+			const before = await db.select().from(schema.summaries).all();
+
 			await run(db, (s) =>
 				s.stampSummaryFingerprint({
 					meetingId: meeting.id,
 					sourceFingerprint: "stamped",
+					sourceKinds: ["transcript"],
 				}),
 			);
 
-			const rows = await db.select().from(schema.summaries).all();
-			expect(rows[0].sourceFingerprint).toBe("existing");
+			expect(before[0].sourceFingerprint).toBe("existing");
+			expect(await db.select().from(schema.summaries).all()).toEqual(before);
 		});
 	});
 

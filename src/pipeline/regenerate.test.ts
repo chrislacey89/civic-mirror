@@ -322,6 +322,7 @@ describe("regenerateMeetingSummary", () => {
 				yield* storage.stampSummaryFingerprint({
 					meetingId: meeting.id,
 					sourceFingerprint: computeSourceFingerprint([AGENDA_URL]),
+					sourceKinds: ["documents"],
 				});
 			}).pipe(Effect.provide(layers)),
 		);

@@ -277,13 +277,15 @@ interface StorageServiceInterface {
 		meetingId: number,
 	): Effect.Effect<{ sourceUrl: string | null } | null, DatabaseError>;
 	/**
-	 * Record the fingerprint of the sources a summary was built from, on a
-	 * summary stored without one. A summary that already has a fingerprint, and
-	 * a meeting with no summary, are left as they are. Nothing else is touched.
+	 * Record the sources a summary was built from, on a summary stored without
+	 * a fingerprint: their fingerprint and their kinds, in one update. A summary
+	 * that already has a fingerprint, and a meeting with no summary, are left as
+	 * they are. Nothing else is touched.
 	 */
 	stampSummaryFingerprint(input: {
 		meetingId: number;
 		sourceFingerprint: string;
+		sourceKinds: SourceKind[];
 	}): Effect.Effect<void, DatabaseError>;
 }
 
@@ -572,7 +574,10 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				try: async () => {
 					await db
 						.update(schema.summaries)
-						.set({ sourceFingerprint: input.sourceFingerprint })
+						.set({
+							sourceFingerprint: input.sourceFingerprint,
+							sourceKinds: input.sourceKinds,
+						})
 						.where(
 							and(
 								eq(schema.summaries.meetingId, input.meetingId),
