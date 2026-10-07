@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, ne } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import { Context, Effect, Layer } from "effect";
 import type { MeetingDetail } from "#/db/queries.ts";
@@ -12,6 +12,7 @@ import {
 } from "#/lib/drama-levels.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
+import type { MatchableSummary } from "#/pipeline/services/MeetingMatchService.ts";
 import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
 
 /**
@@ -215,6 +216,21 @@ interface StorageServiceInterface {
 		date: string;
 		session: string;
 	}): Effect.Effect<MeetingSourceState | null, DatabaseError>;
+	/**
+	 * Meetings of the body within `windowDays` of `date` (excluding `date`
+	 * itself), under the same session, that have documents and no transcript.
+	 * Nearest date first.
+	 */
+	findNearbyDocumentOnlyMeetings(input: {
+		bodySlug: string;
+		date: string; // ISO YYYY-MM-DD
+		session: string;
+		windowDays: number;
+	}): Effect.Effect<MeetingSourceState[], DatabaseError>;
+	/** The stored summary of a meeting in the shape the same-meeting check takes, or null when it has none. */
+	getMatchableSummary(
+		meetingId: number,
+	): Effect.Effect<MatchableSummary | null, DatabaseError>;
 	/** True when a stored transcript, on any meeting, came from `sourceUrl`. */
 	hasTranscriptForVideo(
 		sourceUrl: string,
@@ -382,6 +398,24 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				catch: (error) =>
 					new DatabaseError({
 						operation: "getMeetingSourceState",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		findNearbyDocumentOnlyMeetings: (input) =>
+			Effect.tryPromise({
+				try: () => findNearbyDocumentOnlyMeetingsQuery(db, input),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "findNearbyDocumentOnlyMeetings",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		getMatchableSummary: (meetingId) =>
+			Effect.tryPromise({
+				try: () => getMatchableSummaryQuery(db, meetingId),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "getMatchableSummary",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
@@ -562,7 +596,13 @@ async function getMeetingSourceStateQuery(
 		)
 		.get();
 	if (!meeting) return null;
+	return sourceStateOfMeeting(db, meeting);
+}
 
+async function sourceStateOfMeeting(
+	db: LibSQLDatabase<typeof schema>,
+	meeting: { id: number; date: string; session: string },
+): Promise<MeetingSourceState> {
 	const document = await db
 		.select({ id: schema.documents.id })
 		.from(schema.documents)
@@ -589,6 +629,97 @@ async function getMeetingSourceStateQuery(
 		hasDocuments: document !== undefined,
 		transcriptSourceUrl: transcript?.sourceUrl ?? null,
 		summarySourceKinds: summary?.sourceKinds ?? [],
+	};
+}
+
+async function findNearbyDocumentOnlyMeetingsQuery(
+	db: LibSQLDatabase<typeof schema>,
+	input: {
+		bodySlug: string;
+		date: string;
+		session: string;
+		windowDays: number;
+	},
+): Promise<MeetingSourceState[]> {
+	const center = new Date(`${input.date}T00:00:00Z`);
+	const shifted = (days: number) => {
+		const day = new Date(center);
+		day.setUTCDate(day.getUTCDate() + days);
+		return day.toISOString().slice(0, 10);
+	};
+
+	const candidates = await db
+		.select({
+			id: schema.meetings.id,
+			date: schema.meetings.date,
+			session: schema.meetings.session,
+		})
+		.from(schema.meetings)
+		.innerJoin(
+			schema.governingBodies,
+			eq(schema.meetings.bodyId, schema.governingBodies.id),
+		)
+		.where(
+			and(
+				eq(schema.governingBodies.slug, input.bodySlug),
+				eq(schema.meetings.session, input.session),
+				ne(schema.meetings.date, input.date),
+				gte(schema.meetings.date, shifted(-input.windowDays)),
+				lte(schema.meetings.date, shifted(input.windowDays)),
+			),
+		)
+		.all();
+
+	const distance = (date: string) =>
+		Math.abs(new Date(`${date}T00:00:00Z`).getTime() - center.getTime());
+	const states: MeetingSourceState[] = [];
+	for (const candidate of candidates) {
+		const state = await sourceStateOfMeeting(db, candidate);
+		if (state.hasDocuments && state.transcriptSourceUrl === null) {
+			states.push(state);
+		}
+	}
+	return states.sort(
+		(a, b) =>
+			distance(a.date) - distance(b.date) || a.date.localeCompare(b.date),
+	);
+}
+
+async function getMatchableSummaryQuery(
+	db: LibSQLDatabase<typeof schema>,
+	meetingId: number,
+): Promise<MatchableSummary | null> {
+	const summary = await db
+		.select({
+			highlights: schema.summaries.highlights,
+			prose: schema.summaries.prose,
+		})
+		.from(schema.summaries)
+		.where(eq(schema.summaries.meetingId, meetingId))
+		.get();
+	if (!summary) return null;
+
+	const decisions = await db
+		.select({
+			title: schema.fiscalDecisions.title,
+			originalAmount: schema.fiscalDecisions.originalAmount,
+			ordinanceNumber: schema.fiscalDecisions.ordinanceNumber,
+		})
+		.from(schema.fiscalDecisions)
+		.where(eq(schema.fiscalDecisions.meetingId, meetingId))
+		.orderBy(schema.fiscalDecisions.id)
+		.all();
+
+	return {
+		highlights: summary.highlights as string[],
+		prose: summary.prose,
+		fiscalDecisions: decisions.map(
+			({ title, originalAmount, ordinanceNumber }) => ({
+				title,
+				originalAmount,
+				...(ordinanceNumber === null ? {} : { ordinanceNumber }),
+			}),
+		),
 	};
 }
 

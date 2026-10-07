@@ -1078,6 +1078,224 @@ describe("StorageService", () => {
 		});
 	});
 
+	describe("findNearbyDocumentOnlyMeetings", () => {
+		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+		const query = {
+			bodySlug: "ellettsville-town-council",
+			date: "2026-07-14",
+			session: "",
+			windowDays: 2,
+		};
+
+		type TestDb = Awaited<ReturnType<typeof createTestDb>>;
+
+		function find(db: TestDb, input: typeof query) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.findNearbyDocumentOnlyMeetings(input);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		function store(
+			db: TestDb,
+			input: Parameters<
+				Effect.Success<typeof StorageService>["storeMeeting"]
+			>[0],
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(input);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		it("returns the documents-only meeting dated one day earlier", async () => {
+			const db = await createTestDb();
+			const meeting = await store(db, {
+				...testMeetingInput,
+				date: "2026-07-13",
+			});
+
+			expect(await find(db, query)).toEqual([
+				{
+					meetingId: meeting.id,
+					date: "2026-07-13",
+					session: "",
+					hasDocuments: true,
+					transcriptSourceUrl: null,
+					summarySourceKinds: [],
+				},
+			]);
+		});
+
+		it("returns nothing when the only documents-only meeting is on the date itself", async () => {
+			const db = await createTestDb();
+			await store(db, { ...testMeetingInput, date: "2026-07-14" });
+
+			expect(await find(db, query)).toEqual([]);
+		});
+
+		it("includes meetings exactly the window away, excludes those beyond it, and lists the nearest first", async () => {
+			const db = await createTestDb();
+			for (const date of [
+				"2026-07-11",
+				"2026-07-12",
+				"2026-07-13",
+				"2026-07-16",
+				"2026-07-17",
+			]) {
+				await store(db, { ...testMeetingInput, date });
+			}
+
+			const found = await find(db, query);
+			expect(found.map((meeting) => meeting.date)).toEqual([
+				"2026-07-13",
+				"2026-07-12",
+				"2026-07-16",
+			]);
+		});
+
+		it("excludes a nearby meeting that already has a transcript", async () => {
+			const db = await createTestDb();
+			const meeting = await store(db, {
+				...testMeetingInput,
+				date: "2026-07-13",
+			});
+			await Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					yield* storage.storeTranscript({
+						meetingId: meeting.id,
+						source: "captions",
+						rawText: "transcript",
+						sourceUrl: VIDEO_URL,
+					});
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+
+			expect(await find(db, query)).toEqual([]);
+		});
+
+		it("excludes a nearby video-only meeting", async () => {
+			const db = await createTestDb();
+			await store(db, {
+				...testMeetingInput,
+				date: "2026-07-13",
+				documents: [],
+			});
+
+			expect(await find(db, query)).toEqual([]);
+		});
+
+		it("excludes a nearby meeting under another session, and the reverse", async () => {
+			const db = await createTestDb();
+			await store(db, {
+				...testMeetingInput,
+				date: "2026-07-13",
+				session: "budget-work-session",
+			});
+			expect(await find(db, query)).toEqual([]);
+
+			const other = await createTestDb();
+			await store(other, { ...testMeetingInput, date: "2026-07-13" });
+			expect(
+				await find(other, { ...query, session: "budget-work-session" }),
+			).toEqual([]);
+		});
+
+		it("excludes another body's nearby meeting", async () => {
+			const db = await createTestDb();
+			await db
+				.insert(schema.governingBodies)
+				.values({ name: "Plan Commission", slug: "plan", type: "town" })
+				.run();
+			await store(db, {
+				...testMeetingInput,
+				bodySlug: "plan",
+				date: "2026-07-13",
+			});
+
+			expect(await find(db, query)).toEqual([]);
+		});
+
+		it("crosses a month boundary", async () => {
+			const db = await createTestDb();
+			await store(db, { ...testMeetingInput, date: "2026-07-31" });
+
+			const found = await find(db, { ...query, date: "2026-08-01" });
+			expect(found.map((meeting) => meeting.date)).toEqual(["2026-07-31"]);
+		});
+	});
+
+	describe("getMatchableSummary", () => {
+		type TestDb = Awaited<ReturnType<typeof createTestDb>>;
+
+		function store(
+			db: TestDb,
+			input: Parameters<
+				Effect.Success<typeof StorageService>["storeMeeting"]
+			>[0],
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.storeMeeting(input);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		function read(db: TestDb, meetingId: number) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.getMatchableSummary(meetingId);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		it("returns the highlights, prose and fiscal decision identifiers of a stored meeting", async () => {
+			const db = await createTestDb();
+			const [first] = testMeetingInput.fiscalDecisions;
+			const meeting = await store(db, {
+				...testMeetingInput,
+				fiscalDecisions: [
+					{ ...first, ordinanceNumber: "2026-04" },
+					{ ...first, title: "Park Pavilion", originalAmount: "$120,000" },
+				],
+			});
+
+			expect(await read(db, meeting.id)).toEqual({
+				highlights: testMeetingInput.summary.highlights,
+				prose: testMeetingInput.summary.prose,
+				fiscalDecisions: [
+					{
+						title: "Sale Street Road Repairs",
+						originalAmount: "$50,000",
+						ordinanceNumber: "2026-04",
+					},
+					{ title: "Park Pavilion", originalAmount: "$120,000" },
+				],
+			});
+		});
+
+		it("returns null for a meeting with no summary and for an unknown meeting", async () => {
+			const db = await createTestDb();
+			const {
+				summary: _summary,
+				fiscalDecisions: _fiscalDecisions,
+				budgetDiscussions: _budgetDiscussions,
+				...withoutSummary
+			} = testMeetingInput;
+			const meeting = await store(db, withoutSummary);
+
+			expect(await read(db, meeting.id)).toBeNull();
+			expect(await read(db, meeting.id + 999)).toBeNull();
+		});
+	});
+
 	describe("hasTranscriptForVideo", () => {
 		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
 
