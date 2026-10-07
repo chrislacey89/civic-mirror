@@ -369,6 +369,18 @@ describe("TranscriptionService", () => {
 			expect(readCaptionsDisabled(watchPage(response), videoId)).toBe(true);
 		});
 
+		it("is true when the description contains escaped quotes and a closing brace", () => {
+			const response = {
+				...playableResponse,
+				videoDetails: {
+					...playableResponse.videoDetails,
+					shortDescription:
+						'Motion to "adjourn}" carried. Minutes: C:\\clerk\\',
+				},
+			};
+			expect(readCaptionsDisabled(watchPage(response), videoId)).toBe(true);
+		});
+
 		it("is false when the video has caption tracks", () => {
 			const response = {
 				...playableResponse,

@@ -112,11 +112,14 @@ describe("buildProductionLayers transcription", () => {
 			streamingData: { formats: [] },
 		};
 
-		const transcribeWithWatchPage = async (playerResponse: unknown) => {
+		const transcribeWithWatchPage = async (
+			playerResponse: unknown,
+			status = 200,
+		) => {
 			vi.stubEnv("DATABASE_URL", "file::memory:");
 			vi.stubGlobal(
 				"fetch",
-				vi.fn(async () => new Response(watchPage(playerResponse))),
+				vi.fn(async () => new Response(watchPage(playerResponse), { status })),
 			);
 			fetchTranscript.mockRejectedValue(
 				new YoutubeTranscriptDisabledError(videoId),
@@ -150,6 +153,13 @@ describe("buildProductionLayers transcription", () => {
 
 			expect(result.captionsDisabled).toBeFalsy();
 			expect(result.message).toContain("captions disabled not confirmed");
+			expect(execFileSync).not.toHaveBeenCalled();
+		});
+
+		it("does not flag captionsDisabled when the watch page responds with a non-2xx status", async () => {
+			const result = await transcribeWithWatchPage(playableResponse, 429);
+
+			expect(result.captionsDisabled).toBeFalsy();
 			expect(execFileSync).not.toHaveBeenCalled();
 		});
 	});

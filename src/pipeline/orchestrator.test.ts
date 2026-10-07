@@ -1900,8 +1900,8 @@ describe("runPipeline video path", () => {
 	});
 
 	describe("the captions grace period boundary", () => {
-		// Published 2025-08-27T00:00:00Z. Six days later is 2025-09-02, exactly
-		// seven days later is 2025-09-03. The dates are literal on purpose.
+		// Published 2025-08-27T00:00:00Z. Exactly seven days later is
+		// 2025-09-03T00:00:00Z. The dates are literal on purpose.
 		async function runAt(now: Date) {
 			const log = emptyCallLog();
 			const layers = buildStubLayers({
@@ -1933,8 +1933,8 @@ describe("runPipeline video path", () => {
 			return { log, result };
 		}
 
-		it("does not hold a video six days after it was published", async () => {
-			const { log, result } = await runAt(new Date("2025-09-02T00:00:00Z"));
+		it("does not hold a video one millisecond short of seven days after it was published", async () => {
+			const { log, result } = await runAt(new Date("2025-09-02T23:59:59.999Z"));
 
 			expect(log.held).toEqual([]);
 			expect(result).toEqual({ processed: 0, errors: 1 });
