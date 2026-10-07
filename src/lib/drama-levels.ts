@@ -34,11 +34,15 @@ export const DRAMA_LEVELS = [
 	"off-the-rails",
 ] as const satisfies readonly DramaLevel[];
 
+/**
+ * What residents see for each tier. The keys are internal codes that are
+ * stored with each assessment and never shown.
+ */
 export const LEVEL_DISPLAY: Record<DramaLevel, string> = {
 	routine: "Routine",
-	bumpy: "Bumpy",
-	heated: "Heated",
-	"off-the-rails": "Off the Rails",
+	bumpy: "Some friction",
+	heated: "Process problems",
+	"off-the-rails": "Serious process problems",
 };
 
 export const CATEGORY_DISPLAY: Record<DramaCategory, string> = {
