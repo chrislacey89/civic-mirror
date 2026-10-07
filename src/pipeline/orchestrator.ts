@@ -2,6 +2,7 @@ import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import { readFinalsiteDate } from "#/pipeline/dates.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
+import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
 import {
 	type AlertScope,
 	AlertService,
@@ -19,13 +20,14 @@ import type {
 	MeetingInput,
 } from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
+import type { LabelledSource } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import type { TranscriptResult } from "#/pipeline/services/TranscriptionService.ts";
 import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
 import { formatTranscriptWithTimestamps } from "#/pipeline/services/transcriptFormatting.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
 import { YouTubeScraper } from "#/pipeline/services/YouTubeScraper.ts";
-import { computeSourceFingerprint, sessionSlug } from "#/pipeline/sources.ts";
+import { fingerprintOfSources, sessionSlug } from "#/pipeline/sources.ts";
 import { readVideoTitle } from "#/pipeline/video-title.ts";
 
 /** Threshold (in days) beyond which the zero-results anomaly alert fires. */
@@ -385,6 +387,74 @@ function iterateWithAlertRecovery<TItem, R>(
 	});
 }
 
+/**
+ * Settles a listing's documents against a meeting that already has documents:
+ * attaches the ones the meeting lacks, then rebuilds the summary from every
+ * source the meeting now holds. No same-meeting check is needed, since the
+ * source dated both sets of documents itself.
+ *
+ * A listing is re-read on every run, so most calls bring nothing new. Those
+ * cost no summarize call: `regenerateMeetingSummary` compares fingerprints
+ * and leaves a summary stored without one alone.
+ */
+function attachDocumentsAndRegenerate(input: {
+	meetingId: number;
+	meeting: Omit<
+		MeetingInput,
+		"summary" | "fiscalDecisions" | "budgetDiscussions"
+	>;
+	meetingContext: string;
+	config: ResolvedConfig;
+}): Effect.Effect<
+	void,
+	DatabaseError | LlmError,
+	StorageService | SummarizationService
+> {
+	return Effect.gen(function* () {
+		const storage = yield* StorageService;
+
+		const held = yield* storage.getMeetingSources(input.meetingId);
+		const heldUrls = new Set(held.documents.map((d) => d.sourceUrl));
+		const bringsNewDocument = input.meeting.documents.some(
+			(d) => !heldUrls.has(d.sourceUrl),
+		);
+
+		if (bringsNewDocument) {
+			// `regenerateMeetingSummary` leaves a summary stored without a
+			// fingerprint alone, and it would look current after the attach, so a
+			// failed regeneration would never be retried. Stamping it with the
+			// fingerprint of the sources it was built from first makes the attach
+			// leave it visibly behind and due.
+			if (held.summary?.sourceFingerprint === "") {
+				yield* storage.stampSummaryFingerprint({
+					meetingId: input.meetingId,
+					sourceFingerprint: fingerprintOfSources({
+						documents: held.documents,
+						transcriptUrl: held.transcript?.sourceUrl,
+					}),
+				});
+			}
+			yield* storage.storeMeeting(input.meeting);
+		}
+
+		yield* Effect.log("regenerate.start").pipe(
+			Effect.annotateLogs({ meetingId: input.meetingId, bringsNewDocument }),
+		);
+		const { regenerated } = yield* regenerateMeetingSummary({
+			meetingId: input.meetingId,
+			meetingContext: input.meetingContext,
+		}).pipe(
+			Effect.retry({
+				schedule: input.config.llmSchedule,
+				while: (error) => error._tag === "LlmError",
+			}),
+		);
+		yield* Effect.log("regenerate.finish").pipe(
+			Effect.annotateLogs({ meetingId: input.meetingId, regenerated }),
+		);
+	});
+}
+
 // ---------------------------------------------------------------------------
 // eGov path
 // ---------------------------------------------------------------------------
@@ -472,6 +542,38 @@ function processEgovListing(
 			Effect.annotateLogs({ method: extraction.method }),
 		);
 
+		// A meeting that already has documents takes this one as a further
+		// source of the same summary. One that has only a transcript falls
+		// through to the single-document path below.
+		const existing = config.dryRun
+			? null
+			: yield* storage.getMeetingSourceState({
+					bodySlug: body.slug,
+					date: meetingDate,
+					session: "",
+				});
+		if (existing?.hasDocuments) {
+			yield* attachDocumentsAndRegenerate({
+				meetingId: existing.meetingId,
+				meeting: {
+					bodySlug: body.slug,
+					date: meetingDate,
+					meetingType: "regular",
+					documents: [
+						{
+							sourceUrl: listing.downloadUrl,
+							rawText: extraction.text,
+							documentType: listing.documentType,
+							extractionMethod: extraction.method,
+						},
+					],
+				},
+				meetingContext: `${body.name}, ${meetingDate}`,
+				config,
+			});
+			return { processed: 1, errors: 0 };
+		}
+
 		// Unreadable branch: persist the document row so the meeting appears in
 		// listings with a link to the PDF, but skip summarization + fiscal
 		// extraction entirely. This is the "silent hole" the PRD is eliminating
@@ -500,7 +602,7 @@ function processEgovListing(
 		yield* Effect.log("egov.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
-				sourceText: extraction.text,
+				sources: [{ kind: "documents", text: extraction.text }],
 				meetingContext: `${body.name}, ${meetingDate}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
@@ -524,6 +626,10 @@ function processEgovListing(
 				highlights: summary.highlights,
 				prose: summary.prose,
 				model: summary.model,
+				sourceKinds: ["documents"],
+				sourceFingerprint: fingerprintOfSources({
+					documents: [{ sourceUrl: listing.downloadUrl }],
+				}),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
@@ -625,7 +731,7 @@ function processFinalsiteListing(
 		}
 
 		const documents: MeetingInput["documents"] = [];
-		let combinedText = "";
+		const readableSources: LabelledSource[] = [];
 
 		for (const doc of listing.documents) {
 			yield* Effect.gen(function* () {
@@ -657,15 +763,43 @@ function processFinalsiteListing(
 					extractionMethod: extraction.method,
 				});
 				if (extraction.method !== "unreadable") {
-					combinedText += `\n${extraction.text}`;
+					readableSources.push({ kind: "documents", text: extraction.text });
 				}
 			}).pipe(Effect.annotateLogs({ uuid: doc.uuid, url: doc.downloadUrl }));
+		}
+
+		const meetingType = meetingTypeFromFinalsiteLabel(listing.meetingType);
+
+		// A meeting that already has documents takes these as further sources
+		// of the same summary. One that has only a transcript falls through to
+		// the paths below.
+		const existing = config.dryRun
+			? null
+			: yield* storage.getMeetingSourceState({
+					bodySlug: body.slug,
+					date: meetingDate,
+					session,
+				});
+		if (existing?.hasDocuments) {
+			yield* attachDocumentsAndRegenerate({
+				meetingId: existing.meetingId,
+				meeting: {
+					bodySlug: body.slug,
+					date: meetingDate,
+					session,
+					meetingType,
+					documents,
+				},
+				meetingContext: `${body.name}, ${listing.date}`,
+				config,
+			});
+			return { processed: 1, errors: 0 };
 		}
 
 		// If every document for the meeting came back unreadable, skip
 		// summarization and persist the meeting + document rows so the meeting
 		// still appears in listings with a PDF link. Otherwise summarize the
-		// concatenated text of the readable documents and persist normally.
+		// readable documents together and persist normally.
 		const allUnreadable = documents.every(
 			(d) => d.extractionMethod === "unreadable",
 		);
@@ -677,7 +811,7 @@ function processFinalsiteListing(
 				bodySlug: body.slug,
 				date: meetingDate,
 				session,
-				meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
+				meetingType,
 				documents,
 			});
 
@@ -687,7 +821,7 @@ function processFinalsiteListing(
 		yield* Effect.log("finalsite.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
-				sourceText: combinedText,
+				sources: readableSources,
 				meetingContext: `${body.name}, ${listing.date}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
@@ -699,12 +833,14 @@ function processFinalsiteListing(
 			bodySlug: body.slug,
 			date: meetingDate,
 			session,
-			meetingType: meetingTypeFromFinalsiteLabel(listing.meetingType),
+			meetingType,
 			documents,
 			summary: {
 				highlights: summary.highlights,
 				prose: summary.prose,
 				model: summary.model,
+				sourceKinds: ["documents"],
+				sourceFingerprint: fingerprintOfSources({ documents }),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
@@ -877,7 +1013,7 @@ function processYouTubeVideo(
 		yield* Effect.log("youtube.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
-				sourceText: transcript.rawText,
+				sources: [{ kind: "transcript", text: transcript.rawText }],
 				meetingContext: `${body.name}, ${video.title}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
@@ -898,7 +1034,10 @@ function processYouTubeVideo(
 				prose: summary.prose,
 				model: summary.model,
 				sourceKinds: ["transcript"],
-				sourceFingerprint: computeSourceFingerprint([sourceUrl]),
+				sourceFingerprint: fingerprintOfSources({
+					documents: [],
+					transcriptUrl: sourceUrl,
+				}),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,

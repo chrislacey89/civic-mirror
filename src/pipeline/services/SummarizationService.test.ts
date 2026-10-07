@@ -1,6 +1,8 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import {
+	type SummarizationInput,
+	type SummarizationOutput,
 	SummarizationService,
 	SummarizationServiceLive,
 	verifyAmounts,
@@ -84,12 +86,13 @@ describe("SummarizationService", () => {
 					},
 				],
 				budgetDiscussions: [],
+				sourceDisagreements: [],
 			};
 
 			const program = Effect.gen(function* () {
 				const service = yield* SummarizationService;
 				return yield* service.summarize({
-					sourceText: SOURCE_TEXT,
+					sources: [{ kind: "documents", text: SOURCE_TEXT }],
 					meetingContext: "Town Council, March 23, 2026",
 				});
 			}).pipe(
@@ -109,6 +112,7 @@ describe("SummarizationService", () => {
 			expect(result.fiscalDecisions).toHaveLength(2);
 			expect(result.fiscalDecisions[0].confidence).toBe(0.95);
 			expect(result.fiscalDecisions[1].confidence).toBe(0.9);
+			expect(result.sourceDisagreements).toEqual([]);
 		});
 
 		it("downgrades confidence for amounts not found in source text", async () => {
@@ -127,12 +131,13 @@ describe("SummarizationService", () => {
 					},
 				],
 				budgetDiscussions: [],
+				sourceDisagreements: [],
 			};
 
 			const program = Effect.gen(function* () {
 				const service = yield* SummarizationService;
 				return yield* service.summarize({
-					sourceText: SOURCE_TEXT,
+					sources: [{ kind: "documents", text: SOURCE_TEXT }],
 					meetingContext: "Town Council, March 23, 2026",
 				});
 			}).pipe(
@@ -153,7 +158,7 @@ describe("SummarizationService", () => {
 			const program = Effect.gen(function* () {
 				const service = yield* SummarizationService;
 				return yield* service.summarize({
-					sourceText: SOURCE_TEXT,
+					sources: [{ kind: "documents", text: SOURCE_TEXT }],
 					meetingContext: "Town Council, March 23, 2026",
 				});
 			}).pipe(
@@ -174,12 +179,12 @@ describe("SummarizationService", () => {
 		});
 
 		it("passes the meeting context to the generateFn", async () => {
-			const calls: Array<{ sourceText: string; meetingContext: string }> = [];
+			const calls: SummarizationInput[] = [];
 
 			const program = Effect.gen(function* () {
 				const service = yield* SummarizationService;
 				return yield* service.summarize({
-					sourceText: "test source",
+					sources: [{ kind: "documents", text: "test source" }],
 					meetingContext: "Plan Commission, April 1, 2026",
 				});
 			}).pipe(
@@ -193,6 +198,7 @@ describe("SummarizationService", () => {
 								prose: "",
 								fiscalDecisions: [],
 								budgetDiscussions: [],
+								sourceDisagreements: [],
 							};
 						},
 					}),
@@ -202,8 +208,121 @@ describe("SummarizationService", () => {
 			await Effect.runPromise(program);
 
 			expect(calls).toHaveLength(1);
-			expect(calls[0].sourceText).toBe("test source");
+			expect(calls[0].sources).toEqual([
+				{ kind: "documents", text: "test source" },
+			]);
 			expect(calls[0].meetingContext).toBe("Plan Commission, April 1, 2026");
+		});
+	});
+
+	describe("labelled sources", () => {
+		const PAVING_DISAGREEMENT = {
+			topic: "Paving bid",
+			documentsSay: "$215,215.10",
+			transcriptSays: "$244,215.10",
+		};
+
+		function pavingOutput(originalAmount: string): SummarizationOutput {
+			return {
+				highlights: ["Accepted the paving bid"],
+				prose: "The council accepted a paving bid.",
+				fiscalDecisions: [
+					{
+						title: "Paving bid",
+						description: "Accepted the low bid for paving",
+						amount: 215215.1,
+						originalAmount,
+						status: "approved",
+						confidence: 0.9,
+						isRecurring: false,
+					},
+				],
+				budgetDiscussions: [],
+				sourceDisagreements: [PAVING_DISAGREEMENT],
+			};
+		}
+
+		function summarizeWith(
+			output: SummarizationOutput,
+			sources: SummarizationInput["sources"],
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const service = yield* SummarizationService;
+					return yield* service.summarize({
+						sources,
+						meetingContext: "Town Council, May 27, 2025",
+					});
+				}).pipe(
+					Effect.provide(
+						SummarizationServiceLive({
+							model: "gemini-2.5-flash",
+							generateFn: async () => output,
+						}),
+					),
+				),
+			);
+		}
+
+		const DOCUMENTS = {
+			kind: "documents" as const,
+			text: "Motion to accept the paving bid of $215,215.10 passed 5-0.",
+		};
+		const TRANSCRIPT = {
+			kind: "transcript" as const,
+			text: "the paving bid came in at $244,215.10 so I move we accept it",
+		};
+
+		it("returns the disagreements the model reports when both a documents and a transcript source are passed", async () => {
+			const result = await summarizeWith(pavingOutput("$215,215.10"), [
+				DOCUMENTS,
+				TRANSCRIPT,
+			]);
+
+			expect(result.sourceDisagreements).toEqual([PAVING_DISAGREEMENT]);
+		});
+
+		it("returns no disagreements for a single kind of source, whatever the model reports", async () => {
+			const documentsOnly = await summarizeWith(pavingOutput("$215,215.10"), [
+				DOCUMENTS,
+			]);
+			const transcriptOnly = await summarizeWith(pavingOutput("$244,215.10"), [
+				TRANSCRIPT,
+			]);
+
+			expect(documentsOnly.sourceDisagreements).toEqual([]);
+			expect(transcriptOnly.sourceDisagreements).toEqual([]);
+		});
+
+		it("checks amounts against the documents text only when a documents source is present", async () => {
+			const fromDocuments = await summarizeWith(pavingOutput("$215,215.10"), [
+				DOCUMENTS,
+				TRANSCRIPT,
+			]);
+			const fromTranscript = await summarizeWith(pavingOutput("$244,215.10"), [
+				DOCUMENTS,
+				TRANSCRIPT,
+			]);
+
+			expect(fromDocuments.fiscalDecisions[0].confidence).toBe(0.9);
+			expect(fromTranscript.fiscalDecisions[0].confidence).toBeCloseTo(0.36, 5);
+		});
+
+		it("checks amounts against the transcript text when no documents source is present", async () => {
+			const result = await summarizeWith(pavingOutput("$244,215.10"), [
+				TRANSCRIPT,
+			]);
+
+			expect(result.fiscalDecisions[0].confidence).toBe(0.9);
+		});
+
+		it("checks amounts against every documents source", async () => {
+			const result = await summarizeWith(pavingOutput("$215,215.10"), [
+				{ kind: "documents", text: "Agenda: paving bids." },
+				DOCUMENTS,
+			]);
+
+			expect(result.fiscalDecisions[0].confidence).toBe(0.9);
 		});
 	});
 });

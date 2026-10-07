@@ -2,11 +2,13 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createClient } from "@libsql/client";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { Effect } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
+import { DatabaseError } from "#/pipeline/errors.ts";
 import { computeSourceFingerprint } from "#/pipeline/sources.ts";
 import {
 	OCR_CONFIDENCE_MULTIPLIER,
@@ -1112,6 +1114,381 @@ describe("StorageService", () => {
 			expect(await has(db, "https://www.youtube.com/watch?v=other")).toBe(
 				false,
 			);
+		});
+	});
+
+	describe("getMeetingSources", () => {
+		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+
+		function run<A>(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			use: (
+				storage: Effect.Success<typeof StorageService>,
+			) => Effect.Effect<A, unknown>,
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					return yield* use(yield* StorageService);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		it("returns a meeting's documents, transcript, and the source kinds and fingerprint of its summary", async () => {
+			const db = await createTestDb();
+			const sources = await run(db, (storage) =>
+				Effect.gen(function* () {
+					const meeting = yield* storage.storeMeeting({
+						...testMeetingInput,
+						summary: {
+							...testMeetingInput.summary,
+							sourceKinds: ["documents", "transcript"],
+							sourceFingerprint: "fingerprint-1",
+						},
+					});
+					yield* storage.storeTranscript({
+						meetingId: meeting.id,
+						source: "captions",
+						rawText: "transcript text",
+						sourceUrl: VIDEO_URL,
+					});
+					return yield* storage.getMeetingSources(meeting.id);
+				}),
+			);
+
+			expect(sources).toEqual({
+				documents: [
+					{
+						sourceUrl: testMeetingInput.documents[0].sourceUrl,
+						rawText: testMeetingInput.documents[0].rawText,
+						documentType: "minutes",
+						extractionMethod: "text-layer",
+					},
+				],
+				transcript: { sourceUrl: VIDEO_URL, rawText: "transcript text" },
+				summary: {
+					sourceKinds: ["documents", "transcript"],
+					sourceFingerprint: "fingerprint-1",
+				},
+			});
+		});
+
+		it("reports a documents-only legacy summary as having no recorded sources and no transcript", async () => {
+			const db = await createTestDb();
+			const sources = await run(db, (storage) =>
+				Effect.gen(function* () {
+					const meeting = yield* storage.storeMeeting(testMeetingInput);
+					return yield* storage.getMeetingSources(meeting.id);
+				}),
+			);
+
+			expect(sources.transcript).toBeNull();
+			expect(sources.summary).toEqual({
+				sourceKinds: [],
+				sourceFingerprint: "",
+			});
+		});
+
+		it("reports no summary for a meeting stored with only an unreadable document", async () => {
+			const db = await createTestDb();
+			const sources = await run(db, (storage) =>
+				Effect.gen(function* () {
+					const meeting = yield* storage.storeMeeting({
+						bodySlug: "ellettsville-town-council",
+						date: "2026-03-23",
+						meetingType: "regular",
+						documents: [
+							{
+								sourceUrl: "https://ellettsville.in.us/egov/docs/scan.pdf",
+								rawText: "",
+								documentType: "minutes",
+								extractionMethod: "unreadable",
+							},
+						],
+					});
+					return yield* storage.getMeetingSources(meeting.id);
+				}),
+			);
+
+			expect(sources.summary).toBeNull();
+			expect(sources.documents).toHaveLength(1);
+		});
+
+		it("returns empty sources for a meeting id with no rows", async () => {
+			const db = await createTestDb();
+			expect(
+				await run(db, (storage) => storage.getMeetingSources(999)),
+			).toEqual({
+				documents: [],
+				transcript: null,
+				summary: null,
+			});
+		});
+	});
+
+	describe("stampSummaryFingerprint", () => {
+		function run<A>(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			use: (
+				storage: Effect.Success<typeof StorageService>,
+			) => Effect.Effect<A, unknown>,
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					return yield* use(yield* StorageService);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		it("sets the fingerprint on a summary stored without one and changes nothing else", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));
+			const before = await db.select().from(schema.summaries).all();
+			expect(before[0].sourceFingerprint).toBe("");
+
+			await run(db, (s) =>
+				s.stampSummaryFingerprint({
+					meetingId: meeting.id,
+					sourceFingerprint: "stamped",
+				}),
+			);
+
+			expect(await db.select().from(schema.summaries).all()).toEqual([
+				{ ...before[0], sourceFingerprint: "stamped" },
+			]);
+		});
+
+		it("leaves a summary that already has a fingerprint alone", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: {
+						...testMeetingInput.summary,
+						sourceFingerprint: "existing",
+					},
+				}),
+			);
+
+			await run(db, (s) =>
+				s.stampSummaryFingerprint({
+					meetingId: meeting.id,
+					sourceFingerprint: "stamped",
+				}),
+			);
+
+			const rows = await db.select().from(schema.summaries).all();
+			expect(rows[0].sourceFingerprint).toBe("existing");
+		});
+	});
+
+	describe("replaceMeetingSummary", () => {
+		const replacement = {
+			summary: {
+				highlights: ["New highlight"],
+				prose: "A rewritten summary.",
+				model: "gemini-new",
+			},
+			fiscalDecisions: [
+				{
+					title: "New fiscal decision",
+					description: "Approved a new thing",
+					amount: 1000,
+					originalAmount: "$1,000",
+					status: "approved" as const,
+					confidence: 0.8,
+					isRecurring: false,
+				},
+			],
+			budgetDiscussions: [{ topic: "New budget topic" }],
+			sourceKinds: ["documents", "transcript"] as (
+				| "documents"
+				| "transcript"
+			)[],
+			sourceFingerprint: "fingerprint-new",
+			sourceDisagreements: [
+				{ topic: "Vote count", documentsSay: "4-1", transcriptSays: "5-0" },
+			],
+		};
+
+		function run<A>(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			use: (
+				storage: Effect.Success<typeof StorageService>,
+			) => Effect.Effect<A, unknown>,
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					return yield* use(yield* StorageService);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		function store(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			input: Parameters<
+				Effect.Success<typeof StorageService>["storeMeeting"]
+			>[0],
+		) {
+			return run(db, (storage) => storage.storeMeeting(input));
+		}
+
+		it("replaces the meeting's summary, fiscal decisions, and budget discussions and leaves other meetings alone", async () => {
+			const db = await createTestDb();
+			const meeting = await store(db, testMeetingInput);
+			const other = await store(db, {
+				...testMeetingInput,
+				date: "2026-04-13",
+			});
+
+			await run(db, (storage) =>
+				storage.replaceMeetingSummary({
+					meetingId: meeting.id,
+					...replacement,
+				}),
+			);
+
+			const summaries = await db
+				.select()
+				.from(schema.summaries)
+				.where(eq(schema.summaries.meetingId, meeting.id))
+				.all();
+			expect(summaries).toHaveLength(1);
+			expect(summaries[0]).toMatchObject({
+				highlights: ["New highlight"],
+				prose: "A rewritten summary.",
+				model: "gemini-new",
+				sourceKinds: ["documents", "transcript"],
+				sourceFingerprint: "fingerprint-new",
+				sourceDisagreements: replacement.sourceDisagreements,
+			});
+			const fiscal = await db
+				.select()
+				.from(schema.fiscalDecisions)
+				.where(eq(schema.fiscalDecisions.meetingId, meeting.id))
+				.all();
+			expect(fiscal.map((f) => f.title)).toEqual(["New fiscal decision"]);
+			const budget = await db
+				.select()
+				.from(schema.budgetDiscussions)
+				.where(eq(schema.budgetDiscussions.meetingId, meeting.id))
+				.all();
+			expect(budget.map((b) => b.topic)).toEqual(["New budget topic"]);
+
+			const otherSummary = await db
+				.select()
+				.from(schema.summaries)
+				.where(eq(schema.summaries.meetingId, other.id))
+				.all();
+			expect(otherSummary).toHaveLength(1);
+			expect(otherSummary[0].model).toBe("gemini-2.5-flash");
+			const otherFiscal = await db
+				.select()
+				.from(schema.fiscalDecisions)
+				.where(eq(schema.fiscalDecisions.meetingId, other.id))
+				.all();
+			expect(otherFiscal.map((f) => f.title)).toEqual([
+				"Sale Street Road Repairs",
+			]);
+			const otherBudget = await db
+				.select()
+				.from(schema.budgetDiscussions)
+				.where(eq(schema.budgetDiscussions.meetingId, other.id))
+				.all();
+			expect(otherBudget.map((b) => b.topic)).toEqual([
+				"Park pavilion renovation",
+			]);
+		});
+
+		it("keeps the previous summary, fiscal decisions, and budget discussions when a late insert fails", async () => {
+			const db = await createTestDb();
+			const meeting = await store(db, testMeetingInput);
+			const snapshot = async () => ({
+				summaries: await db.select().from(schema.summaries).all(),
+				fiscal: await db.select().from(schema.fiscalDecisions).all(),
+				budget: await db.select().from(schema.budgetDiscussions).all(),
+			});
+			const before = await snapshot();
+
+			const error = await run(db, (storage) =>
+				Effect.flip(
+					storage.replaceMeetingSummary({
+						meetingId: meeting.id,
+						...replacement,
+						// Rejected by NOT NULL after the deletes and earlier inserts have run.
+						budgetDiscussions: [{ topic: null as unknown as string }],
+					}),
+				),
+			);
+
+			expect(error).toBeInstanceOf(DatabaseError);
+			expect(error).toMatchObject({ operation: "replaceMeetingSummary" });
+			expect(await snapshot()).toEqual(before);
+		});
+
+		it("lowers fiscal confidence when any attached document is OCR", async () => {
+			const db = await createTestDb();
+			const meeting = await store(db, {
+				...testMeetingInput,
+				documents: [
+					{ ...testMeetingInput.documents[0], extractionMethod: "ocr" },
+				],
+			});
+
+			await run(db, (storage) =>
+				storage.replaceMeetingSummary({
+					meetingId: meeting.id,
+					...replacement,
+				}),
+			);
+
+			const fiscal = await db.select().from(schema.fiscalDecisions).all();
+			expect(fiscal).toHaveLength(1);
+			expect(fiscal[0].confidence).toBeCloseTo(0.8 * OCR_CONFIDENCE_MULTIPLIER);
+		});
+
+		it("keeps fiscal confidence as given when no attached document is OCR", async () => {
+			const db = await createTestDb();
+			const meeting = await store(db, testMeetingInput);
+
+			await run(db, (storage) =>
+				storage.replaceMeetingSummary({
+					meetingId: meeting.id,
+					...replacement,
+				}),
+			);
+
+			const fiscal = await db.select().from(schema.fiscalDecisions).all();
+			expect(fiscal[0].confidence).toBe(0.8);
+		});
+
+		it("inserts a summary for a meeting that has none yet", async () => {
+			const db = await createTestDb();
+			const meeting = await store(db, {
+				bodySlug: "ellettsville-town-council",
+				date: "2026-03-23",
+				meetingType: "regular",
+				documents: [
+					{
+						sourceUrl: "https://ellettsville.in.us/egov/docs/scan.pdf",
+						rawText: "",
+						documentType: "minutes",
+						extractionMethod: "unreadable",
+					},
+				],
+			});
+			expect(await db.select().from(schema.summaries).all()).toHaveLength(0);
+
+			await run(db, (storage) =>
+				storage.replaceMeetingSummary({
+					meetingId: meeting.id,
+					...replacement,
+				}),
+			);
+
+			const summaries = await db.select().from(schema.summaries).all();
+			expect(summaries).toHaveLength(1);
+			expect(summaries[0].meetingId).toBe(meeting.id);
+			expect(summaries[0].prose).toBe("A rewritten summary.");
 		});
 	});
 });
