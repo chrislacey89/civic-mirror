@@ -3800,6 +3800,25 @@ describe("runPipeline document regeneration", () => {
 			});
 		});
 
+		it("spends no crawl delay when the summary rebuild for a skipped listing fails", async () => {
+			const { run } = await setup();
+			await run({ egovListings: [AGENDA] });
+			await run({
+				egovListings: [AGENDA, MINUTES],
+				summarizationError: new Error("quota exceeded"),
+			});
+
+			const { log, result, sleeps } = await run({
+				egovListings: [AGENDA, MINUTES],
+				summarizationError: new Error("quota exceeded"),
+				crawlDelayMs: 300_000,
+			});
+
+			expect(log.egovDownload).toEqual([]);
+			expect(result.errors).toBe(2);
+			expect(sleeps).toEqual([]);
+		});
+
 		it("logs egov.listing.skipped with the meeting, its date, the url and a reason", async () => {
 			const { db, run } = await setup();
 			await run({ egovListings: [AGENDA] });
