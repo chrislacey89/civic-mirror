@@ -62,7 +62,7 @@ The hold needs both the confirmed flag and the age. The threshold is `CAPTIONS_G
 
 ## Prevention
 
-**Code-level:** each condition has a test that fails when the condition is removed, checked by mutation: the unconfirmed-report and failed-confirmation cases and the stream-data condition in `src/pipeline/services/TranscriptionService.test.ts`, and the recently-published case in `src/pipeline/orchestrator.test.ts`. Write the classifier's tests per failure direction, one condition varied at a time; a fixture that fails two conditions at once tests neither.
+**Code-level:** each condition has a test that fails when the condition is removed, checked by mutation: the unconfirmed-report and failed-confirmation cases, the stream-data condition, and the parser case where a description holds escaped quotes and a closing brace in `src/pipeline/services/TranscriptionService.test.ts`, the non-2xx watch-page status case (the only test of the HTTP-status guard) in `src/pipeline/composition.test.ts`, and the recently-published case in `src/pipeline/orchestrator.test.ts`. Write the classifier's tests per failure direction, one condition varied at a time; a fixture that fails two conditions at once tests neither.
 
 **Process-level:**
 
