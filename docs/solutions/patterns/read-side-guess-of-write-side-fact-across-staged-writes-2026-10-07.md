@@ -60,7 +60,7 @@ Record the fact at the writer, and derive it from how the summary was built, not
 
 `stampSummaryFingerprint` in `src/pipeline/services/StorageService.ts` writes `source_kinds` in the same update as the fingerprint. Its three callers in `src/pipeline/orchestrator.ts` (`matchVideoToMeeting`, `attachDocumentsAndRegenerate` and `matchDocumentsToMeeting`) run it before they attach a source, so the kinds are stored before the rows change (#149, PR #154).
 
-What the stamp should write: a summary with no fingerprint was stored by a path that read one kind of source, so the stamp names one kind. It is the documents when the meeting holds any with text, and the transcript otherwise. `matchDocumentsToMeeting` already stamps this way, with a literal `["transcript"]`. The other two callers shipped in PR #154's first review round calling `kindsOfSources(held)`, which names every kind held; the review's first finding on that PR tracks changing them, with a test that seeds a documents-only summary beside an unstamped transcript.
+What the stamp should write: a summary with no fingerprint was stored by a path that read one kind of source, so the stamp names one kind. It is the documents when the meeting holds any with text, and the transcript otherwise. `matchDocumentsToMeeting` stamps a literal `["transcript"]`. The other two callers use `kindsOfUnfingerprintedSummary` in `src/pipeline/sources.ts`. `kindsOfSources`, which names every kind held, is for a summary that was just rebuilt from everything the meeting holds (`regenerateMeetingSummary`).
 
 The read-side fallback in `summarySourceKinds` (`src/db/queries.ts`) stays for summaries that have never had a source attached since they were built: documents win when the meeting has any, and the transcript is credited only when it has none. Twenty-five production summaries depended on it on 2026-10-07. None held both a transcript and a document, and none was in the unsettled state.
 
@@ -68,7 +68,7 @@ The read-side fallback in `summarySourceKinds` (`src/db/queries.ts`) stays for s
 
 ## Prevention
 
-**Code-level:** `src/db/queries.test.ts`, "derives the kinds from the attached rows when the summary stored none, never crediting a video that joined later", pins the documents-first rule and fails when the transcript is credited beside documents. Three tests in `src/pipeline/orchestrator.test.ts` (their names contain "stored without kinds") seed an unsettled state against a real database and assert the meeting detail query's `summarySources`, one per stamping caller. A test that seeds the unsettled state (source attached, summary not rebuilt) is the case to add for any reader of a derived artifact.
+**Code-level:** `src/db/queries.test.ts`, "derives the kinds from the attached rows when the summary stored none, never crediting a video that joined later", pins the documents-first rule and fails when the transcript is credited beside documents. Four tests in `src/pipeline/orchestrator.test.ts` (their names contain "stored without kinds") seed an unsettled state against a real database and assert the meeting detail query's `summarySources`. Each stamping caller has at least one. A test that seeds the unsettled state (source attached, summary not rebuilt) is the case to add for any reader of a derived artifact.
 
 When a writer records such a fact late, seed a fixture where the attached rows and the fact disagree: here, a documents-only summary on a meeting that also holds a transcript. Single-kind fixtures pass for both the right rule and the wrong one.
 
@@ -79,7 +79,7 @@ When a writer records such a fact late, seed a fixture where the attached rows a
 - When reviewing a fix for a guess, look for the mirror-image write path before accepting it, including paths added by sibling slices since the branch was cut.
 - When a fix says "the callers already hold the sources the artifact was built from", list every path that can add a source, operator one-shots included, and check each one against that sentence. This entry made that claim in its first version and it was false for `drama:detect`.
 
-**Mechanism for the recurrence:** the pattern recurred inside its own fix, so prose is not enough. The mechanism is the test named above for a documents-only summary beside an unstamped transcript. It lands with the fix for the review's first finding on PR #154, not with this entry: the branch was locked after review, and the fix needs an author other than the session that wrote the code.
+**Mechanism for the recurrence:** the pattern recurred inside its own fix, so prose is not enough. The mechanism is the test in `src/pipeline/orchestrator.test.ts` named "reads a documents-only summary stored without kinds as built from the documents when a transcript attached by a one-shot sits beside them and regeneration fails". It fails if `attachDocumentsAndRegenerate` stamps every kind held. The `matchVideoToMeeting` stamp has no such test: it runs only for a meeting with no transcript, where the two rules agree.
 
 **Clustering:** the nearest entry is `guessed-natural-key-on-unreadable-input-2026-10-06.md`. It is not the same pattern. There the guess fills a key and records merge; here nothing is unreadable and nothing merges, and the guess is wrong only while a staged write is in flight. This entry narrows that entry's "descriptive only" exemption, noted in both.
 
