@@ -604,11 +604,8 @@ export type MeetingDetail = {
 };
 
 /**
- * The kinds a summary was built from. A summary that recorded none has had no
- * source of the other kind attached since it was built, because the pipeline
- * stamps the kinds before any such attach (`stampSummaryFingerprint`). So it
- * was built from the documents when the meeting has any, and from the
- * transcript only when it has none.
+ * The kinds a summary was built from. It was built from the documents when the
+ * meeting has any, and from the transcript only when it has none.
  */
 function summarySourceKinds(
 	stored: SourceKind[],
