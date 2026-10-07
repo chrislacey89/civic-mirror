@@ -25,7 +25,10 @@ import {
 	StorageService,
 	StorageServiceLive,
 } from "#/pipeline/services/StorageService.ts";
-import type { SummarizationResult } from "#/pipeline/services/SummarizationService.ts";
+import type {
+	SummarizationInput,
+	SummarizationResult,
+} from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
 import type { YouTubeVideo } from "#/pipeline/services/YouTubeScraper.ts";
@@ -45,7 +48,7 @@ type CallLog = {
 	finalsiteDownload: Array<string>;
 	youtubeList: Array<string>;
 	transcribe: Array<string>;
-	summarize: Array<{ sourceText: string; meetingContext: string }>;
+	summarize: Array<SummarizationInput>;
 	store: Array<{ bodySlug: string; date: string }>;
 	storeInputs: Array<MeetingInput>;
 	transcripts: Array<{ meetingId: number; sourceUrl?: string }>;
@@ -100,6 +103,7 @@ function buildStubLayers(config: StubConfig) {
 		prose: "A prose summary",
 		fiscalDecisions: [],
 		budgetDiscussions: [],
+		sourceDisagreements: [],
 		model: "stub-model",
 	};
 	const defaultMeeting: Meeting = { id: 1, date: "2026-01-01", bodyId: 1 };
@@ -323,7 +327,7 @@ describe("runPipeline", () => {
 		expect(log.egovScrape).toBe(1);
 		expect(log.egovDownload).toHaveLength(2);
 		expect(log.summarize).toHaveLength(2);
-		expect(log.summarize[0].sourceText).toContain("$50,000");
+		expect(log.summarize[0].sources[0].text).toContain("$50,000");
 		expect(log.store).toHaveLength(2);
 		expect(log.store[0].bodySlug).toBe("town-council");
 		expect(log.alert).toHaveLength(0);
@@ -1077,7 +1081,7 @@ describe("runPipeline", () => {
 		expect(log.youtubeList).toEqual(["PL_test"]);
 		expect(log.transcribe).toEqual(["abc123"]);
 		expect(log.summarize).toHaveLength(1);
-		expect(log.summarize[0].sourceText).toContain("transcript for abc123");
+		expect(log.summarize[0].sources[0].text).toContain("transcript for abc123");
 		expect(log.store).toHaveLength(1);
 		expect(log.drama).toBe(1);
 		expect(result.processed).toBe(1);
@@ -1413,7 +1417,7 @@ describe("runPipeline", () => {
 		// Summarizer ran exactly once — over the readable text only, not over
 		// the unreadable doc's empty string.
 		expect(log.summarize).toHaveLength(1);
-		expect(log.summarize[0].sourceText).toContain("$10,000");
+		expect(log.summarize[0].sources[0].text).toContain("$10,000");
 
 		// Single meeting persisted with both docs.
 		expect(log.store).toHaveLength(1);

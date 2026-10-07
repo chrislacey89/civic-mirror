@@ -19,6 +19,7 @@ import type {
 	MeetingInput,
 } from "#/pipeline/services/StorageService.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
+import type { LabelledSource } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import type { TranscriptResult } from "#/pipeline/services/TranscriptionService.ts";
 import { TranscriptionService } from "#/pipeline/services/TranscriptionService.ts";
@@ -500,7 +501,7 @@ function processEgovListing(
 		yield* Effect.log("egov.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
-				sourceText: extraction.text,
+				sources: [{ kind: "documents", text: extraction.text }],
 				meetingContext: `${body.name}, ${meetingDate}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
@@ -625,7 +626,7 @@ function processFinalsiteListing(
 		}
 
 		const documents: MeetingInput["documents"] = [];
-		let combinedText = "";
+		const readableSources: LabelledSource[] = [];
 
 		for (const doc of listing.documents) {
 			yield* Effect.gen(function* () {
@@ -657,7 +658,7 @@ function processFinalsiteListing(
 					extractionMethod: extraction.method,
 				});
 				if (extraction.method !== "unreadable") {
-					combinedText += `\n${extraction.text}`;
+					readableSources.push({ kind: "documents", text: extraction.text });
 				}
 			}).pipe(Effect.annotateLogs({ uuid: doc.uuid, url: doc.downloadUrl }));
 		}
@@ -665,7 +666,7 @@ function processFinalsiteListing(
 		// If every document for the meeting came back unreadable, skip
 		// summarization and persist the meeting + document rows so the meeting
 		// still appears in listings with a PDF link. Otherwise summarize the
-		// concatenated text of the readable documents and persist normally.
+		// readable documents together and persist normally.
 		const allUnreadable = documents.every(
 			(d) => d.extractionMethod === "unreadable",
 		);
@@ -687,7 +688,7 @@ function processFinalsiteListing(
 		yield* Effect.log("finalsite.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
-				sourceText: combinedText,
+				sources: readableSources,
 				meetingContext: `${body.name}, ${listing.date}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
@@ -877,7 +878,7 @@ function processYouTubeVideo(
 		yield* Effect.log("youtube.summarize.start");
 		const summary = yield* summarizer
 			.summarize({
-				sourceText: transcript.rawText,
+				sources: [{ kind: "transcript", text: transcript.rawText }],
 				meetingContext: `${body.name}, ${video.title}`,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
