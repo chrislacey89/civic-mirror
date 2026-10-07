@@ -17,14 +17,18 @@ function parseExtractionMethod(raw: string): ExtractionMethod {
 
 /**
  * Derive meeting-level extraction method from per-document methods.
- * "unreadable" only if every document is unreadable (or there are none);
- * "ocr" if any readable doc came through OCR; "text-layer" otherwise.
+ * "unreadable" only if there is nothing to show: every document is unreadable
+ * (or there are none) and no summary exists. A meeting with a summary but no
+ * readable document (e.g. one built from the video alone) is "text-layer";
+ * otherwise "ocr" if any readable doc came through OCR, else "text-layer".
  */
 function deriveMeetingExtractionMethod(
 	methods: ExtractionMethod[],
+	hasSummary: boolean,
 ): ExtractionMethod {
-	if (methods.length === 0) return "unreadable";
-	if (methods.every((m) => m === "unreadable")) return "unreadable";
+	if (methods.every((m) => m === "unreadable")) {
+		return hasSummary ? "text-layer" : "unreadable";
+	}
 	if (methods.some((m) => m === "ocr")) return "ocr";
 	return "text-layer";
 }
@@ -153,15 +157,16 @@ export async function listRecentMeetingsQuery(
 			.where(eq(schema.documents.meetingId, m.id))
 			.all();
 
-		const extractionMethod = deriveMeetingExtractionMethod(
-			docs.map((d) => parseExtractionMethod(d.extractionMethod)),
-		);
-
 		const summary = await db
 			.select()
 			.from(schema.summaries)
 			.where(eq(schema.summaries.meetingId, m.id))
 			.get();
+
+		const extractionMethod = deriveMeetingExtractionMethod(
+			docs.map((d) => parseExtractionMethod(d.extractionMethod)),
+			summary !== undefined,
+		);
 
 		// Readable meetings without a summary are a broken mid-pipeline state —
 		// skip them. Unreadable meetings legitimately have no summary and must
@@ -654,13 +659,17 @@ export async function getMeetingByBodyAndDateQuery(
 		.all();
 
 	const docMethods = docs.map((d) => parseExtractionMethod(d.extractionMethod));
-	const extractionMethod = deriveMeetingExtractionMethod(docMethods);
 
 	const summary = await db
 		.select()
 		.from(schema.summaries)
 		.where(eq(schema.summaries.meetingId, meeting.id))
 		.get();
+
+	const extractionMethod = deriveMeetingExtractionMethod(
+		docMethods,
+		summary !== undefined,
+	);
 
 	if (!summary && extractionMethod !== "unreadable") return null;
 

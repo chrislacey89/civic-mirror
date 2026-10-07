@@ -958,6 +958,72 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 		return meeting;
 	}
 
+	it("does not call a meeting with a summary and no readable document unreadable, on the detail and list queries", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedSourcedMeeting(db, body.id, {
+			videoUrl: VIDEO_URL,
+			summary: { sourceKinds: ["transcript"] },
+		});
+		const scanned = await seedSourcedMeeting(db, body.id, {
+			date: "2026-04-13",
+			videoUrl: VIDEO_URL,
+			summary: { sourceKinds: ["transcript"] },
+		});
+		await db
+			.insert(schema.documents)
+			.values({
+				meetingId: scanned.id,
+				sourceUrl: "https://example.gov/scan.pdf",
+				rawText: "",
+				documentType: "minutes",
+				extractionMethod: "unreadable",
+			})
+			.run();
+
+		const detail = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-03-23",
+		);
+		const scannedDetail = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-04-13",
+		);
+		const list = await listRecentMeetingsQuery(db);
+
+		expect(detail?.extractionMethod).not.toBe("unreadable");
+		expect(scannedDetail?.extractionMethod).not.toBe("unreadable");
+		expect(list).toHaveLength(2);
+		for (const row of list) {
+			expect(row.extractionMethod).not.toBe("unreadable");
+		}
+	});
+
+	it("still calls a meeting with no documents and no summary unreadable", async () => {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await db
+			.insert(schema.meetings)
+			.values({
+				bodyId: body.id,
+				date: "2026-03-23",
+				meetingType: "regular",
+			})
+			.run();
+
+		const detail = await getMeetingByBodyAndDateQuery(
+			db,
+			"ellettsville-town-council",
+			"2026-03-23",
+		);
+		const list = await listRecentMeetingsQuery(db);
+
+		expect(detail?.extractionMethod).toBe("unreadable");
+		expect(list.map((r) => r.extractionMethod)).toEqual(["unreadable"]);
+	});
+
 	it("returns the stored kinds and the video link, and no transcript text", async () => {
 		const db = await createTestDb();
 		const body = await seedBody(db);

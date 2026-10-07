@@ -70,10 +70,7 @@ function MeetingDetailPage() {
  */
 export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 	const isOcr = meeting.extractionMethod === "ocr";
-	// A meeting summarized from its video has no readable document, yet it is
-	// not unreadable: only a meeting with nothing to show gets the status card.
-	const isUnreadable =
-		meeting.extractionMethod === "unreadable" && meeting.summary === null;
+	const isUnreadable = meeting.extractionMethod === "unreadable";
 	const isVideoOnly =
 		meeting.summarySources.kinds.length === 1 &&
 		meeting.summarySources.kinds[0] === "transcript";

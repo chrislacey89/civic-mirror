@@ -234,12 +234,9 @@ describe("MeetingDetailView — summary sources", () => {
 	});
 
 	it("tells the reader a video-only summary came from the video alone and that minutes are not yet posted", () => {
-		// A video-only meeting has no documents, so its derived extraction
-		// method is "unreadable" — it must still render its summary.
 		render(
 			<MeetingDetailView
 				meeting={makeMeeting({
-					extractionMethod: "unreadable",
 					documents: [],
 					summarySources: { kinds: ["transcript"], videoUrl: VIDEO_URL },
 				})}
