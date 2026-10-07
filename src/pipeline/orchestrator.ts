@@ -595,10 +595,8 @@ function matchDocumentsToMeeting(input: {
 			);
 		}
 
-		// Should a write below fail, the next run finds the documents-only
-		// summary still owed. A summary stored without a fingerprint would look
-		// current once the documents are attached, so it is stamped as the
-		// transcript's first.
+		// A summary stored without a fingerprint would look current once the
+		// documents are attached, so it is stamped as the transcript's first.
 		yield* storage.stampSummaryFingerprint({
 			meetingId: meeting.meetingId,
 			sourceFingerprint: fingerprintOfSources({
