@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { YoutubeTranscriptDisabledError } from "youtube-transcript";
 
 import {
 	buildProductionLayers,
@@ -13,15 +14,17 @@ const { fetchTranscript, execFileSync } = vi.hoisted(() => ({
 	execFileSync: vi.fn(),
 }));
 
-vi.mock("youtube-transcript", () => ({
+vi.mock("youtube-transcript", async (importOriginal) => ({
+	...(await importOriginal<typeof import("youtube-transcript")>()),
 	YoutubeTranscript: { fetchTranscript },
-	YoutubeTranscriptDisabledError: class extends Error {},
 }));
 vi.mock("node:child_process", () => ({ execFileSync }));
 
 const TOUCHED = ["CM_TEST_PRIMARY", "CM_TEST_ALIAS"] as const;
 
 afterEach(() => {
+	vi.unstubAllGlobals();
+	vi.unstubAllEnvs();
 	for (const name of TOUCHED) delete process.env[name];
 });
 
@@ -97,5 +100,57 @@ describe("buildProductionLayers transcription", () => {
 		expect(result.message).toBe("captions blocked");
 		expect(execFileSync).not.toHaveBeenCalled();
 		vi.unstubAllEnvs();
+	});
+
+	describe("when the library reports captions disabled", () => {
+		const videoId = "abc123DEF45";
+		const watchPage = (playerResponse: unknown) =>
+			`<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+		const playableResponse = {
+			playabilityStatus: { status: "OK" },
+			videoDetails: { videoId, title: "Council meeting" },
+			streamingData: { formats: [] },
+		};
+
+		const transcribeWithWatchPage = async (playerResponse: unknown) => {
+			vi.stubEnv("DATABASE_URL", "file::memory:");
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(async () => new Response(watchPage(playerResponse))),
+			);
+			fetchTranscript.mockRejectedValue(
+				new YoutubeTranscriptDisabledError(videoId),
+			);
+
+			const layers = buildProductionLayers({ dryRun: true });
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const transcription = yield* TranscriptionService;
+					return yield* Effect.flip(transcription.transcribe(videoId));
+				}).pipe(Effect.provide(layers)),
+			);
+		};
+
+		it("flags captionsDisabled when the watch page confirms a playable video without tracks", async () => {
+			const result = await transcribeWithWatchPage(playableResponse);
+
+			expect(result.captionsDisabled).toBe(true);
+			expect(execFileSync).not.toHaveBeenCalled();
+		});
+
+		it("fails as an ordinary error when the watch page does not confirm it", async () => {
+			const result = await transcribeWithWatchPage({
+				...playableResponse,
+				captions: {
+					playerCaptionsTracklistRenderer: {
+						captionTracks: [{ languageCode: "en" }],
+					},
+				},
+			});
+
+			expect(result.captionsDisabled).toBeFalsy();
+			expect(result.message).toContain("captions disabled not confirmed");
+			expect(execFileSync).not.toHaveBeenCalled();
+		});
 	});
 });
