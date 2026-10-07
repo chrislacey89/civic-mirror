@@ -2,8 +2,13 @@ import { Clock, Duration, Effect, Layer, Logger, References } from "effect";
 import { describe, expect, it } from "vitest";
 import type { MeetingDetail } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
-import { LlmError, NetworkError } from "#/pipeline/errors.ts";
 import {
+	LlmError,
+	NetworkError,
+	TranscriptionError,
+} from "#/pipeline/errors.ts";
+import {
+	holdVideoAndAlert,
 	runDramaDetectForVideo,
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
@@ -92,6 +97,8 @@ type StubConfig = {
 	}) => MeetingSourceState | null;
 	/** Video URLs storage already holds a transcript for. */
 	storedVideoUrls?: string[];
+	/** Videos whose transcription fails, by video ID. */
+	transcriptionErrors?: Record<string, TranscriptionError>;
 	/** Video IDs storage already holds as held videos. */
 	heldVideoIds?: string[];
 	/** Replaces the storage stub, for tests that run against a real database. */
@@ -148,13 +155,15 @@ function buildStubLayers(config: StubConfig) {
 
 	const transcription = Layer.succeed(TranscriptionService, {
 		transcribe: (videoId) =>
-			Effect.sync(() => {
+			Effect.suspend(() => {
 				config.log.transcribe.push(videoId);
-				return {
+				const error = config.transcriptionErrors?.[videoId];
+				if (error) return Effect.fail(error);
+				return Effect.succeed({
 					source: "captions" as const,
 					rawText: `transcript for ${videoId}`,
 					segments: [],
-				};
+				});
 			}),
 	});
 
@@ -1589,12 +1598,16 @@ describe("runPipeline video path", () => {
 	};
 	const url = (videoId: string) => `https://www.youtube.com/watch?v=${videoId}`;
 
-	function run(layers: ReturnType<typeof buildStubLayers>, youtubeDelayMs = 0) {
+	function run(
+		layers: ReturnType<typeof buildStubLayers>,
+		youtubeDelayMs = 0,
+		networkRetry = { attempts: 0, baseDelayMs: 0 },
+	) {
 		return runPipeline({
 			bodies: [TOWN_COUNCIL],
 			crawlDelayMs: 0,
 			youtubeDelayMs,
-			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			networkRetry,
 			llmRetry: { attempts: 0, baseDelayMs: 0 },
 			extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
 			dryRun: false,
@@ -1790,6 +1803,148 @@ describe("runPipeline video path", () => {
 		expect(result).toEqual({ processed: 0, errors: 0 });
 	});
 
+	it("skips a held video before transcription", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR, WORK_SESSION],
+			heldVideoIds: ["regular"],
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.transcribe).toEqual(["work"]);
+		expect(log.held).toEqual([]);
+		expect(log.alert).toEqual([]);
+		expect(result).toEqual({ processed: 1, errors: 0 });
+	});
+
+	it("holds a video whose captions are disabled as no-captions, once, with its meeting date, and counts no error", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR, WORK_SESSION],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			run(layers, 0, { attempts: 2, baseDelayMs: 0 }),
+		);
+
+		expect(log.held).toEqual([
+			{
+				bodySlug: "ellettsville-town-council",
+				videoId: "regular",
+				title: REGULAR.title,
+				meetingDate: "2025-08-25",
+				reason: "no-captions",
+			},
+		]);
+		// A disabled video is asked for once: retrying cannot change the answer.
+		expect(log.transcribe).toEqual(["regular", "work"]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].subject).toContain("no-captions");
+		expect(log.storeInputs.map((i) => i.session)).toEqual([
+			"budget-work-session",
+		]);
+		expect(result).toEqual({ processed: 1, errors: 0 });
+	});
+
+	it("counts an error and leaves the video unheld when the caption fetch fails for any other reason", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message:
+						"No caption tracks reported (captions disabled not confirmed)",
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(run(layers));
+
+		expect(log.held).toEqual([]);
+		expect(log.store).toEqual([]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].subject).toContain("transcribe failed");
+		expect(result).toEqual({ processed: 0, errors: 1 });
+	});
+
+	it("records no hold and sends no alert on a dry run", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [
+				{ ...REGULAR, videoId: "plan", title: "Plan Commission, May 1, 2026" },
+				REGULAR,
+			],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			runPipeline({
+				bodies: [TOWN_COUNCIL],
+				crawlDelayMs: 0,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+				dryRun: true,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(log.held).toEqual([]);
+		expect(log.alert).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 0 });
+	});
+
+	describe("holdVideoAndAlert", () => {
+		const hold = { reason: "no-captions" as const, meetingDate: "2025-08-25" };
+
+		it("sends exactly one alert naming the title, reason and meeting date when a video is held for the first time", async () => {
+			const log = emptyCallLog();
+
+			await Effect.runPromise(
+				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold).pipe(
+					Effect.provide(buildStubLayers({ log })),
+				),
+			);
+
+			expect(log.held.map((h) => h.videoId)).toEqual(["regular"]);
+			expect(log.alert).toHaveLength(1);
+			expect(log.alert[0].body).toContain(`Title: ${REGULAR.title}`);
+			expect(log.alert[0].body).toContain("Reason: no-captions");
+			expect(log.alert[0].body).toContain("Meeting date: 2025-08-25");
+		});
+
+		it("sends no alert when the video is already held", async () => {
+			const log = emptyCallLog();
+
+			await Effect.runPromise(
+				holdVideoAndAlert(TOWN_COUNCIL, REGULAR, hold).pipe(
+					Effect.provide(buildStubLayers({ log, heldVideoIds: ["regular"] })),
+				),
+			);
+
+			expect(log.alert).toEqual([]);
+		});
+	});
+
 	it("paces only the videos it transcribes", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
@@ -1896,6 +2051,7 @@ describe("runPipeline video path", () => {
 				summaries: (await db.select().from(schema.summaries).all()).length,
 				transcripts: (await db.select().from(schema.transcripts).all()).length,
 				drama: (await db.select().from(schema.dramaAssessments).all()).length,
+				held: (await db.select().from(schema.heldVideos).all()).length,
 			});
 			return { db, counts };
 		}
@@ -1967,6 +2123,59 @@ describe("runPipeline video path", () => {
 			expect(second.summarize).toEqual([]);
 			expect(second.drama).toBe(0);
 			expect(result).toEqual({ processed: 0, errors: 0 });
+			expect(await counts()).toEqual(afterFirst);
+		});
+
+		it("[QA-RELI] leaves held_videos unchanged and sends no second alert on a second run over a playlist with held videos", async () => {
+			const { db, counts } = await setup();
+			const videos = [
+				{
+					...REGULAR,
+					videoId: "plan",
+					title: "Ellettsville Plan Commission, August 25, 2025",
+				},
+				REGULAR,
+				WORK_SESSION,
+			];
+			const runOnce = async () => {
+				const log = emptyCallLog();
+				const result = await Effect.runPromise(
+					run(
+						buildStubLayers({
+							log,
+							youtubeVideos: videos,
+							storage: StorageServiceLive(db),
+							transcriptionErrors: {
+								regular: new TranscriptionError({
+									videoId: "regular",
+									message: "Captions are disabled for this video",
+									captionsDisabled: true,
+								}),
+							},
+						}),
+					),
+				);
+				return { log, result };
+			};
+
+			// The run also raises its no-new-content alert, which is not about
+			// any one video.
+			const holdAlerts = (log: CallLog) =>
+				log.alert.map((a) => a.subject).filter((s) => s.includes("held"));
+
+			const first = await runOnce();
+			expect(holdAlerts(first.log)).toEqual([
+				expect.stringContaining("unrecognized-title"),
+				expect.stringContaining("no-captions"),
+			]);
+			const afterFirst = await counts();
+			expect(afterFirst.held).toBe(2);
+
+			const second = await runOnce();
+
+			expect(second.log.transcribe).toEqual([]);
+			expect(holdAlerts(second.log)).toEqual([]);
+			expect(second.result).toEqual({ processed: 0, errors: 0 });
 			expect(await counts()).toEqual(afterFirst);
 		});
 

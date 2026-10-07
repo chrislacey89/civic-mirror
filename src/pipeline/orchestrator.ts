@@ -778,6 +778,14 @@ function processPlaylistVideo(
 	| AlertService
 > {
 	return Effect.gen(function* () {
+		// A dry run writes nothing, so it only reports what it would hold.
+		const hold = (videoHold: VideoHold) =>
+			config.dryRun
+				? Effect.log("youtube.video.would-hold").pipe(
+						Effect.annotateLogs({ reason: videoHold.reason }),
+					)
+				: holdVideoAndAlert(body, video, videoHold);
+
 		// The publish date is the day the recording reached the playlist, which
 		// trails the meeting and is shared by videos posted together, and a
 		// playlist can carry another body's recording. A title that is not this
@@ -787,7 +795,7 @@ function processPlaylistVideo(
 		if (reading.kind === "unrecognized") {
 			// The date is recorded for the operator reading the held list; it
 			// keys nothing, so any long-form date in the title will do.
-			yield* holdVideoAndAlert(body, video, {
+			yield* hold({
 				reason: "unrecognized-title",
 				meetingDate: extractLongFormDate(video.title),
 			});
@@ -799,7 +807,10 @@ function processPlaylistVideo(
 		}
 
 		const storage = yield* StorageService;
-		if (yield* storage.hasTranscriptForVideo(videoUrl(video.videoId))) {
+		if (
+			(yield* storage.hasTranscriptForVideo(videoUrl(video.videoId))) ||
+			(yield* storage.isVideoHeld(video.videoId))
+		) {
 			return SETTLED_WITHOUT_REQUEST;
 		}
 
@@ -838,6 +849,18 @@ function processPlaylistVideo(
 				meetingType: meetingTypeFromFinalsiteLabel(reading.qualifier ?? ""),
 			},
 			config,
+		).pipe(
+			// Only confirmed-disabled captions are a hold. Every other
+			// transcription failure stays an error, so the next run retries it.
+			Effect.catchIf(
+				(error) =>
+					error._tag === "TranscriptionError" &&
+					error.captionsDisabled === true,
+				() =>
+					hold({ reason: "no-captions", meetingDate: reading.date }).pipe(
+						Effect.as({ processed: 0, errors: 0 }),
+					),
+			),
 		);
 	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
 }
@@ -917,9 +940,14 @@ function processYouTubeVideo(
 		const storage = yield* StorageService;
 
 		yield* Effect.log("youtube.transcribe.start");
-		const transcript = yield* transcription
-			.transcribe(video.videoId)
-			.pipe(Effect.retry(config.networkSchedule));
+		// Disabled captions are a property of the video, so asking again
+		// cannot succeed.
+		const transcript = yield* transcription.transcribe(video.videoId).pipe(
+			Effect.retry({
+				schedule: config.networkSchedule,
+				while: (error) => error.captionsDisabled !== true,
+			}),
+		);
 		yield* Effect.log("youtube.transcribe.finish").pipe(
 			Effect.annotateLogs({ source: transcript.source }),
 		);
@@ -1092,7 +1120,11 @@ class UnsessionedListingError {
 type TaggedPipelineError =
 	| { readonly _tag: "NetworkError"; readonly message: string }
 	| { readonly _tag: "ParseError"; readonly message: string }
-	| { readonly _tag: "TranscriptionError"; readonly message: string }
+	| {
+			readonly _tag: "TranscriptionError";
+			readonly message: string;
+			readonly captionsDisabled?: boolean;
+	  }
 	| { readonly _tag: "LlmError"; readonly message: string }
 	| { readonly _tag: "DatabaseError"; readonly message: string }
 	| PipelineExtractError
