@@ -15,7 +15,17 @@ export type HeldReason =
  * One line of `held:list`. The title comes last because it is the only field
  * of unbounded width; `-` stands for a value the hold does not carry.
  */
-export function formatHeldVideoLine(held: HeldVideo): string {
+export function formatHeldVideoLine(
+	held: Pick<
+		HeldVideo,
+		| "videoId"
+		| "title"
+		| "meetingDate"
+		| "reason"
+		| "probability"
+		| "sharedIdentifiers"
+	>,
+): string {
 	const probability =
 		held.probability === undefined ? "-" : held.probability.toFixed(2);
 	return [

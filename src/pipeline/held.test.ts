@@ -3,12 +3,10 @@ import { formatHeldVideoLine } from "./held.ts";
 
 describe("formatHeldVideoLine", () => {
 	const base = {
-		bodySlug: "ellettsville-town-council",
 		videoId: "1aK9vZNPH7I",
 		title: "Ellettsville Town Council, March 23, 2026",
 		meetingDate: "2026-03-23",
 		reason: "no-captions" as const,
-		createdAt: new Date(0),
 	};
 
 	it("prints the video ID, meeting date, reason and title on one line, with - for the check fields a hold did not go through", () => {
