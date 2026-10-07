@@ -1856,6 +1856,37 @@ describe("runPipeline video path", () => {
 		expect(result).toEqual({ processed: 1, errors: 0 });
 	});
 
+	it("leaves a recently published video with disabled captions unheld and counts an error, so a later run retries it", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [{ ...REGULAR, publishedAt: "2025-08-27T00:00:00Z" }],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Captions are disabled for this video",
+					captionsDisabled: true,
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			runPipeline({
+				bodies: [TOWN_COUNCIL],
+				crawlDelayMs: 0,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({ text: "unused", method: "text-layer" }),
+				dryRun: false,
+				now: new Date("2025-08-28T00:00:00Z"),
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(log.held).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 1 });
+	});
+
 	it("counts an error and leaves the video unheld when the caption fetch fails for any other reason", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({

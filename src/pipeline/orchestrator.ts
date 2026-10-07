@@ -34,6 +34,14 @@ import { readVideoTitle } from "#/pipeline/video-title.ts";
 const ZERO_RESULTS_THRESHOLD_DAYS = 30;
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
+/**
+ * Days a video must have been published before missing caption tracks count
+ * as disabled captions. YouTube generates automatic captions some time after
+ * upload, so a fresh video without tracks looks the same as one that will
+ * never have them, and a hold is permanent.
+ */
+const CAPTIONS_GRACE_DAYS = 7;
+
 function detectZeroResultsAnomaly(input: {
 	body: BodyConfig;
 	lastMeetingDate: string | null;
@@ -850,12 +858,15 @@ function processPlaylistVideo(
 			},
 			config,
 		).pipe(
-			// Only confirmed-disabled captions are a hold. Every other
-			// transcription failure stays an error, so the next run retries it.
+			// Only confirmed-disabled captions on a video past the grace period
+			// are a hold. Every other transcription failure stays an error, so
+			// the next run retries it. An unreadable publish date never holds.
 			Effect.catchIf(
 				(error) =>
 					error._tag === "TranscriptionError" &&
-					error.captionsDisabled === true,
+					error.captionsDisabled === true &&
+					config.now.getTime() - Date.parse(video.publishedAt) >=
+						CAPTIONS_GRACE_DAYS * MS_PER_DAY,
 				() =>
 					hold({ reason: "no-captions", meetingDate: reading.date }).pipe(
 						Effect.as({ processed: 0, errors: 0 }),
