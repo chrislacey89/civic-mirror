@@ -215,6 +215,35 @@ describe("MeetingMatchService", () => {
 			).toBe(0);
 		});
 
+		it.each([
+			{ a: "$2M", b: "$2" },
+			{ a: "$2.4M", b: "$2.4" },
+			{ a: "$50K", b: "$50" },
+			{ a: "$2 mil", b: "$2" },
+			{ a: "$2-million", b: "$2" },
+			{ a: "$2 millions", b: "$2" },
+			{ a: "$2 hundred thousand", b: "$2" },
+		])("does not count '$a' and '$b' as the same amount", async ({ a, b }) => {
+			expect(
+				await sharedBetween(
+					summary({ prose: `The council approved ${a} for the project.` }),
+					summary({ prose: `The council approved ${b} for the project.` }),
+				),
+			).toBe(0);
+		});
+
+		it("still counts an amount followed by an ordinary word", async () => {
+			expect(
+				await sharedBetween(
+					summary({ prose: "A $250 rental fee and $5 per vehicle." }),
+					summary({
+						highlights: ["Set $250 rental fee", "Charged $5 per vehicle"],
+						prose: "Repairs of $1,000 for repairs.",
+					}),
+				),
+			).toBe(2);
+		});
+
 		it("counts '$2 million' once across case and spacing", async () => {
 			expect(
 				await sharedBetween(

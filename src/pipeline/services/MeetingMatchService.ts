@@ -63,14 +63,15 @@ const ORDINANCE_NUMBER =
 	/\b(?:ordinance|resolution)\s+(?:no\.?\s*)?(\d{1,4}-\d{1,4})\b/gi;
 const BARE_ORDINANCE_NUMBER = /\b\d{1,4}-\d{1,4}\b/g;
 const DOLLAR_AMOUNT =
-	/\$\s?[\d,]+(?:\.\d+)?(?:\s*(?:million|billion|thousand)\b)?/gi;
+	/\$\s?[\d,]+(?:\.\d+)?(?:\s*(million|billion|thousand)\b|(-?[a-z]|\s+(?:hundred|millions|mil|mm|bn|trillion)\b))?/gi;
 
 /**
  * The ordinance/resolution numbers and dollar amounts a summary mentions,
  * normalized so that spacing, case, "No." and thousands separators do not
  * make one identifier look like two. A magnitude word stays part of the
- * amount ("$2 million" is not "$2"), and a zero amount is a placeholder, not
- * an identifier. Ordinances and resolutions share one
+ * amount ("$2 million" is not "$2"), an amount with a magnitude this cannot
+ * read ("$2M", "$50K", "$2 mil", "$2-million") is dropped rather than read as
+ * the bare number, and a zero amount is a placeholder, not an identifier. Ordinances and resolutions share one
  * numbering namespace here; captions do not reliably say which a number is.
  */
 function extractIdentifiers(summary: MatchableSummary): Set<string> {
@@ -89,6 +90,7 @@ function extractIdentifiers(summary: MatchableSummary): Set<string> {
 	].map((number) => `no:${number}`);
 
 	const amounts = [...text.matchAll(DOLLAR_AMOUNT)]
+		.filter((match) => match[2] === undefined)
 		.map((match) => {
 			const digits = match[0].match(/[\d,]+(?:\.\d+)?/)?.[0] ?? "";
 			const magnitude = match[0].match(/[a-z]+$/i)?.[0].toLowerCase();
