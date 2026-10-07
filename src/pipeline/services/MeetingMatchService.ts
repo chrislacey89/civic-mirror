@@ -12,10 +12,17 @@ type MatchableSummary = {
 	}[];
 };
 
+/**
+ * Why a match is held for review: "check-failed" when the model says no and
+ * there are no shared identifiers, "signals-disagree" when the model and the
+ * shared identifiers disagree.
+ */
+export type MatchHoldReason = "check-failed" | "signals-disagree";
+
 type MatchResult = {
 	outcome: "match" | "hold";
 	/** Present only when `outcome` is "hold". */
-	reason?: "check-failed" | "signals-disagree";
+	reason?: MatchHoldReason;
 	/** The decision function's probability that both summaries are one meeting. */
 	probability: number;
 	/** Ordinance/resolution numbers and dollar amounts found in both summaries. */
