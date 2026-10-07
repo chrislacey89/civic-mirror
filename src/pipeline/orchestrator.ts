@@ -223,6 +223,13 @@ type PipelineResult = {
  */
 type ItemResult = PipelineResult & { requested?: false };
 
+/**
+ * Whether the item in flight has asked its source for anything yet, which is
+ * what the delay paces when the item fails. It starts out true; a processor
+ * that does work before its first request sets it false until the request.
+ */
+type RequestMark = { requested: boolean };
+
 const SETTLED_WITHOUT_REQUEST: ItemResult = {
 	processed: 0,
 	errors: 0,
@@ -383,6 +390,7 @@ function iterateWithAlertRecovery<TItem, R>(
 	options: {
 		processItem: (
 			item: TItem,
+			mark: RequestMark,
 		) => Effect.Effect<ItemResult, TaggedPipelineError, R>;
 		delayBetweenItemsMs: number;
 		shouldProcess?: (item: TItem) => boolean;
@@ -395,7 +403,8 @@ function iterateWithAlertRecovery<TItem, R>(
 		for (const item of items) {
 			if (options.shouldProcess && !options.shouldProcess(item)) continue;
 
-			const outcome = yield* options.processItem(item).pipe(
+			const mark: RequestMark = { requested: true };
+			const outcome = yield* options.processItem(item, mark).pipe(
 				Effect.map((result) => ({
 					result,
 					requested: result.requested !== false,
@@ -404,7 +413,7 @@ function iterateWithAlertRecovery<TItem, R>(
 					alertAndRecover(body, listingFailureStage(error), error, "item").pipe(
 						Effect.as({
 							result: { processed: 0, errors: 1 },
-							requested: error._tag !== "UndatedListingError",
+							requested: mark.requested && error._tag !== "UndatedListingError",
 						}),
 					),
 				),
@@ -691,7 +700,8 @@ function runEgovForBody(
 		const titlePattern = body.egovTitlePattern;
 
 		return yield* iterateWithAlertRecovery(body, listingsResult.listings, {
-			processItem: (listing) => processEgovListing(body, listing, config),
+			processItem: (listing, mark) =>
+				processEgovListing(body, listing, config, mark),
 			delayBetweenItemsMs: config.crawlDelayMs,
 			shouldProcess: titlePattern
 				? (listing) => titlePattern.test(listing.title)
@@ -704,6 +714,7 @@ function processEgovListing(
 	body: BodyConfig,
 	listing: EgovDocumentListing,
 	config: ResolvedConfig,
+	mark: RequestMark,
 ): Effect.Effect<
 	PipelineResult,
 	TaggedPipelineError,
@@ -717,6 +728,10 @@ function processEgovListing(
 		const scraper = yield* EgovScraper;
 		const summarizer = yield* SummarizationService;
 		const storage = yield* StorageService;
+
+		// Nothing has been asked of the portal until the download below, so a
+		// failure before it has no request to pace.
+		mark.requested = false;
 
 		// The listing cell is the upload date, which collapses to the day staff
 		// posted a batch. Filing a meeting under it merges distinct meetings
@@ -732,6 +747,39 @@ function processEgovListing(
 			);
 		}
 
+		const existing = config.dryRun
+			? null
+			: yield* storage.getMeetingSourceState({
+					bodySlug: body.slug,
+					date: meetingDate,
+					session: "",
+				});
+
+		// The summary's fingerprint is built from source URLs, so a document the
+		// meeting already holds under this URL cannot change it, and downloading
+		// it again would spend a request and the crawl delay to store nothing.
+		// Regeneration still runs: it is how a summary left behind by a failed
+		// run catches up, and it asks nothing of the portal.
+		if (existing?.hasDocuments) {
+			const held = yield* storage.getMeetingSources(existing.meetingId);
+			if (held.documents.some((d) => d.sourceUrl === listing.downloadUrl)) {
+				yield* Effect.log("egov.listing.skipped").pipe(
+					Effect.annotateLogs({
+						meetingId: existing.meetingId,
+						date: meetingDate,
+						reason: "already-stored",
+					}),
+				);
+				yield* regenerateWithRetry({
+					meetingId: existing.meetingId,
+					meetingContext: `${body.name}, ${meetingDate}`,
+					config,
+				});
+				return SETTLED_WITHOUT_REQUEST;
+			}
+		}
+
+		mark.requested = true;
 		yield* Effect.log("egov.download.start");
 		const bytes = yield* scraper
 			.downloadDocument(listing.downloadUrl)
@@ -755,13 +803,6 @@ function processEgovListing(
 		// A meeting that already has documents takes this one as a further
 		// source of the same summary. One that has only a transcript is
 		// settled below, once this document has a summary of its own.
-		const existing = config.dryRun
-			? null
-			: yield* storage.getMeetingSourceState({
-					bodySlug: body.slug,
-					date: meetingDate,
-					session: "",
-				});
 		if (existing?.hasDocuments) {
 			yield* attachDocumentsAndRegenerate({
 				meetingId: existing.meetingId,
