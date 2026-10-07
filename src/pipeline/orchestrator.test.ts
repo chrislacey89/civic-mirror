@@ -1910,6 +1910,29 @@ describe("runPipeline video path", () => {
 		expect(result).toEqual({ processed: 0, errors: 1 });
 	});
 
+	it("retries an ordinary caption failure up to the retry budget before counting an error", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			youtubeVideos: [REGULAR],
+			transcriptionErrors: {
+				regular: new TranscriptionError({
+					videoId: "regular",
+					message: "Transient YouTube failure",
+				}),
+			},
+		});
+
+		const result = await Effect.runPromise(
+			run(layers, 0, { attempts: 2, baseDelayMs: 0 }),
+		);
+
+		// One call plus two retries: only disabled captions skip the retries.
+		expect(log.transcribe).toEqual(["regular", "regular", "regular"]);
+		expect(log.held).toEqual([]);
+		expect(result).toEqual({ processed: 0, errors: 1 });
+	});
+
 	it("records no hold and sends no alert on a dry run", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
