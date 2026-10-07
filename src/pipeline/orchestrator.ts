@@ -1,7 +1,11 @@
 import { Duration, Effect, Schedule } from "effect";
 import { DRAMA_CATEGORIES, type DramaCategory } from "#/lib/drama-levels.ts";
 import { extractLongFormDate, readFinalsiteDate } from "#/pipeline/dates.ts";
-import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
+import {
+	type DatabaseError,
+	type LlmError,
+	TranscriptionError,
+} from "#/pipeline/errors.ts";
 import {
 	type AlertScope,
 	AlertService,
@@ -866,6 +870,16 @@ function processPlaylistVideo(
 					hold({ reason: "no-captions", meetingDate: reading.date }).pipe(
 						Effect.as({ processed: 0, errors: 0 }),
 					),
+			),
+			// A disabled-captions reading that was not held is not yet trusted, so
+			// the operator's alert must not state it as fact.
+			Effect.mapError((error) =>
+				error._tag === "TranscriptionError" && error.captionsDisabled === true
+					? new TranscriptionError({
+							videoId: video.videoId,
+							message: `No captions found yet for "${video.title}"; the video is retried on a later run`,
+						})
+					: error,
 			),
 		);
 	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));

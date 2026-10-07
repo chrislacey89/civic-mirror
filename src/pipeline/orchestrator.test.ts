@@ -1885,6 +1885,10 @@ describe("runPipeline video path", () => {
 
 		expect(log.held).toEqual([]);
 		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain(REGULAR.title);
+		expect(log.alert[0].body).toContain("retried on a later run");
+		expect(log.alert[0].body).not.toContain("Captions are disabled");
 	});
 
 	it("leaves a video with an unreadable publish date unheld and counts an error, however disabled its captions", async () => {
