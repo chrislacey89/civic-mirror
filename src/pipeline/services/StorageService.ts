@@ -11,6 +11,7 @@ import {
 	mapSumToLevel,
 } from "#/lib/drama-levels.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
+import type { HeldReason } from "#/pipeline/held.ts";
 import type { SourceKind } from "#/pipeline/sources.ts";
 
 /**
@@ -109,6 +110,21 @@ type MeetingSourceState = {
 	summarySourceKinds: SourceKind[];
 };
 
+/** A video to hold. The last three fields come from the same-meeting check. */
+type HeldVideoInput = {
+	bodySlug: string;
+	videoId: string;
+	title: string;
+	/** Null when the title has no readable date. */
+	meetingDate: string | null;
+	reason: HeldReason;
+	probability?: number;
+	sharedIdentifiers?: number;
+	candidateMeetingId?: number;
+};
+
+type HeldVideo = HeldVideoInput & { createdAt: Date };
+
 /** Minimal handle returned after a successful store — just enough to reference the meeting. */
 type Meeting = { id: number; date: string; bodyId: number };
 
@@ -186,6 +202,15 @@ interface StorageServiceInterface {
 	hasTranscriptForVideo(
 		sourceUrl: string,
 	): Effect.Effect<boolean, DatabaseError>;
+	/** Insert-if-absent on videoId. created is false when the video was already held. */
+	holdVideo(
+		input: HeldVideoInput,
+	): Effect.Effect<{ created: boolean }, DatabaseError>;
+	isVideoHeld(videoId: string): Effect.Effect<boolean, DatabaseError>;
+	/** Held videos, oldest first; one body's when `bodySlug` is given. */
+	listHeldVideos(input?: {
+		bodySlug?: string;
+	}): Effect.Effect<HeldVideo[], DatabaseError>;
 }
 
 class StorageService extends Context.Service<
@@ -325,6 +350,101 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				catch: (error) =>
 					new DatabaseError({
 						operation: "hasTranscriptForVideo",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		holdVideo: (input) =>
+			Effect.tryPromise({
+				try: async () => {
+					const body = await db
+						.select({ id: schema.governingBodies.id })
+						.from(schema.governingBodies)
+						.where(eq(schema.governingBodies.slug, input.bodySlug))
+						.get();
+					if (!body) {
+						throw new Error(`Governing body not found: ${input.bodySlug}`);
+					}
+					// The unique index on video_id decides whether this is the
+					// first hold, so two runs cannot both see the video as new.
+					const inserted = await db
+						.insert(schema.heldVideos)
+						.values({
+							bodyId: body.id,
+							videoId: input.videoId,
+							title: input.title,
+							meetingDate: input.meetingDate,
+							reason: input.reason,
+							probability: input.probability,
+							sharedIdentifiers: input.sharedIdentifiers,
+							candidateMeetingId: input.candidateMeetingId,
+						})
+						.onConflictDoNothing({ target: schema.heldVideos.videoId })
+						.returning({ id: schema.heldVideos.id });
+					return { created: inserted.length > 0 };
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "holdVideo",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		isVideoHeld: (videoId) =>
+			Effect.tryPromise({
+				try: async () => {
+					const row = await db
+						.select({ id: schema.heldVideos.id })
+						.from(schema.heldVideos)
+						.where(eq(schema.heldVideos.videoId, videoId))
+						.get();
+					return row !== undefined;
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "isVideoHeld",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		listHeldVideos: (input) =>
+			Effect.tryPromise({
+				try: async () => {
+					const rows = await db
+						.select({
+							held: schema.heldVideos,
+							bodySlug: schema.governingBodies.slug,
+						})
+						.from(schema.heldVideos)
+						.innerJoin(
+							schema.governingBodies,
+							eq(schema.heldVideos.bodyId, schema.governingBodies.id),
+						)
+						.where(
+							input?.bodySlug === undefined
+								? undefined
+								: eq(schema.governingBodies.slug, input.bodySlug),
+						)
+						.orderBy(schema.heldVideos.id)
+						.all();
+					return rows.map(({ held, bodySlug }) => ({
+						bodySlug,
+						videoId: held.videoId,
+						title: held.title,
+						meetingDate: held.meetingDate,
+						reason: held.reason,
+						...(held.probability !== null
+							? { probability: held.probability }
+							: {}),
+						...(held.sharedIdentifiers !== null
+							? { sharedIdentifiers: held.sharedIdentifiers }
+							: {}),
+						...(held.candidateMeetingId !== null
+							? { candidateMeetingId: held.candidateMeetingId }
+							: {}),
+						createdAt: held.createdAt ?? new Date(0),
+					}));
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "listHeldVideos",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
@@ -668,6 +788,8 @@ export { StorageService, StorageServiceLive, OCR_CONFIDENCE_MULTIPLIER };
 export type {
 	DramaCategoryScoreInput,
 	ExtractionMethod,
+	HeldVideo,
+	HeldVideoInput,
 	Meeting,
 	MeetingInput,
 	MeetingSourceState,

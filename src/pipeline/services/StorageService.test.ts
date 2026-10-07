@@ -7,6 +7,7 @@ import { migrate } from "drizzle-orm/libsql/migrator";
 import { Effect } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
+import type { DatabaseError } from "#/pipeline/errors.ts";
 import { computeSourceFingerprint } from "#/pipeline/sources.ts";
 import {
 	OCR_CONFIDENCE_MULTIPLIER,
@@ -1112,6 +1113,89 @@ describe("StorageService", () => {
 			expect(await has(db, "https://www.youtube.com/watch?v=other")).toBe(
 				false,
 			);
+		});
+	});
+
+	describe("held videos", () => {
+		const held = {
+			bodySlug: "ellettsville-town-council",
+			videoId: "vid-held-1",
+			title: "Ellettsville Town Council, March 23, 2026",
+			meetingDate: "2026-03-23",
+			reason: "no-captions" as const,
+		};
+
+		function run<A>(
+			db: Awaited<ReturnType<typeof createTestDb>>,
+			use: (
+				storage: typeof StorageService.Service,
+			) => Effect.Effect<A, DatabaseError>,
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					return yield* use(yield* StorageService);
+				}).pipe(Effect.provide(StorageServiceLive(db))),
+			);
+		}
+
+		it("holdVideo called twice for one videoId leaves one row and returns created: false the second time", async () => {
+			const db = await createTestDb();
+
+			const first = await run(db, (s) => s.holdVideo(held));
+			const second = await run(db, (s) =>
+				s.holdVideo({ ...held, reason: "unrecognized-title" }),
+			);
+
+			expect(first).toEqual({ created: true });
+			expect(second).toEqual({ created: false });
+			const rows = await db.select().from(schema.heldVideos).all();
+			expect(rows).toHaveLength(1);
+			expect(rows[0].reason).toBe("no-captions");
+		});
+
+		it("isVideoHeld is true for a held video and false for any other", async () => {
+			const db = await createTestDb();
+			expect(await run(db, (s) => s.isVideoHeld(held.videoId))).toBe(false);
+
+			await run(db, (s) => s.holdVideo(held));
+
+			expect(await run(db, (s) => s.isVideoHeld(held.videoId))).toBe(true);
+			expect(await run(db, (s) => s.isVideoHeld("vid-other"))).toBe(false);
+		});
+
+		it("listHeldVideos returns every held video with what it was held with, and only one body's when given a slug", async () => {
+			const db = await createTestDb();
+			await db
+				.insert(schema.governingBodies)
+				.values({ name: "Plan Commission", slug: "plan", type: "town" })
+				.run();
+			const meeting = await run(db, (s) =>
+				s.storeMeeting({ ...testMeetingInput, documents: [] }),
+			);
+			const checked = {
+				bodySlug: "plan",
+				videoId: "vid-held-2",
+				title: "Plan Commission, April 2, 2026",
+				meetingDate: null,
+				reason: "signals-disagree" as const,
+				probability: 0.8,
+				sharedIdentifiers: 0,
+				candidateMeetingId: meeting.id,
+			};
+			await run(db, (s) => s.holdVideo(held));
+			await run(db, (s) => s.holdVideo(checked));
+
+			const all = await run(db, (s) => s.listHeldVideos());
+			const planOnly = await run(db, (s) =>
+				s.listHeldVideos({ bodySlug: "plan" }),
+			);
+
+			expect(all.map(({ createdAt: _, ...rest }) => rest)).toEqual([
+				held,
+				checked,
+			]);
+			expect(all[0].createdAt).toBeInstanceOf(Date);
+			expect(planOnly.map((v) => v.videoId)).toEqual(["vid-held-2"]);
 		});
 	});
 });

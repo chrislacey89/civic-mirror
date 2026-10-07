@@ -7,6 +7,7 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type { DramaCategory, DramaLevel } from "../lib/drama-levels";
+import type { HeldReason } from "../pipeline/held";
 import type { SourceDisagreement, SourceKind } from "../pipeline/sources";
 
 /**
@@ -314,4 +315,35 @@ export const dramaCategoryScores = sqliteTable(
 			table.category,
 		),
 	],
+);
+
+/**
+ * Playlist videos the pipeline cannot use, one row per video. The playlist is
+ * read in full on every run, so a row here is what stops the same video being
+ * fetched and alerted on again.
+ *
+ * `probability`, `sharedIdentifiers` and `candidateMeetingId` are set only
+ * for a video held by the same-meeting check.
+ */
+export const heldVideos = sqliteTable(
+	"held_videos",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		bodyId: integer("body_id")
+			.notNull()
+			.references(() => governingBodies.id),
+		videoId: text("video_id").notNull(),
+		title: text().notNull(),
+		meetingDate: text("meeting_date"), // null when the title has no readable date
+		reason: text().notNull().$type<HeldReason>(),
+		probability: real(),
+		sharedIdentifiers: integer("shared_identifiers"),
+		candidateMeetingId: integer("candidate_meeting_id").references(
+			() => meetings.id,
+		),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	(table) => [uniqueIndex("held_videos_video_id_unique").on(table.videoId)],
 );
