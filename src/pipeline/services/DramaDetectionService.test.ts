@@ -35,6 +35,24 @@ describe("verifyEvidenceQuotes", () => {
 		expect(verified.evidence_quotes).toHaveLength(1);
 	});
 
+	it("does not verify a quote made only of timestamp markers", () => {
+		const verified = verifyEvidenceQuotes(
+			{ score: 2, evidence_quotes: ["[00:00]", "[12:00] [32:00]"] },
+			"[00:00] Chair: we will table this [00:30] until next month",
+		);
+		expect(verified.evidence_quotes).toEqual([]);
+		expect(verified.score).toBe(0);
+	});
+
+	it("does not verify an empty or whitespace-only quote", () => {
+		const verified = verifyEvidenceQuotes(
+			{ score: 1, evidence_quotes: ["", "   "] },
+			SOURCE_TEXT,
+		);
+		expect(verified.evidence_quotes).toEqual([]);
+		expect(verified.score).toBe(0);
+	});
+
 	it("keeps quotes that appear verbatim in the source text", () => {
 		const verified = verifyEvidenceQuotes(
 			{

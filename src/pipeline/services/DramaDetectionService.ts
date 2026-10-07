@@ -71,9 +71,12 @@ function verifyEvidenceQuotes(
 	sourceText: string,
 ): CategoryScore {
 	const haystack = normalize(sourceText);
-	const verifiedQuotes = category.evidence_quotes.filter((quote) =>
-		haystack.includes(normalize(quote)),
-	);
+	const verifiedQuotes = category.evidence_quotes.filter((quote) => {
+		const needle = normalize(quote);
+		// An empty needle (blank or marker-only quote) is contained in every
+		// haystack, so it would verify as evidence without citing any words.
+		return needle !== "" && haystack.includes(needle);
+	});
 	if (category.score >= 1 && verifiedQuotes.length === 0) {
 		return { score: 0, evidence_quotes: [] };
 	}
