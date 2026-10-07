@@ -394,6 +394,14 @@ describe("TranscriptionService", () => {
 			expect(readCaptionsDisabled(watchPage(response), videoId)).toBe(false);
 		});
 
+		it("is false when the page is playable but sends no streaming data", () => {
+			const response = {
+				playabilityStatus: { status: "OK" },
+				videoDetails: { videoId },
+			};
+			expect(readCaptionsDisabled(watchPage(response), videoId)).toBe(false);
+		});
+
 		it("is false when the page describes a different video", () => {
 			const response = {
 				...playableResponse,
