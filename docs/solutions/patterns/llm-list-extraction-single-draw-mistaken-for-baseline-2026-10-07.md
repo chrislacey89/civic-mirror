@@ -71,7 +71,9 @@ const raw = await config.generateFn(
 const fiscalDecisions = [...documentDecisions, ...raw.fiscalDecisions];
 ```
 
-"Documents govern" is now a property of the code within one rebuild, which a unit test can hold: the every-source call cannot drop or alter a decision the documents call returned.
+That is the shape #172 shipped; #179 later split the documents' decisions by whether their figure is found in the documents (see the note under Prevention).
+
+See `summarize` in `src/pipeline/services/SummarizationService.ts`.
 
 That is narrower than "a rebuild cannot lose a decision". The documents call is itself a fresh draw each time, so a rebuilt list can still differ from the stored one, and nothing compares the two. The settled membership rule is what keeps those draws close; the merge does not.
 
@@ -83,6 +85,8 @@ That is narrower than "a rebuild cannot lose a decision". The documents call is 
 
 **Clustering note.** This is the second entry on run-to-run variance in a load-bearing LLM field; the first is the tier-drift doc. The mechanism shipped here is the merge test above, which covers the half code can own. For the other half, an unstable membership rule, the closest mechanism is a committed repeat-run check that diffs lists across runs. It was not built: it needs live Gemini calls, so it cannot run in CI, and the probe used for #167 was a throwaway. Its natural home is a preview mode for `summaries:regenerate` that prints the stored and rebuilt lists per meeting and writes nothing. The command's `--dry-run` lists the meetings it would rebuild and calls no model, so it does not show this.
 
+Since #179 the documents call's decisions are split into those whose figure is found in the documents (`read`) and those whose figure is not (`unread`); see `check-on-model-output-passes-or-fails-by-which-output-the-model-gave-2026-10-08.md`. The repeat-run check this note says was not built now exists as `src/pipeline/scripts/summarize-repeat.ts`.
+
 ## Planning / Calibration Notes
 
 - **What widened the work:** the issue's two hypotheses were both wrong, so the fix moved from the combined-source rules to the extraction rules every summary uses. A forced-regenerate command also had to be added, because `run` skips a meeting whose sources are unchanged.
@@ -92,7 +96,7 @@ That is narrower than "a rebuild cannot lose a decision". The documents call is 
 ## Defect Classification
 
 **Origin phase:** Specification error. The membership rule never said what to do with the borderline classes.
-**Fix type:** Correction for the two root causes above. Code now drops a decision from the every-source call that repeats a documents decision by ordinance number, or by title and stated amount (`repeatsRecordedDecision` in `SummarizationService.ts`). A repeat with a reworded title and no ordinance number is still held only by the prompt.
+**Fix type:** Correction for the two root causes above. An entry of the every-source call that names a motion the documents already gave, by ordinance number or by title, is dropped in code (`isSameMotion` in `SummarizationService.ts`). A repeat under a reworded title with no ordinance number is still held only by the prompt.
 
 ## Related
 
