@@ -325,4 +325,121 @@ describe("SummarizationService", () => {
 			expect(result.fiscalDecisions[0].confidence).toBe(0.9);
 		});
 	});
+
+	describe("documents and a transcript together", () => {
+		const MINUTES = {
+			kind: "documents" as const,
+			text: "Motion to approve Resolution 38-2025, a $43,900.00 crash team grant, carried 4-0.",
+		};
+		const CAPTIONS = {
+			kind: "transcript" as const,
+			text: "the grant is almost $44,000 all in favor and the truck is about $1,000,000",
+		};
+
+		const CRASH_GRANT = {
+			title: "Resolution 38-2025 crash team grant",
+			description: "Interlocal agreement for a crash investigation team",
+			amount: 43900,
+			originalAmount: "$43,900.00",
+			status: "approved" as const,
+			confidence: 0.9,
+			isRecurring: false,
+		};
+		const FIRE_TRUCK = {
+			title: "Fire truck order",
+			description: "Authorized ordering a fire truck",
+			amount: 1000000,
+			originalAmount: "$1,000,000",
+			status: "approved" as const,
+			confidence: 0.9,
+			isRecurring: false,
+		};
+
+		function output(
+			fiscalDecisions: SummarizationOutput["fiscalDecisions"],
+			prose: string,
+		): SummarizationOutput {
+			return {
+				highlights: [],
+				prose,
+				fiscalDecisions,
+				budgetDiscussions: [],
+				sourceDisagreements: [],
+			};
+		}
+
+		/** Answers a documents-alone call and an every-source call differently. */
+		function summarizeTogether(answers: {
+			fromDocuments: SummarizationOutput;
+			fromEverySource: SummarizationOutput;
+		}) {
+			const calls: SummarizationInput[] = [];
+			const result = Effect.runPromise(
+				Effect.gen(function* () {
+					const service = yield* SummarizationService;
+					return yield* service.summarize({
+						sources: [MINUTES, CAPTIONS],
+						meetingContext: "Town Council, November 24, 2025",
+					});
+				}).pipe(
+					Effect.provide(
+						SummarizationServiceLive({
+							model: "gemini-2.5-flash",
+							generateFn: async (input) => {
+								calls.push(input);
+								return input.sources.some(
+									(source) => source.kind === "transcript",
+								)
+									? answers.fromEverySource
+									: answers.fromDocuments;
+							},
+						}),
+					),
+				),
+			);
+			return { calls, result };
+		}
+
+		it("keeps a fiscal decision taken from the documents when the summary of every source leaves it out", async () => {
+			const { result } = summarizeTogether({
+				fromDocuments: output([CRASH_GRANT], "Minutes only."),
+				fromEverySource: output([], "Minutes and discussion."),
+			});
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions).toEqual([CRASH_GRANT]);
+			expect(summary.prose).toBe("Minutes and discussion.");
+		});
+
+		it("adds a decision only the transcript records after the documents' own, at lowered confidence when the documents do not state its amount", async () => {
+			const { result } = summarizeTogether({
+				fromDocuments: output([CRASH_GRANT], "Minutes only."),
+				fromEverySource: output([FIRE_TRUCK], "Minutes and discussion."),
+			});
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions.map((decision) => decision.title)).toEqual(
+				[CRASH_GRANT.title, FIRE_TRUCK.title],
+			);
+			expect(summary.fiscalDecisions[0].confidence).toBe(0.9);
+			expect(summary.fiscalDecisions[1].confidence).toBeCloseTo(0.36, 5);
+		});
+
+		it("tells the summary of every source which decisions the documents already gave", async () => {
+			const { calls, result } = summarizeTogether({
+				fromDocuments: output([CRASH_GRANT], "Minutes only."),
+				fromEverySource: output([], "Minutes and discussion."),
+			});
+
+			await result;
+
+			expect(calls).toHaveLength(2);
+			expect(calls[0].sources).toEqual([MINUTES]);
+			expect(calls[0].recordedDecisions).toBeUndefined();
+			expect(calls[1].sources).toEqual([MINUTES, CAPTIONS]);
+			expect(calls[1].recordedDecisions).toEqual([CRASH_GRANT]);
+		});
+	});
 });

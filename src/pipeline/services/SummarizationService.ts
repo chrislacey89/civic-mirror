@@ -119,6 +119,12 @@ type SummarizationInput = {
 	sources: LabelledSource[];
 	/** Short context line for the prompt (e.g. "Town Council, March 23, 2026"). */
 	meetingContext: string;
+	/**
+	 * Fiscal decisions already taken from the documents among `sources`. The
+	 * generator returns only decisions that are not among them. The service
+	 * sets this; a caller of `summarize` does not.
+	 */
+	recordedDecisions?: SummarizationOutput["fiscalDecisions"];
 };
 
 /** The texts of the sources of one kind, joined. Empty when there is none. */
@@ -206,16 +212,33 @@ function SummarizationServiceLive(
 		summarize: (input) =>
 			Effect.tryPromise({
 				try: async () => {
-					const raw = await config.generateFn(input);
+					const bothKinds =
+						hasSourceKind(input.sources, "documents") &&
+						hasSourceKind(input.sources, "transcript");
+					// Documents govern fiscal decisions, so theirs are taken from the
+					// documents alone and kept as extracted: a transcript can add a
+					// decision but cannot remove or alter one.
+					const documentDecisions = bothKinds
+						? (
+								await config.generateFn({
+									sources: input.sources.filter(
+										(source) => source.kind === "documents",
+									),
+									meetingContext: input.meetingContext,
+								})
+							).fiscalDecisions
+						: [];
+					const raw = await config.generateFn(
+						bothKinds
+							? { ...input, recordedDecisions: documentDecisions }
+							: input,
+					);
 					const verified = verifyAmounts(
-						raw.fiscalDecisions,
+						[...documentDecisions, ...raw.fiscalDecisions],
 						verificationText(input.sources),
 					);
 					// A disagreement needs two kinds of source to disagree; one
 					// reported from a single kind is the model inventing the other.
-					const bothKinds =
-						hasSourceKind(input.sources, "documents") &&
-						hasSourceKind(input.sources, "transcript");
 					return {
 						...raw,
 						fiscalDecisions: verified,
