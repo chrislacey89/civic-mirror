@@ -27,6 +27,14 @@ const categoryScoreSchema = z.object({
 /** Quotes kept per category, to keep prompt-iteration noise low. */
 const MAX_EVIDENCE_QUOTES = 2;
 
+/**
+ * Longest headline stored. The schema sets no limit: the prompt asks for a
+ * short headline and the model sometimes runs over, and a limit in the
+ * schema would reject the whole assessment over one long headline.
+ * `detect` truncates instead.
+ */
+const MAX_HEADLINE_LENGTH = 200;
+
 const dramaAssessmentSchema = z.object({
 	category_scores: z.object({
 		procedural_breakdown: categoryScoreSchema,
@@ -39,7 +47,7 @@ const dramaAssessmentSchema = z.object({
 	} satisfies Record<ScoredDramaCategory, typeof categoryScoreSchema>),
 	level: z.enum(DRAMA_LEVELS),
 	confidence: z.number().min(0).max(1),
-	headline: z.string().max(200),
+	headline: z.string(),
 	narrative: z.string(),
 });
 
@@ -165,6 +173,7 @@ function DramaDetectionServiceLive(
 					}
 					const reconciled = recomputeLevelFromScores({
 						...raw,
+						headline: raw.headline.slice(0, MAX_HEADLINE_LENGTH),
 						category_scores: verifiedScores,
 					});
 					return {

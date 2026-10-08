@@ -196,8 +196,8 @@ describe("dramaAssessmentSchema", () => {
 		expect(dramaAssessmentSchema.safeParse(response).success).toBe(true);
 	});
 
-	it("rejects headlines longer than 200 chars", () => {
-		const bad = {
+	it("accepts a headline longer than the stored limit", () => {
+		const response = {
 			category_scores: ZERO_CATEGORY_SCORES,
 			level: "routine",
 			confidence: 0.5,
@@ -205,7 +205,7 @@ describe("dramaAssessmentSchema", () => {
 			narrative: "n",
 		};
 
-		expect(() => dramaAssessmentSchema.parse(bad)).toThrow();
+		expect(dramaAssessmentSchema.safeParse(response).success).toBe(true);
 	});
 });
 
@@ -329,6 +329,30 @@ describe("DramaDetectionServiceLive", () => {
 				"We are voting on positions that have not been formally approved.",
 			],
 		});
+	});
+
+	it("truncates a headline longer than 200 characters instead of failing the assessment", async () => {
+		const rawResponse = { ...STUB_OUTPUT, headline: "x".repeat(250) };
+
+		const program = Effect.gen(function* () {
+			const service = yield* DramaDetectionService;
+			return yield* service.detect({
+				sourceText: SOURCE_TEXT,
+				meetingContext: "ctx",
+			});
+		}).pipe(
+			Effect.provide(
+				DramaDetectionServiceLive({
+					model: "gemini-2.5-flash",
+					promptVersion: "v1",
+					generateFn: async () => dramaAssessmentSchema.parse(rawResponse),
+				}),
+			),
+		);
+
+		const result = await Effect.runPromise(program);
+
+		expect(result.headline).toBe("x".repeat(200));
 	});
 
 	it("overrides level to match the mechanical sum", async () => {
