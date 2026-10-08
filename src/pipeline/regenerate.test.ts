@@ -369,6 +369,7 @@ describe("regenerateSummariesOnDates", () => {
 			regenerateSummariesOnDates({
 				body: BODY,
 				dates: ["2025-05-27", "2025-06-09"],
+				confirm: true,
 			}).pipe(Effect.provide(layers)),
 		);
 
@@ -378,6 +379,32 @@ describe("regenerateSummariesOnDates", () => {
 		]);
 		expect(calls).toHaveLength(2);
 		expect(calls[1].meetingContext).toBe("Town Council, 2025-05-27");
+	});
+
+	it("without confirm, reports the stored and rebuilt decisions and stores nothing", async () => {
+		const { calls, layers, rows } = await setup({
+			documents: [AGENDA, MINUTES],
+		});
+		const before = await rows();
+
+		const outcomes = await Effect.runPromise(
+			regenerateSummariesOnDates({
+				body: BODY,
+				dates: ["2025-05-27"],
+				confirm: false,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(outcomes).toEqual([
+			{
+				date: "2025-05-27",
+				outcome: "previewed",
+				stored: ["Original decision ($100)"],
+				rebuilt: ["Paving bid ($215,215.10)"],
+			},
+		]);
+		expect(calls).toHaveLength(1);
+		expect(await rows()).toEqual(before);
 	});
 
 	it("reports a date whose summarize call fails and goes on to the next", async () => {
@@ -390,6 +417,7 @@ describe("regenerateSummariesOnDates", () => {
 			regenerateSummariesOnDates({
 				body: BODY,
 				dates: ["2025-05-27", "2025-06-09"],
+				confirm: true,
 			}).pipe(Effect.provide(layers)),
 		);
 

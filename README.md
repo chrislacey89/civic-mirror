@@ -56,7 +56,7 @@ pnpm pipeline:dry                             # full run, no writes or alerts
 pnpm pipeline:run                             # full run
 pnpm pipeline run --body ellettsville-town-council   # one body only
 pnpm pipeline held:list                       # videos the pipeline holds, and why
-pnpm pipeline summaries:regenerate --body <slug> --dates <YYYY-MM-DD,...>  # rebuild stored summaries from the sources held
+pnpm pipeline summaries:regenerate --body <slug> --dates <YYYY-MM-DD,...> [--confirm]  # preview rebuilt summaries from the sources held; --confirm replaces the stored ones
 pnpm pipeline document:detach --body <slug> --date <YYYY-MM-DD> --url <source-url>   # preview removing one document from a meeting
 ```
 

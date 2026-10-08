@@ -413,10 +413,21 @@ const regenerateDates = Flag.String("dates").pipe(
 	),
 );
 
+const regenerateConfirm = Flag.Boolean("confirm").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
+		"Replace the stored summaries. Without it, the rebuilt decisions are shown beside the stored ones and nothing is written.",
+	),
+);
+
 const summariesRegenerateCommand = Command.make(
 	"summaries:regenerate",
-	{ bodySlug: regenerateBodySlug, dates: regenerateDates },
-	({ bodySlug, dates }) =>
+	{
+		bodySlug: regenerateBodySlug,
+		dates: regenerateDates,
+		confirm: regenerateConfirm,
+	},
+	({ bodySlug, dates, confirm }) =>
 		Effect.gen(function* () {
 			const body = DEFAULT_BODIES.find((b) => b.slug === bodySlug);
 			if (body === undefined) {
@@ -449,20 +460,42 @@ const summariesRegenerateCommand = Command.make(
 					),
 			});
 
+			yield* Console.log(
+				`[summaries:regenerate] target=${(resolveDatabaseUrl() ?? "").replace(/\?.*$/, "")}`,
+			);
 			const outcomes = yield* regenerateSummariesOnDates({
 				body,
 				dates: dateList,
+				confirm,
 			}).pipe(Effect.provide(layers));
 
 			for (const outcome of outcomes) {
 				yield* Console.log(
 					`${outcome.date} ${outcome.outcome}${outcome.outcome === "failed" ? `: ${outcome.message}` : ""}`,
 				);
+				if (outcome.outcome === "previewed") {
+					for (const label of outcome.stored) {
+						yield* Console.log(
+							`  stored  ${label}${outcome.rebuilt.includes(label) ? "" : "  (not in rebuilt)"}`,
+						);
+					}
+					for (const label of outcome.rebuilt) {
+						yield* Console.log(
+							`  rebuilt ${label}${outcome.stored.includes(label) ? "" : "  (new)"}`,
+						);
+					}
+				}
+			}
+			if (!confirm) {
+				yield* Console.log(
+					"[summaries:regenerate] preview. Re-run with --confirm to replace the stored summaries.",
+				);
 			}
 			// Anything short of a rebuilt summary fails the command, so a run that
 			// skipped a date cannot pass for one that rebuilt them all.
 			const notRebuilt = outcomes.filter(
-				(outcome) => outcome.outcome !== "regenerated",
+				(outcome) =>
+					outcome.outcome !== (confirm ? "regenerated" : "previewed"),
 			);
 			if (notRebuilt.length > 0) {
 				return yield* Effect.fail(
