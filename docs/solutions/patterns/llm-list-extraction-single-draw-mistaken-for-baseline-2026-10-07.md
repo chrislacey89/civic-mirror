@@ -71,7 +71,9 @@ const raw = await config.generateFn(
 const fiscalDecisions = [...documentDecisions, ...raw.fiscalDecisions];
 ```
 
-"Documents govern" is now a property of the code, which a unit test can hold, and no longer a sentence in a prompt.
+"Documents govern" is now a property of the code within one rebuild, which a unit test can hold: the every-source call cannot drop or alter a decision the documents call returned.
+
+That is narrower than "a rebuild cannot lose a decision". The documents call is itself a fresh draw each time, so a rebuilt list can still differ from the stored one, and nothing compares the two. The settled membership rule is what keeps those draws close; the merge does not.
 
 ## Prevention
 
@@ -79,7 +81,7 @@ const fiscalDecisions = [...documentDecisions, ...raw.fiscalDecisions];
 
 **Process-level:** before a bug about a rebuilt LLM output is given a cause, run the pre-change configuration several times over the pre-change input. If those runs disagree with each other, the bug is instability and the reported diff is a sample of it.
 
-**Clustering note.** This is the second entry on run-to-run variance in a load-bearing LLM field; the first is the tier-drift doc. The mechanism shipped here is the merge test above, which covers the half code can own. For the other half, an unstable membership rule, the closest mechanism is a committed repeat-run check that diffs lists across runs. It was not built: it needs live Gemini calls, so it cannot run in CI, and the probe used for #167 was a throwaway. The review of PR #172 raised a `--dry-run` for `summaries:regenerate` that prints old and new lists, which would be its natural home.
+**Clustering note.** This is the second entry on run-to-run variance in a load-bearing LLM field; the first is the tier-drift doc. The mechanism shipped here is the merge test above, which covers the half code can own. For the other half, an unstable membership rule, the closest mechanism is a committed repeat-run check that diffs lists across runs. It was not built: it needs live Gemini calls, so it cannot run in CI, and the probe used for #167 was a throwaway. Its natural home is a preview mode for `summaries:regenerate` that prints the stored and rebuilt lists per date and writes nothing; the command has no such mode yet.
 
 ## Planning / Calibration Notes
 
@@ -90,7 +92,7 @@ const fiscalDecisions = [...documentDecisions, ...raw.fiscalDecisions];
 ## Defect Classification
 
 **Origin phase:** Specification error. The membership rule never said what to do with the borderline classes.
-**Fix type:** Correction for the two root causes above. Still held only by the prompt: that the every-source call does not repeat a recorded decision (PR #172 review, finding 1).
+**Fix type:** Correction for the two root causes above. Still held only by the prompt: that the every-source call does not repeat a recorded decision. Nothing in code removes a repeat; PR #172's body lists it under known-weak spots.
 
 ## Related
 
