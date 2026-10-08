@@ -14,12 +14,18 @@ import { LlmError } from "#/pipeline/errors.ts";
  * regular JSON Schema permits them, so we constrain the score with
  * `int().min(0).max(3)` instead of a literal union and rely on the
  * system prompt to instruct the model on the 0–3 anchor scale.
- * Evidence quotes are capped at 2 to keep prompt-iteration noise low.
+ * The quote array has no length limit here: the prompt asks for at most
+ * `MAX_EVIDENCE_QUOTES` and the model sometimes returns more, which
+ * `verifyEvidenceQuotes` trims. A limit in this schema would reject the
+ * whole assessment over one extra quote.
  */
 const categoryScoreSchema = z.object({
 	score: z.number().int().min(0).max(3),
-	evidence_quotes: z.array(z.string()).max(2),
+	evidence_quotes: z.array(z.string()),
 });
+
+/** Quotes kept per category, to keep prompt-iteration noise low. */
+const MAX_EVIDENCE_QUOTES = 2;
 
 const dramaAssessmentSchema = z.object({
 	category_scores: z.object({
@@ -62,9 +68,10 @@ function normalize(text: string): string {
 
 /**
  * Two-pass verification per category. Drops any quote that doesn't appear
- * verbatim in the source. If the category was scored ≥1 but no quotes
- * survive verification, the category is downgraded to 0 (we'd rather miss
- * drama than invent it).
+ * verbatim in the source, then keeps the first `MAX_EVIDENCE_QUOTES` of
+ * those that do. If the category was scored ≥1 but no quotes survive
+ * verification, the category is downgraded to 0 (we'd rather miss drama
+ * than invent it).
  */
 function verifyEvidenceQuotes(
 	category: CategoryScore,
@@ -80,7 +87,10 @@ function verifyEvidenceQuotes(
 	if (category.score >= 1 && verifiedQuotes.length === 0) {
 		return { score: 0, evidence_quotes: [] };
 	}
-	return { ...category, evidence_quotes: verifiedQuotes };
+	return {
+		...category,
+		evidence_quotes: verifiedQuotes.slice(0, MAX_EVIDENCE_QUOTES),
+	};
 }
 
 function sumCategoryScores(
