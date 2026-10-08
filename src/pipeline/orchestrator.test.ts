@@ -2834,6 +2834,54 @@ describe("runPipeline video path", () => {
 			expect(await counts()).toMatchObject({ drama: 0 });
 		});
 
+		it("logs that a dry run would score a stored video, without scoring it", async () => {
+			const { db, counts } = await setup();
+			await Effect.runPromise(
+				run(
+					buildStubLayers({
+						log: emptyCallLog(),
+						youtubeVideos: [REGULAR],
+						storage: StorageServiceLive(db),
+						dramaDetectionError: new Error("Gemini API down"),
+					}),
+				),
+			);
+
+			const dry = emptyCallLog();
+			const { captured, layer: loggerLayer } = buildLogCapture();
+			const result = await Effect.runPromise(
+				runPipeline({
+					bodies: [TOWN_COUNCIL],
+					crawlDelayMs: 0,
+					youtubeDelayMs: 0,
+					networkRetry: { attempts: 0, baseDelayMs: 0 },
+					llmRetry: { attempts: 0, baseDelayMs: 0 },
+					extractPdfText: async () => ({
+						text: "unused",
+						method: "text-layer",
+					}),
+					dryRun: true,
+				}).pipe(
+					Effect.provide(
+						buildStubLayers({
+							log: dry,
+							youtubeVideos: [REGULAR],
+							storage: StorageServiceLive(db),
+						}),
+					),
+					Effect.provide(loggerLayer),
+				),
+			);
+
+			expect(findStageLog(captured, "youtube.video.would-score")).toBeDefined();
+			expect(dry.drama).toBe(0);
+			expect(
+				dry.alert.filter((a) => a.subject.includes("drama-detection")),
+			).toHaveLength(0);
+			expect(result).toEqual({ processed: 0, errors: 0 });
+			expect(await counts()).toMatchObject({ drama: 0 });
+		});
+
 		it("[QA-RELI] leaves held_videos unchanged and sends no second alert on a second run over a playlist with held videos", async () => {
 			const { db, counts } = await setup();
 			const videos = [

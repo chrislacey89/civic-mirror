@@ -1277,23 +1277,28 @@ function processPlaylistVideo(
 		// assessment leaves. Only the scoring is owed, and it reads the stored
 		// transcript, so the outcomes below that settle a stored video still
 		// apply after it.
-		const unassessed = config.dryRun
-			? null
-			: yield* storage.getUnassessedTranscript(sourceUrl);
-		const settled: ItemResult = unassessed
-			? {
-					...(yield* assessOrAlert(
-						{
-							body,
-							video,
-							meetingId: unassessed.meetingId,
-							transcript: unassessed.transcript,
-						},
-						"item",
-					)),
-					requested: false,
-				}
-			: SETTLED_WITHOUT_REQUEST;
+		// A dry run reports the scoring it would do and makes no detector call.
+		const unassessed = yield* storage.getUnassessedTranscript(sourceUrl);
+		if (unassessed && config.dryRun) {
+			yield* Effect.log("youtube.video.would-score").pipe(
+				Effect.annotateLogs({ videoId: video.videoId }),
+			);
+		}
+		const settled: ItemResult =
+			unassessed && !config.dryRun
+				? {
+						...(yield* assessOrAlert(
+							{
+								body,
+								video,
+								meetingId: unassessed.meetingId,
+								transcript: unassessed.transcript,
+							},
+							"item",
+						)),
+						requested: false,
+					}
+				: SETTLED_WITHOUT_REQUEST;
 
 		// This video's transcript was attached through a match and the summary
 		// was not rebuilt with it, which is what a failed regeneration leaves.
