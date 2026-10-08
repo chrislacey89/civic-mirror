@@ -6,12 +6,17 @@
  *
  *   pnpm tsx src/pipeline/scripts/summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs]
  *
- * Exits 1 when the runs disagree on any decision's amount or status.
+ * Exit codes:
+ *   0  every run gave the same decisions
+ *   1  the runs disagree on a decision's amount, status or ordinance number
+ *   2  bad usage, or no stored meeting for that body and date
+ *   3  a model or database call failed, so the runs could not all be compared;
+ *      the failed runs are printed and nothing is compared
  */
 import { createClient } from "@libsql/client";
 import { config } from "dotenv";
 import { drizzle } from "drizzle-orm/libsql";
-import { Effect, Layer } from "effect";
+import { Effect, Layer, Result } from "effect";
 import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
 import { DEFAULT_BODIES } from "#/pipeline/composition.ts";
@@ -25,6 +30,7 @@ import {
 	SummarizationServiceLive,
 } from "#/pipeline/services/SummarizationService.ts";
 import { readableSources } from "#/pipeline/sources.ts";
+import { EXIT_FAILED, judgeRuns } from "./summarize-repeat-verdict.ts";
 
 config({ path: [".env.local", ".env"] });
 
@@ -54,7 +60,7 @@ const layers = Layer.mergeAll(
 	}),
 );
 
-const summaries = await Effect.runPromise(
+const attempt = await Effect.runPromise(
 	Effect.gen(function* () {
 		const storage = yield* StorageService;
 		const summarizer = yield* SummarizationService;
@@ -70,33 +76,37 @@ const summaries = await Effect.runPromise(
 		return yield* Effect.forEach(
 			Array.from({ length: runs }),
 			() =>
-				summarizer.summarize({
-					sources,
-					meetingContext: `${body.name}, ${date}`,
-				}),
+				summarizer
+					.summarize({
+						sources,
+						meetingContext: `${body.name}, ${date}`,
+					})
+					.pipe(Effect.result),
 			{ concurrency: runs },
 		);
-	}).pipe(Effect.provide(layers)),
+	}).pipe(Effect.provide(layers), Effect.result),
 );
 
-if (summaries === null) {
+if (Result.isFailure(attempt)) {
+	console.error(
+		`could not load the meeting: ${attempt.failure.message}; nothing was compared`,
+	);
+	process.exit(EXIT_FAILED);
+}
+const results = attempt.success;
+
+if (results === null) {
 	console.error(`no meeting stored for ${body.slug} on ${date}`);
 	process.exit(2);
 }
 
-/** A run's decisions as comparable lines: what was decided and for how much, without the wording. */
-const fingerprints = summaries.map((summary) =>
-	summary.fiscalDecisions
-		.map(
-			(decision) =>
-				`${decision.status} ${decision.amount} ${decision.ordinanceNumber ?? ""}`,
-		)
-		.sort()
-		.join("\n"),
-);
-
-summaries.forEach((summary, run) => {
+results.forEach((result, run) => {
 	console.log(`\nrun ${run + 1}`);
+	if (Result.isFailure(result)) {
+		console.log(`  failed  ${result.failure.message}`);
+		return;
+	}
+	const summary = result.success;
 	for (const decision of summary.fiscalDecisions) {
 		console.log(
 			`  ${decision.status}  ${decision.amount}  (${decision.originalAmount})  ${decision.title}`,
@@ -109,8 +119,20 @@ summaries.forEach((summary, run) => {
 	}
 });
 
-const distinct = new Set(fingerprints).size;
-console.log(
-	`\n${runs} run(s), ${distinct} distinct set(s) of decisions by status, amount and ordinance number`,
+const verdict = judgeRuns(
+	results.map((result) =>
+		Result.isFailure(result)
+			? { failure: result.failure.message }
+			: { decisions: result.success.fiscalDecisions },
+	),
 );
-process.exit(distinct === 1 ? 0 : 1);
+if (verdict.distinct === null) {
+	console.error(
+		`\n${verdict.failedRuns.length} of ${runs} run(s) failed (${verdict.failedRuns.map((failed) => failed.run).join(", ")}); nothing was compared`,
+	);
+} else {
+	console.log(
+		`\n${runs} run(s), ${verdict.distinct} distinct set(s) of decisions by status, amount and ordinance number`,
+	);
+}
+process.exit(verdict.exitCode);
