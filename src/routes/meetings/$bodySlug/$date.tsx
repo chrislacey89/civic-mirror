@@ -354,7 +354,9 @@ const DISAGREEMENTS_HEADING_ID = "source-disagreements-heading";
 /**
  * Points where the video and the documents state different things. Nobody
  * adjudicates them: the summary reports the documents' figure, and this list
- * tells the reader that figure is in question.
+ * tells the reader that figure is in question. The one exception is a figure
+ * the documents do not legibly contain, where the summary reports the video's
+ * and the point says so.
  */
 function SourceDisagreements({
 	disagreements,
@@ -370,7 +372,8 @@ function SourceDisagreements({
 			/>
 			<p className="mt-3 text-[14px] leading-[1.55] text-[var(--ink-mid)]">
 				The meeting video and the official documents state different things on
-				the points below. The summary uses the documents' figure.
+				the points below. The summary uses the documents' figure, except where a
+				point says the documents' figure could not be read.
 			</p>
 			<ul className="m-0 mt-2 list-none p-0">
 				{disagreements.map((d, i) => (

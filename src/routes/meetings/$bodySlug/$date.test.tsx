@@ -441,7 +441,7 @@ describe("MeetingDetailView — summary sources", () => {
 			name: "Where the video and the documents differ",
 		});
 		expect(section.textContent).toContain(
-			"The summary uses the documents' figure.",
+			"The summary uses the documents' figure, except where a point says the documents' figure could not be read.",
 		);
 		const items = within(section).getAllByRole("listitem");
 		const expected = [
