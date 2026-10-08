@@ -178,8 +178,8 @@ describe("dramaAssessmentSchema", () => {
 		expect(() => dramaAssessmentSchema.parse(bad)).toThrow();
 	});
 
-	it("rejects more than 2 evidence quotes per category", () => {
-		const bad = {
+	it("accepts three evidence quotes in one category", () => {
+		const response = {
 			category_scores: {
 				...ZERO_CATEGORY_SCORES,
 				repeat_deferrals: {
@@ -193,11 +193,11 @@ describe("dramaAssessmentSchema", () => {
 			narrative: "n",
 		};
 
-		expect(() => dramaAssessmentSchema.parse(bad)).toThrow();
+		expect(dramaAssessmentSchema.safeParse(response).success).toBe(true);
 	});
 
-	it("rejects headlines longer than 200 chars", () => {
-		const bad = {
+	it("accepts a headline longer than the stored limit", () => {
+		const response = {
 			category_scores: ZERO_CATEGORY_SCORES,
 			level: "routine",
 			confidence: 0.5,
@@ -205,7 +205,7 @@ describe("dramaAssessmentSchema", () => {
 			narrative: "n",
 		};
 
-		expect(() => dramaAssessmentSchema.parse(bad)).toThrow();
+		expect(dramaAssessmentSchema.safeParse(response).success).toBe(true);
 	});
 });
 
@@ -282,6 +282,77 @@ describe("DramaDetectionServiceLive", () => {
 
 		expect(result.category_scores.undecided_time.score).toBe(0);
 		expect(result.category_scores.undecided_time.evidence_quotes).toEqual([]);
+	});
+
+	it("returns an assessment with the first two verified quotes when the model's response carries more than two for one category", async () => {
+		// As Gemini returned it: the response before any validation.
+		const rawResponse = {
+			...STUB_OUTPUT,
+			category_scores: {
+				...ZERO_CATEGORY_SCORES,
+				procedural_breakdown: {
+					score: 2,
+					evidence_quotes: [
+						"This was never said.",
+						"I cannot support this without seeing the job descriptions first.",
+						"We are voting on positions that have not been formally approved.",
+						"The motion passed 4-1.",
+					],
+				},
+			},
+		};
+
+		const program = Effect.gen(function* () {
+			const service = yield* DramaDetectionService;
+			return yield* service.detect({
+				sourceText: SOURCE_TEXT,
+				meetingContext: "ctx",
+			});
+		}).pipe(
+			Effect.provide(
+				DramaDetectionServiceLive({
+					model: "gemini-2.5-flash",
+					promptVersion: "v1",
+					// The detector validates the response against this schema
+					// before the service sees it.
+					generateFn: async () => dramaAssessmentSchema.parse(rawResponse),
+				}),
+			),
+		);
+
+		const result = await Effect.runPromise(program);
+
+		expect(result.category_scores.procedural_breakdown).toEqual({
+			score: 2,
+			evidence_quotes: [
+				"I cannot support this without seeing the job descriptions first.",
+				"We are voting on positions that have not been formally approved.",
+			],
+		});
+	});
+
+	it("truncates a headline longer than 200 characters instead of failing the assessment", async () => {
+		const rawResponse = { ...STUB_OUTPUT, headline: "x".repeat(250) };
+
+		const program = Effect.gen(function* () {
+			const service = yield* DramaDetectionService;
+			return yield* service.detect({
+				sourceText: SOURCE_TEXT,
+				meetingContext: "ctx",
+			});
+		}).pipe(
+			Effect.provide(
+				DramaDetectionServiceLive({
+					model: "gemini-2.5-flash",
+					promptVersion: "v1",
+					generateFn: async () => dramaAssessmentSchema.parse(rawResponse),
+				}),
+			),
+		);
+
+		const result = await Effect.runPromise(program);
+
+		expect(result.headline).toBe("x".repeat(200));
 	});
 
 	it("overrides level to match the mechanical sum", async () => {
