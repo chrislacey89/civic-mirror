@@ -19,7 +19,10 @@ import {
 	runDramaDetectForVideo,
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
-import { regenerateCombinedSummaries } from "#/pipeline/regenerate.ts";
+import {
+	incompleteRegeneration,
+	regenerateCombinedSummaries,
+} from "#/pipeline/regenerate.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 
 /**
@@ -351,14 +354,14 @@ const summariesRegenerateCommand = Command.make(
 				);
 			}
 			const failed = outcomes.filter((o) => o.outcome === "failed").length;
+			const skipped = outcomes.filter((o) => o.outcome === "skipped").length;
 			yield* Console.log(
-				`[summaries:regenerate] done: meetings=${outcomes.length} failed=${failed}`,
+				`[summaries:regenerate] done: meetings=${outcomes.length} failed=${failed} skipped=${skipped}`,
 			);
-			// A failed meeting keeps its old summary, so the run must not show as passed.
-			if (failed > 0) {
-				return yield* Effect.fail(
-					new Error(`${failed} meeting(s) kept their previous summary.`),
-				);
+			// A run that left a summary as it was, or found no meeting, must not show as passed.
+			const incomplete = incompleteRegeneration(outcomes);
+			if (incomplete) {
+				return yield* Effect.fail(new Error(incomplete));
 			}
 		}),
 );

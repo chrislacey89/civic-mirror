@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 import {
+	incompleteRegeneration,
 	regenerateCombinedSummaries,
 	regenerateMeetingSummary,
 } from "#/pipeline/regenerate.ts";
@@ -458,5 +459,35 @@ describe("regenerateCombinedSummaries", () => {
 			},
 		]);
 		expect(await context.rows()).toEqual(before);
+	});
+});
+
+describe("incompleteRegeneration", () => {
+	const outcome = (o: "regenerated" | "skipped" | "failed") => ({
+		meetingId: 1,
+		date: "2025-05-27",
+		outcome: o,
+	});
+
+	it("is null when every meeting was rebuilt", () => {
+		expect(
+			incompleteRegeneration([outcome("regenerated"), outcome("regenerated")]),
+		).toBeNull();
+	});
+
+	it("flags a run that matched no meeting", () => {
+		expect(incompleteRegeneration([])).toMatch(/No meeting/);
+	});
+
+	it("flags a skipped meeting", () => {
+		expect(
+			incompleteRegeneration([outcome("regenerated"), outcome("skipped")]),
+		).toMatch(/0 meeting\(s\) failed and 1 were skipped/);
+	});
+
+	it("flags a failed meeting", () => {
+		expect(incompleteRegeneration([outcome("failed")])).toMatch(
+			/1 meeting\(s\) failed and 0 were skipped/,
+		);
 	});
 });

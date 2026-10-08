@@ -132,5 +132,27 @@ function regenerateCombinedSummaries(input: {
 	});
 }
 
-export { regenerateCombinedSummaries, regenerateMeetingSummary };
+/**
+ * Why a regeneration run cannot be called complete, or null when every
+ * meeting it found was rebuilt. A run that found no meeting, one that failed
+ * on a meeting, and one that skipped a meeting all leave a summary as it was,
+ * so none of them may show as passed.
+ */
+function incompleteRegeneration(
+	outcomes: readonly RegenerationOutcome[],
+): string | null {
+	if (outcomes.length === 0) {
+		return "No meeting with a combined summary matched, so nothing was rebuilt.";
+	}
+	const failed = outcomes.filter((o) => o.outcome === "failed").length;
+	const skipped = outcomes.filter((o) => o.outcome === "skipped").length;
+	if (failed === 0 && skipped === 0) return null;
+	return `${failed} meeting(s) failed and ${skipped} were skipped; each kept its previous summary.`;
+}
+
+export {
+	incompleteRegeneration,
+	regenerateCombinedSummaries,
+	regenerateMeetingSummary,
+};
 export type { RegenerationOutcome };
