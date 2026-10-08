@@ -81,7 +81,7 @@ That is narrower than "a rebuild cannot lose a decision". The documents call is 
 
 **Process-level:** before a bug about a rebuilt LLM output is given a cause, run the pre-change configuration several times over the pre-change input. If those runs disagree with each other, the bug is instability and the reported diff is a sample of it.
 
-**Clustering note.** This is the second entry on run-to-run variance in a load-bearing LLM field; the first is the tier-drift doc. The mechanism shipped here is the merge test above, which covers the half code can own. For the other half, an unstable membership rule, the closest mechanism is a committed repeat-run check that diffs lists across runs. It was not built: it needs live Gemini calls, so it cannot run in CI, and the probe used for #167 was a throwaway. Its natural home is a preview mode for `summaries:regenerate` that prints the stored and rebuilt lists per date and writes nothing; the command has no such mode yet.
+**Clustering note.** This is the second entry on run-to-run variance in a load-bearing LLM field; the first is the tier-drift doc. The mechanism shipped here is the merge test above, which covers the half code can own. For the other half, an unstable membership rule, the closest mechanism is a committed repeat-run check that diffs lists across runs. It was not built: it needs live Gemini calls, so it cannot run in CI, and the probe used for #167 was a throwaway. Its natural home is a preview mode for `summaries:regenerate` that prints the stored and rebuilt lists per meeting and writes nothing. The command's `--dry-run` lists the meetings it would rebuild and calls no model, so it does not show this.
 
 ## Planning / Calibration Notes
 
@@ -92,7 +92,7 @@ That is narrower than "a rebuild cannot lose a decision". The documents call is 
 ## Defect Classification
 
 **Origin phase:** Specification error. The membership rule never said what to do with the borderline classes.
-**Fix type:** Correction for the two root causes above. Still held only by the prompt: that the every-source call does not repeat a recorded decision. Nothing in code removes a repeat; PR #172's body lists it under known-weak spots.
+**Fix type:** Correction for the two root causes above. Code now drops a decision from the every-source call that repeats a documents decision by ordinance number, or by title and stated amount (`repeatsRecordedDecision` in `SummarizationService.ts`). A repeat with a reworded title and no ordinance number is still held only by the prompt.
 
 ## Related
 
