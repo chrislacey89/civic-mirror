@@ -21,6 +21,10 @@ import {
 	runDramaDetectForVideo,
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
+import {
+	incompleteRegeneration,
+	regenerateCombinedSummaries,
+} from "#/pipeline/regenerate.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 
 /**
@@ -396,6 +400,97 @@ const documentDetachCommand = Command.make(
 );
 
 // ---------------------------------------------------------------------------
+// `summaries:regenerate` subcommand — summarizes again a body's meetings whose
+// summary was built from documents and a transcript together, for when the
+// summarizer changed and the sources did not.
+// ---------------------------------------------------------------------------
+
+const regenerateBodySlug = Flag.String("body").pipe(
+	Flag.withDescription("Slug of the body whose combined summaries to rebuild."),
+);
+
+const regenerateDate = Flag.String("date").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"Only the meeting on this ISO date (defaults to every combined summary of the body).",
+	),
+);
+
+const regenerateDryRun = Flag.Boolean("dry-run").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
+		"List the meetings that would be summarized again, and change nothing.",
+	),
+);
+
+const summariesRegenerateCommand = Command.make(
+	"summaries:regenerate",
+	{
+		bodySlug: regenerateBodySlug,
+		date: regenerateDate,
+		dryRun: regenerateDryRun,
+	},
+	({ bodySlug, date, dryRun }) =>
+		Effect.gen(function* () {
+			const body = DEFAULT_BODIES.find((b) => b.slug === bodySlug);
+			if (!body) {
+				return yield* Effect.fail(
+					new Error(
+						`Unknown body slug: ${bodySlug}. Known slugs: ${DEFAULT_BODIES.map((b) => b.slug).join(", ")}`,
+					),
+				);
+			}
+			const onDate = Option.getOrUndefined(date);
+
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			if (dryRun) {
+				const meetings = yield* Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.listCombinedSummaryMeetings({
+						bodySlug: body.slug,
+						date: onDate,
+					});
+				}).pipe(Effect.provide(layers));
+				for (const meeting of meetings) {
+					yield* Console.log(`${meeting.date}  would regenerate`);
+				}
+				yield* Console.log(
+					`[summaries:regenerate] dry run: ${meetings.length} meeting(s), nothing changed`,
+				);
+				return;
+			}
+
+			const outcomes = yield* regenerateCombinedSummaries({
+				body,
+				date: onDate,
+			}).pipe(Effect.provide(layers));
+
+			for (const outcome of outcomes) {
+				yield* Console.log(
+					`${outcome.date}  ${outcome.outcome}${outcome.message ? `: ${outcome.message}` : ""}`,
+				);
+			}
+			const failed = outcomes.filter((o) => o.outcome === "failed").length;
+			const skipped = outcomes.filter((o) => o.outcome === "skipped").length;
+			yield* Console.log(
+				`[summaries:regenerate] done: meetings=${outcomes.length} failed=${failed} skipped=${skipped}`,
+			);
+			// A run that left a summary as it was, or found no meeting, must not show as passed.
+			const incomplete = incompleteRegeneration(outcomes);
+			if (incomplete) {
+				return yield* Effect.fail(new Error(incomplete));
+			}
+		}),
+);
+
+// ---------------------------------------------------------------------------
 // Command root and entrypoint
 // ---------------------------------------------------------------------------
 
@@ -409,6 +504,7 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		listBodiesCommand,
 		dramaDetectCommand,
 		heldListCommand,
+		summariesRegenerateCommand,
 		documentDetachCommand,
 	]),
 );

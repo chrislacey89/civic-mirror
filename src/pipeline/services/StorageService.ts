@@ -266,6 +266,14 @@ interface StorageServiceInterface {
 		bodySlug?: string;
 	}): Effect.Effect<HeldVideo[], DatabaseError>;
 	/**
+	 * A body's meetings whose summary was built from both documents and a
+	 * transcript, oldest first; the one on `date` when it is given.
+	 */
+	listCombinedSummaryMeetings(input: {
+		bodySlug: string;
+		date?: string;
+	}): Effect.Effect<{ meetingId: number; date: string }[], DatabaseError>;
+	/**
 	 * Every document and the first transcript a meeting holds, plus the source
 	 * kinds and fingerprint of its summary. A meeting id with no rows yields no
 	 * documents, no transcript and no summary.
@@ -578,6 +586,48 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				catch: (error) =>
 					new DatabaseError({
 						operation: "listHeldVideos",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		listCombinedSummaryMeetings: (input) =>
+			Effect.tryPromise({
+				try: async () => {
+					const rows = await db
+						.select({
+							meetingId: schema.meetings.id,
+							date: schema.meetings.date,
+							sourceKinds: schema.summaries.sourceKinds,
+						})
+						.from(schema.summaries)
+						.innerJoin(
+							schema.meetings,
+							eq(schema.summaries.meetingId, schema.meetings.id),
+						)
+						.innerJoin(
+							schema.governingBodies,
+							eq(schema.meetings.bodyId, schema.governingBodies.id),
+						)
+						.where(
+							and(
+								eq(schema.governingBodies.slug, input.bodySlug),
+								input.date === undefined
+									? undefined
+									: eq(schema.meetings.date, input.date),
+							),
+						)
+						.orderBy(schema.meetings.date, schema.meetings.id)
+						.all();
+					return rows
+						.filter(
+							(row) =>
+								row.sourceKinds.includes("documents") &&
+								row.sourceKinds.includes("transcript"),
+						)
+						.map(({ meetingId, date }) => ({ meetingId, date }));
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "listCombinedSummaryMeetings",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),

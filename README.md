@@ -57,6 +57,7 @@ pnpm pipeline:run                             # full run
 pnpm pipeline run --body ellettsville-town-council   # one body only
 pnpm pipeline:run --sources youtube           # video path only
 pnpm pipeline held:list                       # videos the pipeline holds, and why
+pnpm pipeline summaries:regenerate --body ellettsville-town-council --dry-run   # list the combined summaries a rebuild would redo
 pnpm pipeline document:detach --body <slug> --date <YYYY-MM-DD> --url <source-url>   # preview removing one document from a meeting
 ```
 
