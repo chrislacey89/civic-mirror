@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
+	figureIsIn,
 	type SummarizationInput,
 	type SummarizationOutput,
 	SummarizationService,
@@ -15,6 +16,31 @@ with ABC Paving for sidewalk improvements. The motion passed 4-1.
 `;
 
 describe("SummarizationService", () => {
+	describe("figureIsIn", () => {
+		it.each([
+			["$750.00", "$75,000", false],
+			["$5,000.00", "$500,000", false],
+			["$5,000", "$50.00", false],
+			["$1,000", "$10.00", false],
+			["$750", "$7.50", false],
+			["$500", "$5.00", false],
+			["$12.50", "paid 12 to the clerk", false],
+			["$215,215.10", "a total of 215,215 overall", false],
+			["$5,000", "see $5,000.2025 budget", true],
+			["$5,000", "$5,000. 2,000", true],
+			["$5,000.00", "$5,000", true],
+			["$5,000", "$5,000.00", true],
+			["$5,000.00", "$50,000.00", false],
+			["$500", "2,500", false],
+			["$258,400.00", "not to exceed $258.400.00.", true],
+			["$244,215.10", "low bid for $244,21510", true],
+			["$244,215.10", "low bid for $244,215", false],
+			["not stated", "the amount is not stated", true],
+		])("%s in %j is %s", (amount, text, expected) => {
+			expect(figureIsIn(amount, text)).toBe(expected);
+		});
+	});
+
 	describe("verifyAmounts", () => {
 		it("keeps full confidence when amounts appear in source text", () => {
 			const decisions = [

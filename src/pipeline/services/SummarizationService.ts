@@ -56,17 +56,26 @@ function verifyAmounts<T extends FiscalDecisionCandidate>(
 	});
 }
 
-/** A run of digits with any periods and commas inside it, as a scan or a caption writes a number. */
-const NUMBER_PATTERN = /\d[\d.,]*\d|\d/g;
+/**
+ * A written dollar figure: whole dollars in groups of three digits, then
+ * cents. The separator before the cents may be a period, a comma, or missing
+ * after a comma group, as a caption writes "$244,21510". A number followed by
+ * more digits ends where the cents or the group would stop.
+ */
+const FIGURE_PATTERN =
+	/(?<dollars>\d+(?:[.,]\d{3})*)(?:[.,](?<cents>\d{2})|(?<=,\d{3})(?<runOn>\d{2}))?(?!\d)/g;
 
 /**
- * A written number as its digits. `whole` leaves off a two-digit cents part,
- * so "$5,000.00" and "$5,000" share one.
+ * A written number as dollars and cents. Separators in the dollars are
+ * dropped, so a period read for a comma ("$258.400.00") is the same figure; a
+ * missing cents part is ".00". The cents are kept apart from the dollars so a
+ * stray or missing separator cannot change the magnitude.
  */
-function digitsOf(written: string): { all: string; whole: string } {
-	const cents = /[.,]\d{2}$/.test(written);
-	const all = written.replace(/\D/g, "");
-	return { all, whole: cents ? all.slice(0, -2) : all };
+function figuresIn(text: string): { dollars: string; cents: string }[] {
+	return [...text.matchAll(FIGURE_PATTERN)].map((match) => ({
+		dollars: (match.groups?.dollars ?? "").replace(/\D/g, ""),
+		cents: match.groups?.cents ?? match.groups?.runOn ?? "00",
+	}));
 }
 
 /** Whether `originalAmount` names a dollar figure, as opposed to "not stated". */
@@ -75,20 +84,19 @@ function statesFigure(originalAmount: string): boolean {
 }
 
 /**
- * Whether the first number in `originalAmount` appears in `text`. Digits are
- * compared, so a period read for a comma ("$258.400.00"), a dropped comma and
- * a missing cents part do not hide a figure that is there. A figure broken by
- * a space inside its digits is not found. An amount that names no figure is
- * found by its exact wording.
+ * Whether the first number in `originalAmount` appears in `text` with the same
+ * dollars and the same cents. A period read for a comma ("$258.400.00"), a
+ * dropped comma and a missing ".00" do not hide a figure that is there; a
+ * figure with cents is not found by its dollars alone, and "$750.00" is not
+ * found in "$75,000". A figure broken by a space inside its digits is not
+ * found. An amount that names no figure is found by its exact wording.
  */
 function figureIsIn(originalAmount: string, text: string): boolean {
-	const written = originalAmount.match(NUMBER_PATTERN)?.[0];
-	if (written === undefined) return text.includes(originalAmount);
-	const wanted = digitsOf(written);
-	return (text.match(NUMBER_PATTERN) ?? []).some((candidate) => {
-		const found = digitsOf(candidate);
-		return found.all === wanted.all || found.whole === wanted.whole;
-	});
+	const wanted = figuresIn(originalAmount)[0];
+	if (wanted === undefined) return text.includes(originalAmount);
+	return figuresIn(text).some(
+		(found) => found.dollars === wanted.dollars && found.cents === wanted.cents,
+	);
 }
 
 /**
@@ -419,6 +427,7 @@ export {
 	SummarizationService,
 	SummarizationServiceLive,
 	sourceTextOfKind,
+	figureIsIn,
 	verifyAmounts,
 	summarizationOutputSchema,
 };
