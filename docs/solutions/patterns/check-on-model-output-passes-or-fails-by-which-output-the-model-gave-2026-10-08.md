@@ -31,7 +31,6 @@ The second row appeared after a commit that changed three sentences of the promp
 
 - A fix verified on its motivating case stops working after an unrelated edit to the prompt.
 - The wrong value is one the guard cannot object to: it is in the source.
-- Repeat runs at a fixed prompt agree with each other, so a repeat-run check at one commit shows nothing. The variation is across prompt versions.
 
 ## Root Cause
 
