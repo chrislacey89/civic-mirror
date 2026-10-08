@@ -97,12 +97,37 @@ const budgetDiscussionSchema = z.object({
 });
 
 // Strings only: Gemini's structured output rejects numeric enums, and each
-// side is quoted as its source states it.
+// side is quoted as its source states it. `kind` is the model's reading of
+// what the two sources differ on; `droppedDisagreementKinds` acts on it and
+// it is not stored.
 const sourceDisagreementSchema = z.object({
 	topic: z.string(),
 	documentsSay: z.string(),
 	transcriptSays: z.string(),
+	kind: z.enum(["amount", "vote", "date", "name", "other"]),
 }) satisfies z.ZodType<SourceDisagreement>;
+
+type ReportedDisagreement = z.infer<typeof sourceDisagreementSchema>;
+
+/**
+ * Captions garble names, so a name the transcript spells differently says
+ * nothing about the meeting. The documents govern how a name is spelled.
+ */
+const droppedDisagreementKinds: ReadonlySet<ReportedDisagreement["kind"]> =
+	new Set(["name"]);
+
+/** The reported disagreements worth showing a reader, without their kind. */
+function keptDisagreements(
+	reported: readonly ReportedDisagreement[],
+): SourceDisagreement[] {
+	return reported
+		.filter((disagreement) => !droppedDisagreementKinds.has(disagreement.kind))
+		.map(({ topic, documentsSay, transcriptSays }) => ({
+			topic,
+			documentsSay,
+			transcriptSays,
+		}));
+}
 
 const summarizationOutputSchema = z.object({
 	highlights: z.array(z.string()),
@@ -153,9 +178,11 @@ function verificationText(sources: readonly LabelledSource[]): string {
 /**
  * The full result returned by the service — schema output plus the model
  * identifier, which gets persisted alongside the summary for auditing.
- * `sourceDisagreements` is empty unless both kinds of source were passed.
+ * `sourceDisagreements` is empty unless both kinds of source were passed, and
+ * never holds a disagreement over how a name is spelled.
  */
-type SummarizationResult = SummarizationOutput & {
+type SummarizationResult = Omit<SummarizationOutput, "sourceDisagreements"> & {
+	sourceDisagreements: SourceDisagreement[];
 	model: string;
 };
 
@@ -219,7 +246,9 @@ function SummarizationServiceLive(
 					return {
 						...raw,
 						fiscalDecisions: verified,
-						sourceDisagreements: bothKinds ? raw.sourceDisagreements : [],
+						sourceDisagreements: bothKinds
+							? keptDisagreements(raw.sourceDisagreements)
+							: [],
 						model: config.model,
 					};
 				},

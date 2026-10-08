@@ -222,7 +222,18 @@ describe("SummarizationService", () => {
 			transcriptSays: "$244,215.10",
 		};
 
-		function pavingOutput(originalAmount: string): SummarizationOutput {
+		const NAME_DISAGREEMENT = {
+			topic: "Town Marshal's name",
+			documentsSay: "Jimmie Durnil",
+			transcriptSays: "Jimmy Gurnell",
+		};
+
+		function pavingOutput(
+			originalAmount: string,
+			sourceDisagreements: SummarizationOutput["sourceDisagreements"] = [
+				{ ...PAVING_DISAGREEMENT, kind: "amount" },
+			],
+		): SummarizationOutput {
 			return {
 				highlights: ["Accepted the paving bid"],
 				prose: "The council accepted a paving bid.",
@@ -238,7 +249,7 @@ describe("SummarizationService", () => {
 					},
 				],
 				budgetDiscussions: [],
-				sourceDisagreements: [PAVING_DISAGREEMENT],
+				sourceDisagreements,
 			};
 		}
 
@@ -278,6 +289,18 @@ describe("SummarizationService", () => {
 				DOCUMENTS,
 				TRANSCRIPT,
 			]);
+
+			expect(result.sourceDisagreements).toEqual([PAVING_DISAGREEMENT]);
+		});
+
+		it("drops a disagreement the model classifies as a name, and keeps the others", async () => {
+			const result = await summarizeWith(
+				pavingOutput("$215,215.10", [
+					{ ...NAME_DISAGREEMENT, kind: "name" },
+					{ ...PAVING_DISAGREEMENT, kind: "amount" },
+				]),
+				[DOCUMENTS, TRANSCRIPT],
+			);
 
 			expect(result.sourceDisagreements).toEqual([PAVING_DISAGREEMENT]);
 		});
