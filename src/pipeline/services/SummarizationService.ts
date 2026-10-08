@@ -76,9 +76,10 @@ function statesFigure(originalAmount: string): boolean {
 
 /**
  * Whether the first number in `originalAmount` appears in `text`. Digits are
- * compared, so spacing, a period read for a comma ("$258.400.00") and a
- * missing cents part do not hide a figure that is there. An amount that names
- * no figure is found by its exact wording.
+ * compared, so a period read for a comma ("$258.400.00"), a dropped comma and
+ * a missing cents part do not hide a figure that is there. A figure broken by
+ * a space inside its digits is not found. An amount that names no figure is
+ * found by its exact wording.
  */
 function figureIsIn(originalAmount: string, text: string): boolean {
 	const written = originalAmount.match(NUMBER_PATTERN)?.[0];
