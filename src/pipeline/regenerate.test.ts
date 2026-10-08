@@ -4,8 +4,9 @@ import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 import {
+	incompleteRegeneration,
+	regenerateCombinedSummaries,
 	regenerateMeetingSummary,
-	regenerateSummariesOnDates,
 } from "#/pipeline/regenerate.ts";
 import {
 	type MeetingInput,
@@ -62,6 +63,8 @@ async function setup(options: {
 	summarized?: boolean;
 	result?: SummarizationResult;
 	summarizeError?: Error;
+	/** Fail only the summarize calls whose meeting context contains this text. */
+	summarizeErrorFor?: string;
 }) {
 	const db = await createMigratedTestDb();
 	await db
@@ -74,7 +77,9 @@ async function setup(options: {
 		summarize: (input) =>
 			Effect.suspend(() => {
 				calls.push(input);
-				return options.summarizeError
+				return options.summarizeError &&
+					(options.summarizeErrorFor === undefined ||
+						input.meetingContext.includes(options.summarizeErrorFor))
 					? Effect.fail(
 							new LlmError({
 								model: "regenerating-model",
@@ -130,11 +135,12 @@ async function setup(options: {
 			.run();
 	}
 
-	const regenerate = () =>
+	const regenerate = (options: { force?: boolean } = {}) =>
 		Effect.runPromise(
 			regenerateMeetingSummary({
 				meetingId: meeting.id,
 				meetingContext: "Town Council, 2025-05-27",
+				...options,
 			}).pipe(Effect.provide(layers)),
 		);
 
@@ -208,21 +214,15 @@ describe("regenerateMeetingSummary", () => {
 		expect(await rows()).toEqual(afterFirst);
 	});
 
-	it("rebuilds a summary whose fingerprint equals the sources' when forced", async () => {
-		const { calls, layers, meeting, regenerate } = await setup({
+	it("summarizes again when forced, though the sources' fingerprint equals the stored one", async () => {
+		const { calls, regenerate } = await setup({
 			documents: [AGENDA, MINUTES],
 		});
 		await regenerate();
 
-		const forced = await Effect.runPromise(
-			regenerateMeetingSummary({
-				meetingId: meeting.id,
-				meetingContext: "Town Council, 2025-05-27",
-				force: true,
-			}).pipe(Effect.provide(layers)),
-		);
+		const result = await regenerate({ force: true });
 
-		expect(forced).toEqual({ regenerated: true });
+		expect(result).toEqual({ regenerated: true });
 		expect(calls).toHaveLength(2);
 	});
 
@@ -356,74 +356,248 @@ describe("regenerateMeetingSummary", () => {
 	});
 });
 
-describe("regenerateSummariesOnDates", () => {
-	const BODY = { slug: "town-council", name: "Town Council" };
+describe("regenerateCombinedSummaries", () => {
+	const TRANSCRIPT_TEXT = "the paving bid came in at $244,215.10";
 
-	it("rebuilds the current summary of the meeting on each date and names a date with no meeting", async () => {
-		const { calls, layers, regenerate } = await setup({
-			documents: [AGENDA, MINUTES],
-		});
-		await regenerate();
+	/** Gives the setup's meeting a transcript and a summary built from both kinds. */
+	async function combine(
+		context: Pick<
+			Awaited<ReturnType<typeof setup>>,
+			"meeting" | "layers" | "regenerate"
+		>,
+	) {
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				yield* storage.storeTranscript({
+					meetingId: context.meeting.id,
+					source: "captions",
+					rawText: TRANSCRIPT_TEXT,
+					sourceUrl: VIDEO_URL,
+				});
+			}).pipe(Effect.provide(context.layers)),
+		);
+		await context.regenerate();
+	}
 
-		const outcomes = await Effect.runPromise(
-			regenerateSummariesOnDates({
-				body: BODY,
-				dates: ["2025-05-27", "2025-06-09"],
-				confirm: true,
+	const regenerateAll = (
+		layers: Awaited<ReturnType<typeof setup>>["layers"],
+		date?: string,
+	) =>
+		Effect.runPromise(
+			regenerateCombinedSummaries({
+				body: { slug: "town-council", name: "Town Council" },
+				date,
 			}).pipe(Effect.provide(layers)),
 		);
 
-		expect(outcomes).toEqual([
-			{ date: "2025-05-27", outcome: "regenerated" },
-			{ date: "2025-06-09", outcome: "no-meeting" },
-		]);
-		expect(calls).toHaveLength(2);
-		expect(calls[1].meetingContext).toBe("Town Council, 2025-05-27");
-	});
+	it("summarizes again each meeting of the body whose summary was built from documents and a transcript", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await combine(context);
+		context.calls.length = 0;
 
-	it("without confirm, reports the stored and rebuilt decisions and stores nothing", async () => {
-		const { calls, layers, rows } = await setup({
-			documents: [AGENDA, MINUTES],
-		});
-		const before = await rows();
-
-		const outcomes = await Effect.runPromise(
-			regenerateSummariesOnDates({
-				body: BODY,
-				dates: ["2025-05-27"],
-				confirm: false,
-			}).pipe(Effect.provide(layers)),
-		);
+		const outcomes = await regenerateAll(context.layers);
 
 		expect(outcomes).toEqual([
 			{
+				meetingId: context.meeting.id,
 				date: "2025-05-27",
-				outcome: "previewed",
-				stored: ["Original decision ($100)"],
-				rebuilt: ["Paving bid ($215,215.10)"],
+				outcome: "regenerated",
 			},
 		]);
-		expect(calls).toHaveLength(1);
-		expect(await rows()).toEqual(before);
+		expect(context.calls).toEqual([
+			{
+				sources: [
+					{ kind: "documents", text: MINUTES.rawText },
+					{ kind: "transcript", text: TRANSCRIPT_TEXT },
+				],
+				meetingContext: "Town Council, 2025-05-27",
+			},
+		]);
 	});
 
-	it("reports a date whose summarize call fails and goes on to the next", async () => {
-		const { layers } = await setup({
+	it("leaves alone a meeting whose summary was built from documents only", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await context.regenerate();
+		context.calls.length = 0;
+
+		const outcomes = await regenerateAll(context.layers);
+
+		expect(outcomes).toEqual([]);
+		expect(context.calls).toHaveLength(0);
+	});
+
+	it("regenerates only the meeting on the given date", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await combine(context);
+		context.calls.length = 0;
+
+		const otherDate = await regenerateAll(context.layers, "2025-06-09");
+		const thatDate = await regenerateAll(context.layers, "2025-05-27");
+
+		expect(otherDate).toEqual([]);
+		expect(thatDate.map((o) => o.outcome)).toEqual(["regenerated"]);
+		expect(context.calls).toHaveLength(1);
+	});
+
+	it("reports a summarizer failure and leaves that meeting's summary in place", async () => {
+		const context = await setup({
 			documents: [MINUTES],
 			summarizeError: new Error("quota exceeded"),
 		});
+		await context.db
+			.update(schema.summaries)
+			.set({ sourceKinds: ["documents", "transcript"] })
+			.where(eq(schema.summaries.meetingId, context.meeting.id))
+			.run();
+		const before = await context.rows();
 
-		const outcomes = await Effect.runPromise(
-			regenerateSummariesOnDates({
-				body: BODY,
-				dates: ["2025-05-27", "2025-06-09"],
-				confirm: true,
-			}).pipe(Effect.provide(layers)),
-		);
+		const outcomes = await regenerateAll(context.layers);
 
 		expect(outcomes).toEqual([
-			{ date: "2025-05-27", outcome: "failed", message: "quota exceeded" },
-			{ date: "2025-06-09", outcome: "no-meeting" },
+			{
+				meetingId: context.meeting.id,
+				date: "2025-05-27",
+				outcome: "failed",
+				message: "quota exceeded",
+			},
 		]);
+		expect(await context.rows()).toEqual(before);
+	});
+
+	/** Stores a meeting whose summary was built from documents and a transcript. */
+	async function storeCombinedMeeting(
+		context: Pick<Awaited<ReturnType<typeof setup>>, "db" | "layers">,
+		bodySlug: string,
+		date: string,
+	) {
+		const meeting = await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				return yield* storage.storeMeeting({
+					bodySlug,
+					date,
+					meetingType: "regular",
+					documents: [MINUTES],
+					summary: {
+						highlights: ["Original highlight"],
+						prose: "Original prose.",
+						model: "original-model",
+					},
+					fiscalDecisions: [],
+					budgetDiscussions: [],
+				});
+			}).pipe(Effect.provide(context.layers)),
+		);
+		await context.db
+			.update(schema.summaries)
+			.set({
+				sourceKinds: ["documents", "transcript"],
+				sourceFingerprint: computeSourceFingerprint(["stale"]),
+			})
+			.where(eq(schema.summaries.meetingId, meeting.id))
+			.run();
+		return meeting;
+	}
+
+	it("rebuilds only the requested body's meetings, not another body's combined summary", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await combine(context);
+		await context.db
+			.insert(schema.governingBodies)
+			.values({ name: "County Board", slug: "county-board", type: "county" })
+			.run();
+		const other = await storeCombinedMeeting(
+			context,
+			"county-board",
+			"2025-05-27",
+		);
+		const otherSummary = () =>
+			context.db
+				.select()
+				.from(schema.summaries)
+				.where(eq(schema.summaries.meetingId, other.id))
+				.all();
+		const otherBefore = await otherSummary();
+		context.calls.length = 0;
+
+		const outcomes = await regenerateAll(context.layers);
+
+		expect(outcomes.map((o) => o.meetingId)).toEqual([context.meeting.id]);
+		expect(context.calls.map((c) => c.meetingContext)).toEqual([
+			"Town Council, 2025-05-27",
+		]);
+		expect(await otherSummary()).toEqual(otherBefore);
+	});
+
+	it("carries on to the next meeting after one fails, leaving only the failed one's summary in place", async () => {
+		const context = await setup({
+			documents: [MINUTES],
+			summarizeError: new Error("quota exceeded"),
+			summarizeErrorFor: "2025-05-27",
+		});
+		await context.db
+			.update(schema.summaries)
+			.set({ sourceKinds: ["documents", "transcript"] })
+			.where(eq(schema.summaries.meetingId, context.meeting.id))
+			.run();
+		const later = await storeCombinedMeeting(
+			context,
+			"town-council",
+			"2025-06-09",
+		);
+		const summaryOf = (meetingId: number) =>
+			context.db
+				.select()
+				.from(schema.summaries)
+				.where(eq(schema.summaries.meetingId, meetingId))
+				.all();
+		const failedBefore = await summaryOf(context.meeting.id);
+
+		const outcomes = await regenerateAll(context.layers);
+
+		expect(outcomes).toEqual([
+			{
+				meetingId: context.meeting.id,
+				date: "2025-05-27",
+				outcome: "failed",
+				message: "quota exceeded",
+			},
+			{ meetingId: later.id, date: "2025-06-09", outcome: "regenerated" },
+		]);
+		expect(await summaryOf(context.meeting.id)).toEqual(failedBefore);
+		expect(await summaryOf(later.id)).toMatchObject([
+			{ model: "regenerating-model" },
+		]);
+	});
+});
+
+describe("incompleteRegeneration", () => {
+	const outcome = (o: "regenerated" | "skipped" | "failed") => ({
+		meetingId: 1,
+		date: "2025-05-27",
+		outcome: o,
+	});
+
+	it("is null when every meeting was rebuilt", () => {
+		expect(
+			incompleteRegeneration([outcome("regenerated"), outcome("regenerated")]),
+		).toBeNull();
+	});
+
+	it("flags a run that matched no meeting", () => {
+		expect(incompleteRegeneration([])).toMatch(/No meeting/);
+	});
+
+	it("flags a skipped meeting", () => {
+		expect(
+			incompleteRegeneration([outcome("regenerated"), outcome("skipped")]),
+		).toMatch(/0 meeting\(s\) failed and 1 were skipped/);
+	});
+
+	it("flags a failed meeting", () => {
+		expect(incompleteRegeneration([outcome("failed")])).toMatch(
+			/1 meeting\(s\) failed and 0 were skipped/,
+		);
 	});
 });

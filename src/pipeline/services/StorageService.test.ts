@@ -1352,6 +1352,77 @@ describe("StorageService", () => {
 		});
 	});
 
+	describe("getUnassessedTranscript", () => {
+		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
+		const SEGMENTS = [{ text: "Call to order.", startMs: 0, durationMs: 2000 }];
+
+		function storeVideoMeeting(storage: Effect.Success<typeof StorageService>) {
+			return Effect.gen(function* () {
+				const meeting = yield* storage.storeMeeting({
+					...testMeetingInput,
+					documents: [],
+				});
+				yield* storage.storeTranscript({
+					meetingId: meeting.id,
+					source: "captions",
+					rawText: "Call to order.",
+					segments: SEGMENTS,
+					sourceUrl: VIDEO_URL,
+				});
+				return meeting;
+			});
+		}
+
+		it("returns the stored transcript and its meeting when the meeting has no assessment", async () => {
+			const db = await createTestDb();
+			const { meeting, unassessed } = await run(db, (storage) =>
+				Effect.gen(function* () {
+					const meeting = yield* storeVideoMeeting(storage);
+					return {
+						meeting,
+						unassessed: yield* storage.getUnassessedTranscript(VIDEO_URL),
+					};
+				}),
+			);
+
+			expect(unassessed).toEqual({
+				meetingId: meeting.id,
+				transcript: {
+					source: "captions",
+					rawText: "Call to order.",
+					segments: SEGMENTS,
+				},
+			});
+		});
+
+		it("is null once the meeting has an assessment, and for a video with no stored transcript", async () => {
+			const db = await createTestDb();
+			const found = await run(db, (storage) =>
+				Effect.gen(function* () {
+					const meeting = yield* storeVideoMeeting(storage);
+					yield* storage.storeDramaAssessment({
+						meetingId: meeting.id,
+						level: "routine",
+						confidence: 0.85,
+						promptVersion: "v1",
+						model: "gemini-2.5-flash",
+						headline: "h",
+						narrative: "n",
+						categoryScores: ZERO_SCORES,
+					});
+					return {
+						assessed: yield* storage.getUnassessedTranscript(VIDEO_URL),
+						unknown: yield* storage.getUnassessedTranscript(
+							"https://www.youtube.com/watch?v=other",
+						),
+					};
+				}),
+			);
+
+			expect(found).toEqual({ assessed: null, unknown: null });
+		});
+	});
+
 	describe("getMeetingSources", () => {
 		const VIDEO_URL = "https://www.youtube.com/watch?v=abc123";
 

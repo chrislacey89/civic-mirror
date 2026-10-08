@@ -49,9 +49,12 @@ SOURCES:
 Each source is labelled. DOCUMENTS is the official written record: agendas, minutes and ordinances. TRANSCRIPT is the auto-generated captions of the meeting video; it has no speaker labels and often garbles names.
 12. When both are present, DOCUMENTS governs names, votes and dollar amounts. Use TRANSCRIPT for the discussion, public comment and stated reasons that DOCUMENTS leaves out.
 13. Attribute a statement to a person only when TRANSCRIPT itself names the speaker. Otherwise report what was said without naming who said it. Spell names as DOCUMENTS spells them.
-14. When TRANSCRIPT states a figure differently from DOCUMENTS, use the DOCUMENTS figure in the summary and in fiscalDecisions, and add an entry to sourceDisagreements: topic names the item, documentsSay and transcriptSays each quote the figure as that source states it. Do not decide which is right.
-15. Leave sourceDisagreements empty when only one kind of source is present, or when the two do not disagree.
-16. RECORDED DECISIONS, when present, lists the fiscal decisions already taken from DOCUMENTS. Do not return any of them in fiscalDecisions, under any wording. Return there only motions that TRANSCRIPT shows were voted on or tabled and that are not in that list, and return none when there are none. Still cover every decision in highlights and prose.
+14. When TRANSCRIPT states a dollar amount, a count, a vote or a date differently from DOCUMENTS, use the DOCUMENTS figure in the summary and in fiscalDecisions, and add an entry to sourceDisagreements: topic names the item, documentsSay and transcriptSays each quote the figure as that source states it. Do not decide which is right.
+15. A caption error is not a disagreement. Add no entry when TRANSCRIPT only spells or hears a name differently (a person, a place, a body, a title), or garbles a figure into something malformed such as "$1,98.30".
+16. Add an entry only when both sources are plainly speaking of the same item. A date TRANSCRIPT gives for something else, such as the minutes being approved, is not a disagreement about the date of this meeting.
+17. Set kind on every entry: "amount" for a dollar amount or a count, "vote" for a vote tally or the outcome of a motion, "date" for a date or a time, "name" when the two differ only in how a person, place, body or title is named or spelled, "other" for anything else.
+18. Leave sourceDisagreements empty when only one kind of source is present, or when the two do not disagree.
+19. RECORDED DECISIONS, when present, lists the fiscal decisions already taken from DOCUMENTS. Do not return any of them in fiscalDecisions, under any wording. Return there only motions that TRANSCRIPT shows were voted on or tabled and that are not in that list, and return none when there are none. Still cover every decision in highlights and prose.
 `.trim();
 
 const SOURCE_LABELS = {

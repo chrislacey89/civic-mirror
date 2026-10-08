@@ -21,7 +21,10 @@ import {
 	runDramaDetectForVideo,
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
-import { regenerateSummariesOnDates } from "#/pipeline/regenerate.ts";
+import {
+	incompleteRegeneration,
+	regenerateCombinedSummaries,
+} from "#/pipeline/regenerate.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 
 /**
@@ -397,26 +400,26 @@ const documentDetachCommand = Command.make(
 );
 
 // ---------------------------------------------------------------------------
-// `summaries:regenerate` subcommand — rebuilds the stored summary of a body's
-// meetings on the given dates from the sources they already hold. `run`
-// leaves a summary alone while its sources are unchanged, so this is how
-// summaries are rebuilt after the summarizer itself changes.
+// `summaries:regenerate` subcommand — summarizes again a body's meetings whose
+// summary was built from documents and a transcript together, for when the
+// summarizer changed and the sources did not.
 // ---------------------------------------------------------------------------
 
 const regenerateBodySlug = Flag.String("body").pipe(
-	Flag.withDescription("Slug of the body whose meetings to rebuild."),
+	Flag.withDescription("Slug of the body whose combined summaries to rebuild."),
 );
 
-const regenerateDates = Flag.String("dates").pipe(
+const regenerateDate = Flag.String("date").pipe(
+	Flag.optional,
 	Flag.withDescription(
-		"Comma-separated meeting dates (YYYY-MM-DD) whose summaries to rebuild.",
+		"Only the meeting on this ISO date (defaults to every combined summary of the body).",
 	),
 );
 
-const regenerateConfirm = Flag.Boolean("confirm").pipe(
+const regenerateDryRun = Flag.Boolean("dry-run").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription(
-		"Replace the stored summaries. Without it, the rebuilt decisions are shown beside the stored ones and nothing is written.",
+		"List the meetings that would be summarized again, and change nothing.",
 	),
 );
 
@@ -424,33 +427,20 @@ const summariesRegenerateCommand = Command.make(
 	"summaries:regenerate",
 	{
 		bodySlug: regenerateBodySlug,
-		dates: regenerateDates,
-		confirm: regenerateConfirm,
+		date: regenerateDate,
+		dryRun: regenerateDryRun,
 	},
-	({ bodySlug, dates, confirm }) =>
+	({ bodySlug, date, dryRun }) =>
 		Effect.gen(function* () {
 			const body = DEFAULT_BODIES.find((b) => b.slug === bodySlug);
-			if (body === undefined) {
+			if (!body) {
 				return yield* Effect.fail(
 					new Error(
-						`No body matched --body ${bodySlug}. Known slugs: ${DEFAULT_BODIES.map((b) => b.slug).join(", ")}`,
+						`Unknown body slug: ${bodySlug}. Known slugs: ${DEFAULT_BODIES.map((b) => b.slug).join(", ")}`,
 					),
 				);
 			}
-			const dateList = dates
-				.split(",")
-				.map((date) => date.trim())
-				.filter((date) => date !== "");
-			const malformed = dateList.filter(
-				(date) => !/^\d{4}-\d{2}-\d{2}$/.test(date),
-			);
-			if (dateList.length === 0 || malformed.length > 0) {
-				return yield* Effect.fail(
-					new Error(
-						`--dates takes a comma-separated list of YYYY-MM-DD dates.${malformed.length > 0 ? ` Not a date: ${malformed.join(", ")}.` : ""}`,
-					),
-				);
-			}
+			const onDate = Option.getOrUndefined(date);
 
 			const layers = yield* Effect.try({
 				try: () => buildProductionLayers({ dryRun: false }),
@@ -460,49 +450,42 @@ const summariesRegenerateCommand = Command.make(
 					),
 			});
 
-			yield* Console.log(
-				`[summaries:regenerate] target=${(resolveDatabaseUrl() ?? "").replace(/\?.*$/, "")}`,
-			);
-			const outcomes = yield* regenerateSummariesOnDates({
+			if (dryRun) {
+				const meetings = yield* Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.listCombinedSummaryMeetings({
+						bodySlug: body.slug,
+						date: onDate,
+					});
+				}).pipe(Effect.provide(layers));
+				for (const meeting of meetings) {
+					yield* Console.log(`${meeting.date}  would regenerate`);
+				}
+				yield* Console.log(
+					`[summaries:regenerate] dry run: ${meetings.length} meeting(s), nothing changed`,
+				);
+				return;
+			}
+
+			const outcomes = yield* regenerateCombinedSummaries({
 				body,
-				dates: dateList,
-				confirm,
+				date: onDate,
 			}).pipe(Effect.provide(layers));
 
 			for (const outcome of outcomes) {
 				yield* Console.log(
-					`${outcome.date} ${outcome.outcome}${outcome.outcome === "failed" ? `: ${outcome.message}` : ""}`,
-				);
-				if (outcome.outcome === "previewed") {
-					for (const label of outcome.stored) {
-						yield* Console.log(
-							`  stored  ${label}${outcome.rebuilt.includes(label) ? "" : "  (not in rebuilt)"}`,
-						);
-					}
-					for (const label of outcome.rebuilt) {
-						yield* Console.log(
-							`  rebuilt ${label}${outcome.stored.includes(label) ? "" : "  (new)"}`,
-						);
-					}
-				}
-			}
-			if (!confirm) {
-				yield* Console.log(
-					"[summaries:regenerate] preview. Re-run with --confirm to replace the stored summaries.",
+					`${outcome.date}  ${outcome.outcome}${outcome.message ? `: ${outcome.message}` : ""}`,
 				);
 			}
-			// Anything short of a rebuilt summary fails the command, so a run that
-			// skipped a date cannot pass for one that rebuilt them all.
-			const notRebuilt = outcomes.filter(
-				(outcome) =>
-					outcome.outcome !== (confirm ? "regenerated" : "previewed"),
+			const failed = outcomes.filter((o) => o.outcome === "failed").length;
+			const skipped = outcomes.filter((o) => o.outcome === "skipped").length;
+			yield* Console.log(
+				`[summaries:regenerate] done: meetings=${outcomes.length} failed=${failed} skipped=${skipped}`,
 			);
-			if (notRebuilt.length > 0) {
-				return yield* Effect.fail(
-					new Error(
-						`${notRebuilt.length} of ${outcomes.length} summaries were not rebuilt.`,
-					),
-				);
+			// A run that left a summary as it was, or found no meeting, must not show as passed.
+			const incomplete = incompleteRegeneration(outcomes);
+			if (incomplete) {
+				return yield* Effect.fail(new Error(incomplete));
 			}
 		}),
 );
@@ -521,8 +504,8 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		listBodiesCommand,
 		dramaDetectCommand,
 		heldListCommand,
-		documentDetachCommand,
 		summariesRegenerateCommand,
+		documentDetachCommand,
 	]),
 );
 

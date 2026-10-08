@@ -8,16 +8,6 @@ import {
 	readableSources,
 } from "#/pipeline/sources.ts";
 
-/** One fiscal decision as a line: its title and the amount as written. */
-function decisionLabel(decision: {
-	title: string;
-	originalAmount?: string | null;
-}): string {
-	return decision.originalAmount
-		? `${decision.title} (${decision.originalAmount})`
-		: decision.title;
-}
-
 /**
  * Rebuilds a meeting's summary from every source it holds, and replaces the
  * stored one. Regenerates only when the fingerprint of the meeting's current
@@ -32,21 +22,16 @@ function decisionLabel(decision: {
  * of the sources it held and the one kind it read (`stampSummarySources`),
  * which makes its fingerprint differ from the sources now held.
  *
- * `force` skips both checks, for rebuilding summaries after the summarizer
- * itself changed. A meeting with no readable source is still left alone.
- *
- * `preview` summarizes but stores nothing, and returns the decisions the
- * rebuilt summary holds as `rebuilt`.
+ * `force` regenerates a summary whose fingerprint is current, for when the
+ * summarizer changed and the sources did not. It does not reach a summary
+ * stored without a fingerprint.
  */
 function regenerateMeetingSummary(input: {
 	meetingId: number;
 	meetingContext: string;
-	/** Rebuild whatever the stored fingerprint says. */
 	force?: boolean;
-	/** Summarize, store nothing, and report the rebuilt decisions. */
-	preview?: boolean;
 }): Effect.Effect<
-	{ regenerated: boolean; rebuilt?: string[] },
+	{ regenerated: boolean },
 	DatabaseError | LlmError,
 	StorageService | SummarizationService
 > {
@@ -60,11 +45,9 @@ function regenerateMeetingSummary(input: {
 			documents: held.documents,
 			transcriptUrl: held.transcript?.sourceUrl,
 		});
-		if (!input.force) {
-			if (held.summary?.sourceFingerprint === "") return { regenerated: false };
-			if (held.summary?.sourceFingerprint === sourceFingerprint) {
-				return { regenerated: false };
-			}
+		if (held.summary?.sourceFingerprint === "") return { regenerated: false };
+		if (!input.force && held.summary?.sourceFingerprint === sourceFingerprint) {
+			return { regenerated: false };
 		}
 
 		const sources = readableSources(held);
@@ -74,13 +57,6 @@ function regenerateMeetingSummary(input: {
 			sources,
 			meetingContext: input.meetingContext,
 		});
-
-		if (input.preview) {
-			return {
-				regenerated: false,
-				rebuilt: summary.fiscalDecisions.map(decisionLabel),
-			};
-		}
 
 		yield* storage.replaceMeetingSummary({
 			meetingId: input.meetingId,
@@ -100,79 +76,83 @@ function regenerateMeetingSummary(input: {
 	});
 }
 
-/**
- * What happened to the summary of the meeting on one date. `previewed` wrote
- * nothing: it holds the decisions stored now and those a rebuild produced.
- */
-type RegenerationOutcome =
-	| {
-			date: string;
-			outcome: "regenerated" | "no-meeting" | "no-readable-source";
-	  }
-	| { date: string; outcome: "previewed"; stored: string[]; rebuilt: string[] }
-	| { date: string; outcome: "failed"; message: string };
+/** What became of one meeting in a `regenerateCombinedSummaries` run. */
+type RegenerationOutcome = {
+	meetingId: number;
+	date: string;
+	outcome: "regenerated" | "skipped" | "failed";
+	/** Why the summarizer failed, when it did. */
+	message?: string;
+};
 
 /**
- * Rebuilds, whatever its fingerprint, the summary of the body's meeting on
- * each date. Only a meeting stored without a session is found. A failed
- * summarize call is reported for its date and the rest still run.
- *
- * Stores nothing unless `confirm` is true. Otherwise each meeting that would
- * be rebuilt is summarized and reported as `previewed`.
+ * Summarizes again every meeting of a body whose summary was built from both
+ * documents and a transcript, whether or not its sources changed. For when
+ * the summarizer's handling of the two kinds together changed. A summarizer
+ * failure on one meeting leaves its summary in place and the run carries on.
  */
-function regenerateSummariesOnDates(input: {
+function regenerateCombinedSummaries(input: {
 	body: { slug: string; name: string };
-	dates: readonly string[];
-	confirm: boolean;
+	/** Only the meeting on this date. */
+	date?: string;
 }): Effect.Effect<
 	RegenerationOutcome[],
 	DatabaseError,
 	StorageService | SummarizationService
 > {
-	return Effect.forEach(input.dates, (date) =>
-		Effect.gen(function* () {
-			const storage = yield* StorageService;
-			const meeting = yield* storage.getMeetingSourceState({
-				bodySlug: input.body.slug,
-				date,
-				session: "",
-			});
-			if (meeting === null) {
-				return { date, outcome: "no-meeting" } satisfies RegenerationOutcome;
-			}
-			const stored = (yield* storage.getMatchableSummary(meeting.meetingId))
-				?.fiscalDecisions;
-			return yield* regenerateMeetingSummary({
+	return Effect.gen(function* () {
+		const storage = yield* StorageService;
+		const meetings = yield* storage.listCombinedSummaryMeetings({
+			bodySlug: input.body.slug,
+			date: input.date,
+		});
+
+		const outcomes: RegenerationOutcome[] = [];
+		for (const meeting of meetings) {
+			const outcome = yield* regenerateMeetingSummary({
 				meetingId: meeting.meetingId,
-				meetingContext: `${input.body.name}, ${date}`,
+				meetingContext: `${input.body.name}, ${meeting.date}`,
 				force: true,
-				preview: !input.confirm,
 			}).pipe(
-				Effect.map(({ regenerated, rebuilt }): RegenerationOutcome => {
-					if (rebuilt !== undefined) {
-						return {
-							date,
-							outcome: "previewed",
-							stored: (stored ?? []).map(decisionLabel),
-							rebuilt,
-						};
-					}
-					return {
-						date,
-						outcome: regenerated ? "regenerated" : "no-readable-source",
-					};
-				}),
+				Effect.map(({ regenerated }) => ({
+					outcome: regenerated
+						? ("regenerated" as const)
+						: ("skipped" as const),
+				})),
 				Effect.catchTag("LlmError", (error) =>
-					Effect.succeed<RegenerationOutcome>({
-						date,
-						outcome: "failed",
+					Effect.succeed({
+						outcome: "failed" as const,
 						message: error.message,
 					}),
 				),
 			);
-		}),
-	);
+			outcomes.push({ ...meeting, ...outcome });
+		}
+		return outcomes;
+	});
 }
 
-export { regenerateMeetingSummary, regenerateSummariesOnDates };
+/**
+ * Why a regeneration run cannot be called complete, or null when every
+ * meeting it found was rebuilt. A run that found no meeting, one that failed
+ * on a meeting, and one that skipped a meeting all leave a summary as it was,
+ * so none of them may show as passed.
+ */
+function incompleteRegeneration(
+	outcomes: readonly RegenerationOutcome[],
+): string | null {
+	if (outcomes.length === 0) {
+		return "No meeting with a combined summary matched, so nothing was rebuilt.";
+	}
+	const failed = outcomes.filter((o) => o.outcome === "failed").length;
+	const skipped = outcomes.filter((o) => o.outcome === "skipped").length;
+	if (failed === 0 && skipped === 0) return null;
+	return `${failed} meeting(s) failed and ${skipped} were skipped; each kept its previous summary.`;
+}
+
+export {
+	incompleteRegeneration,
+	regenerateCombinedSummaries,
+	regenerateMeetingSummary,
+};
 export type { RegenerationOutcome };
