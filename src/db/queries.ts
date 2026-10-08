@@ -1,4 +1,4 @@
-import { and, desc, eq, sql, sum } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { LibSQLDatabase } from "drizzle-orm/libsql";
 import * as schema from "#/db/schema.ts";
 import type { SourceDisagreement, SourceKind } from "#/pipeline/sources.ts";
@@ -190,15 +190,21 @@ export async function listRecentMeetingsQuery(
 			highlights: (summary?.highlights as string[] | undefined) ?? [],
 			prose: summary?.prose ?? "",
 			fiscalDecisionCount: fiscals.length,
-			totalSpending: fiscals.reduce(
-				(total: number, f: { amount: number }) => total + f.amount,
-				0,
-			),
+			totalSpending: fiscals
+				.filter((f) => f.status === "approved")
+				.reduce((total, f) => total + f.amount, 0),
 		});
 	}
 
 	return result;
 }
+
+/**
+ * The summed amount of the approved decisions in a group. A tabled or denied
+ * decision adds nothing, and stays in the group so the group's decision count
+ * still includes it.
+ */
+const approvedAmount = sql<number>`sum(case when ${schema.fiscalDecisions.status} = 'approved' then ${schema.fiscalDecisions.amount} else 0 end)`;
 
 /**
  * Aggregates fiscal decision totals by governing body.
@@ -210,7 +216,7 @@ export async function aggregateFiscalByBodyQuery(
 		.select({
 			bodyName: schema.governingBodies.name,
 			bodySlug: schema.governingBodies.slug,
-			totalAmount: sum(schema.fiscalDecisions.amount),
+			totalAmount: approvedAmount,
 			decisionCount: sql<number>`count(${schema.fiscalDecisions.id})`,
 		})
 		.from(schema.fiscalDecisions)
@@ -242,7 +248,7 @@ export async function aggregateFiscalByCategoryQuery(
 	const rows = await db
 		.select({
 			budgetCategory: schema.fiscalDecisions.budgetCategory,
-			totalAmount: sum(schema.fiscalDecisions.amount),
+			totalAmount: approvedAmount,
 			decisionCount: sql<number>`count(${schema.fiscalDecisions.id})`,
 		})
 		.from(schema.fiscalDecisions)
@@ -265,7 +271,7 @@ export async function aggregateFiscalByTimePeriodQuery(
 	const rows = await db
 		.select({
 			period: sql<string>`substr(${schema.meetings.date}, 1, 7)`,
-			totalAmount: sum(schema.fiscalDecisions.amount),
+			totalAmount: approvedAmount,
 			decisionCount: sql<number>`count(${schema.fiscalDecisions.id})`,
 		})
 		.from(schema.fiscalDecisions)
@@ -432,7 +438,7 @@ export async function listBodiesWithStatsQuery(
 	const fiscalAggs = await db
 		.select({
 			bodyId: schema.meetings.bodyId,
-			total: sum(schema.fiscalDecisions.amount),
+			total: approvedAmount,
 			count: sql<number>`count(${schema.fiscalDecisions.id})`,
 		})
 		.from(schema.fiscalDecisions)
@@ -486,7 +492,7 @@ export async function getBodyWithStatsBySlugQuery(
 
 	const fiscalAgg = await db
 		.select({
-			total: sum(schema.fiscalDecisions.amount),
+			total: approvedAmount,
 			count: sql<number>`count(${schema.fiscalDecisions.id})`,
 		})
 		.from(schema.fiscalDecisions)
@@ -525,7 +531,7 @@ export async function aggregateFiscalByCategoryForBodyQuery(
 	const rows = await db
 		.select({
 			budgetCategory: schema.fiscalDecisions.budgetCategory,
-			totalAmount: sum(schema.fiscalDecisions.amount),
+			totalAmount: approvedAmount,
 			decisionCount: sql<number>`count(${schema.fiscalDecisions.id})`,
 		})
 		.from(schema.fiscalDecisions)
@@ -535,7 +541,7 @@ export async function aggregateFiscalByCategoryForBodyQuery(
 		)
 		.where(eq(schema.meetings.bodyId, body.id))
 		.groupBy(schema.fiscalDecisions.budgetCategory)
-		.orderBy(desc(sum(schema.fiscalDecisions.amount)))
+		.orderBy(desc(approvedAmount))
 		.all();
 
 	return rows.map((r) => ({
