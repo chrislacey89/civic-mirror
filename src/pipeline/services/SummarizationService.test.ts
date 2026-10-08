@@ -614,13 +614,14 @@ describe("SummarizationService", () => {
 
 		function output(
 			fiscalDecisions: SummarizationOutput["fiscalDecisions"],
+			sourceDisagreements: SummarizationOutput["sourceDisagreements"] = [],
 		): SummarizationOutput {
 			return {
 				highlights: [],
 				prose: "Summary.",
 				fiscalDecisions,
 				budgetDiscussions: [],
-				sourceDisagreements: [],
+				sourceDisagreements,
 			};
 		}
 
@@ -629,6 +630,7 @@ describe("SummarizationService", () => {
 			answers: {
 				fromDocuments: SummarizationOutput["fiscalDecisions"];
 				fromEverySource: SummarizationOutput["fiscalDecisions"];
+				disagreements?: SummarizationOutput["sourceDisagreements"];
 			},
 		) {
 			const calls: SummarizationInput[] = [];
@@ -649,6 +651,9 @@ describe("SummarizationService", () => {
 									input.sources.some((source) => source.kind === "transcript")
 										? answers.fromEverySource
 										: answers.fromDocuments,
+									input.sources.some((source) => source.kind === "transcript")
+										? answers.disagreements
+										: [],
 								);
 							},
 						}),
@@ -682,6 +687,64 @@ describe("SummarizationService", () => {
 			]);
 			expect(calls[1].recordedDecisions).toEqual([]);
 			expect(calls[1].unreadFigures).toEqual([REBUILT]);
+		});
+
+		it("returns one disagreement for an unread figure when the model reports its own under another topic", async () => {
+			const { result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
+				fromDocuments: [REBUILT],
+				fromEverySource: [
+					{ ...PAVING, amount: 244215.1, originalAmount: "$244,215.10" },
+				],
+				disagreements: [
+					{
+						topic: "E & B Paving bid amount for Community Crossing Grant",
+						documentsSay: "fpaa-215.10",
+						transcriptSays: "$244,21510",
+						kind: "amount",
+					},
+				],
+			});
+
+			const summary = await result;
+
+			expect(summary.sourceDisagreements).toEqual([
+				{
+					topic: PAVING.title,
+					documentsSay:
+						"No readable figure. The summary uses the video's figure.",
+					transcriptSays: "$244,215.10",
+				},
+			]);
+		});
+
+		it("keeps a reported disagreement about a different matter beside the one for an unread figure", async () => {
+			const vote = {
+				topic: "Vote on the paving bid",
+				documentsSay: "5-0",
+				transcriptSays: "4-1",
+				kind: "vote" as const,
+			};
+			const otherAmount = {
+				topic: "Milestone Paving bid",
+				documentsSay: "$277,571.80",
+				transcriptSays: "$277,000",
+				kind: "amount" as const,
+			};
+			const { result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
+				fromDocuments: [REBUILT],
+				fromEverySource: [
+					{ ...PAVING, amount: 244215.1, originalAmount: "$244,215.10" },
+				],
+				disagreements: [vote, otherAmount],
+			});
+
+			const summary = await result;
+
+			expect(summary.sourceDisagreements.map((d) => d.topic)).toEqual([
+				vote.topic,
+				otherAmount.topic,
+				PAVING.title,
+			]);
 		});
 
 		it("stores no amount when the transcript's figure for that decision is not in the transcript either", async () => {

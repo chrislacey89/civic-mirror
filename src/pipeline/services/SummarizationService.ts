@@ -401,13 +401,26 @@ function SummarizationServiceLive(
 						verificationText(input.sources),
 					);
 					// A disagreement needs two kinds of source to disagree; one
-					// reported from a single kind is the model inventing the other.
+					// reported from a single kind is the model inventing the other. The
+					// unread figures are already recorded above, so a reported
+					// disagreement whose transcript side quotes the same dollars and
+					// cents as one of them is dropped, whatever its topic says.
 					return {
 						...raw,
 						fiscalDecisions: verified,
 						sourceDisagreements: bothKinds
 							? [
-									...keptDisagreements(raw.sourceDisagreements),
+									...keptDisagreements(
+										raw.sourceDisagreements.filter(
+											(reported) =>
+												!unreadableFigures.some((figure) =>
+													figureIsIn(
+														figure.transcriptSays,
+														reported.transcriptSays,
+													),
+												),
+										),
+									),
 									...unreadableFigures,
 								]
 							: [],
