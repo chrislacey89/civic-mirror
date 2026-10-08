@@ -294,16 +294,38 @@ function isSameMotion(
 const UNREADABLE_FIGURE =
 	"No readable figure. The summary uses the video's figure.";
 
-/** The words of a topic that are long enough to name something. */
+/** Words that open or fill many titles and so say nothing about which item it is. */
+const GENERIC_TITLE_WORDS: ReadonlySet<string> = new Set([
+	"approval",
+	"approve",
+	"resolution",
+	"ordinance",
+	"authorizing",
+	"authorize",
+	"contract",
+	"agreement",
+	"amount",
+]);
+
+/**
+ * The words of a topic that name something: four or more letters or digits,
+ * not a bare number (a year or an ordinance number recurs across items) and
+ * not one of the generic title words.
+ */
 function topicWords(topic: string): Set<string> {
-	return new Set(normalizedText(topic).match(/[a-z0-9]{4,}/g) ?? []);
+	return new Set(
+		(normalizedText(topic).match(/[a-z0-9]{4,}/g) ?? []).filter(
+			(word) => !/^\d+$/.test(word) && !GENERIC_TITLE_WORDS.has(word),
+		),
+	);
 }
 
 /**
  * Whether a reported disagreement is a second entry for an unread figure
- * already recorded: an amount whose topic shares at least two words with the
- * recorded entry's topic, the decision's title, and whose transcript side
- * quotes the same dollars and cents. Other kinds are never dropped, and each
+ * already recorded: an amount whose transcript side quotes the same dollars and
+ * cents and whose topic shares at least two naming words with the recorded
+ * entry's topic, the decision's title. Generic title words and bare numbers do
+ * not count as naming words, so two unrelated items titled alike are kept. Other kinds are never dropped, and each
  * drop is logged like those of `keptDisagreements`.
  */
 function repeatsUnreadFigure(

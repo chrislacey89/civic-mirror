@@ -907,6 +907,66 @@ describe("SummarizationService", () => {
 				}
 			});
 
+			// Generic title words and bare numbers do not count toward the two
+			// shared words, so these titles are compared on their other words.
+			async function topicsKeptFor(title: string, reportedTopic: string) {
+				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+				try {
+					const { result } = summarizeBoth(
+						[
+							{
+								kind: "documents",
+								text: "Bid from E & B Paving for fpaa-5x00.",
+							},
+							{ kind: "transcript", text: "the bid is $5,000 and 5-0" },
+						],
+						{
+							fromDocuments: [{ ...UNREAD, title }],
+							fromEverySource: [{ ...FIVE_THOUSAND, title }],
+							disagreements: [
+								{
+									topic: reportedTopic,
+									documentsSay: "$4,000",
+									transcriptSays: "$5,000",
+									kind: "amount",
+								},
+							],
+						},
+					);
+					return (await result).sourceDisagreements.map((d) => d.topic);
+				} finally {
+					warn.mockRestore();
+				}
+			}
+
+			it("keeps an amount for another item whose topic shares only generic title words with the title", async () => {
+				const title =
+					"Approval of resolution authorizing contract for street paving";
+				const other =
+					"Approval of resolution authorizing contract for police vehicles";
+				expect(await topicsKeptFor(title, other)).toEqual([other, title]);
+			});
+
+			it("keeps an amount whose topic shares only one naming word with the title besides generic ones", async () => {
+				const title =
+					"Approval of resolution authorizing contract for street paving";
+				const other = "Resolution authorizing contract for paving crew";
+				expect(await topicsKeptFor(title, other)).toEqual([other, title]);
+			});
+
+			it("keeps an amount whose topic shares only a number and one word with the title", async () => {
+				const title = "Ordinance 2025-12 authorizing transfer";
+				const other = "Ordinance 2025-12 transfer";
+				expect(await topicsKeptFor(title, other)).toEqual([other, title]);
+			});
+
+			it("drops an amount whose topic shares two naming words with the title among generic ones", async () => {
+				const title =
+					"Approval of resolution authorizing contract for street paving";
+				const other = "Resolution for the street paving contract amount";
+				expect(await topicsKeptFor(title, other)).toEqual([title]);
+			});
+
 			it("keeps an amount about the motion whose transcript side has no figure", async () => {
 				const { warn, result } = run({
 					topic: "E & B Paving bid award amount",
