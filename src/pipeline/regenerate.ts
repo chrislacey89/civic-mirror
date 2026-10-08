@@ -21,10 +21,15 @@ import {
  * source to such a meeting must first stamp the summary with the fingerprint
  * of the sources it held and the one kind it read (`stampSummarySources`),
  * which makes its fingerprint differ from the sources now held.
+ *
+ * `force` skips both checks, for rebuilding summaries after the summarizer
+ * itself changed. A meeting with no readable source is still left alone.
  */
 function regenerateMeetingSummary(input: {
 	meetingId: number;
 	meetingContext: string;
+	/** Rebuild whatever the stored fingerprint says. */
+	force?: boolean;
 }): Effect.Effect<
 	{ regenerated: boolean },
 	DatabaseError | LlmError,
@@ -40,9 +45,11 @@ function regenerateMeetingSummary(input: {
 			documents: held.documents,
 			transcriptUrl: held.transcript?.sourceUrl,
 		});
-		if (held.summary?.sourceFingerprint === "") return { regenerated: false };
-		if (held.summary?.sourceFingerprint === sourceFingerprint) {
-			return { regenerated: false };
+		if (!input.force) {
+			if (held.summary?.sourceFingerprint === "") return { regenerated: false };
+			if (held.summary?.sourceFingerprint === sourceFingerprint) {
+				return { regenerated: false };
+			}
 		}
 
 		const sources = readableSources(held);
@@ -71,4 +78,60 @@ function regenerateMeetingSummary(input: {
 	});
 }
 
-export { regenerateMeetingSummary };
+/** What happened to the summary of the meeting on one date. */
+type RegenerationOutcome =
+	| {
+			date: string;
+			outcome: "regenerated" | "no-meeting" | "no-readable-source";
+	  }
+	| { date: string; outcome: "failed"; message: string };
+
+/**
+ * Rebuilds, whatever its fingerprint, the summary of the body's meeting on
+ * each date. Only a meeting stored without a session is found. A failed
+ * summarize call is reported for its date and the rest still run.
+ */
+function regenerateSummariesOnDates(input: {
+	body: { slug: string; name: string };
+	dates: readonly string[];
+}): Effect.Effect<
+	RegenerationOutcome[],
+	DatabaseError,
+	StorageService | SummarizationService
+> {
+	return Effect.forEach(input.dates, (date) =>
+		Effect.gen(function* () {
+			const storage = yield* StorageService;
+			const meeting = yield* storage.getMeetingSourceState({
+				bodySlug: input.body.slug,
+				date,
+				session: "",
+			});
+			if (meeting === null) {
+				return { date, outcome: "no-meeting" } satisfies RegenerationOutcome;
+			}
+			return yield* regenerateMeetingSummary({
+				meetingId: meeting.meetingId,
+				meetingContext: `${input.body.name}, ${date}`,
+				force: true,
+			}).pipe(
+				Effect.map(
+					({ regenerated }): RegenerationOutcome => ({
+						date,
+						outcome: regenerated ? "regenerated" : "no-readable-source",
+					}),
+				),
+				Effect.catchTag("LlmError", (error) =>
+					Effect.succeed<RegenerationOutcome>({
+						date,
+						outcome: "failed",
+						message: error.message,
+					}),
+				),
+			);
+		}),
+	);
+}
+
+export { regenerateMeetingSummary, regenerateSummariesOnDates };
+export type { RegenerationOutcome };

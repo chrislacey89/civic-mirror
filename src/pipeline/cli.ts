@@ -19,6 +19,7 @@ import {
 	runDramaDetectForVideo,
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
+import { regenerateSummariesOnDates } from "#/pipeline/regenerate.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 
 /**
@@ -272,6 +273,84 @@ const heldListCommand = Command.make(
 );
 
 // ---------------------------------------------------------------------------
+// `summaries:regenerate` subcommand — rebuilds the stored summary of a body's
+// meetings on the given dates from the sources they already hold. `run`
+// leaves a summary alone while its sources are unchanged, so this is how
+// summaries are rebuilt after the summarizer itself changes.
+// ---------------------------------------------------------------------------
+
+const regenerateBodySlug = Flag.String("body").pipe(
+	Flag.withDescription("Slug of the body whose meetings to rebuild."),
+);
+
+const regenerateDates = Flag.String("dates").pipe(
+	Flag.withDescription(
+		"Comma-separated meeting dates (YYYY-MM-DD) whose summaries to rebuild.",
+	),
+);
+
+const summariesRegenerateCommand = Command.make(
+	"summaries:regenerate",
+	{ bodySlug: regenerateBodySlug, dates: regenerateDates },
+	({ bodySlug, dates }) =>
+		Effect.gen(function* () {
+			const body = DEFAULT_BODIES.find((b) => b.slug === bodySlug);
+			if (body === undefined) {
+				return yield* Effect.fail(
+					new Error(
+						`No body matched --body ${bodySlug}. Known slugs: ${DEFAULT_BODIES.map((b) => b.slug).join(", ")}`,
+					),
+				);
+			}
+			const dateList = dates
+				.split(",")
+				.map((date) => date.trim())
+				.filter((date) => date !== "");
+			const malformed = dateList.filter(
+				(date) => !/^\d{4}-\d{2}-\d{2}$/.test(date),
+			);
+			if (dateList.length === 0 || malformed.length > 0) {
+				return yield* Effect.fail(
+					new Error(
+						`--dates takes a comma-separated list of YYYY-MM-DD dates.${malformed.length > 0 ? ` Not a date: ${malformed.join(", ")}.` : ""}`,
+					),
+				);
+			}
+
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			const outcomes = yield* regenerateSummariesOnDates({
+				body,
+				dates: dateList,
+			}).pipe(Effect.provide(layers));
+
+			for (const outcome of outcomes) {
+				yield* Console.log(
+					`${outcome.date} ${outcome.outcome}${outcome.outcome === "failed" ? `: ${outcome.message}` : ""}`,
+				);
+			}
+			// Anything short of a rebuilt summary fails the command, so a run that
+			// skipped a date cannot pass for one that rebuilt them all.
+			const notRebuilt = outcomes.filter(
+				(outcome) => outcome.outcome !== "regenerated",
+			);
+			if (notRebuilt.length > 0) {
+				return yield* Effect.fail(
+					new Error(
+						`${notRebuilt.length} of ${outcomes.length} summaries were not rebuilt.`,
+					),
+				);
+			}
+		}),
+);
+
+// ---------------------------------------------------------------------------
 // Command root and entrypoint
 // ---------------------------------------------------------------------------
 
@@ -285,6 +364,7 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		listBodiesCommand,
 		dramaDetectCommand,
 		heldListCommand,
+		summariesRegenerateCommand,
 	]),
 );
 

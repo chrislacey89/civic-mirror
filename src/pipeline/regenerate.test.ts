@@ -3,7 +3,10 @@ import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import { LlmError } from "#/pipeline/errors.ts";
-import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
+import {
+	regenerateMeetingSummary,
+	regenerateSummariesOnDates,
+} from "#/pipeline/regenerate.ts";
 import {
 	type MeetingInput,
 	StorageService,
@@ -205,6 +208,24 @@ describe("regenerateMeetingSummary", () => {
 		expect(await rows()).toEqual(afterFirst);
 	});
 
+	it("rebuilds a summary whose fingerprint equals the sources' when forced", async () => {
+		const { calls, layers, meeting, regenerate } = await setup({
+			documents: [AGENDA, MINUTES],
+		});
+		await regenerate();
+
+		const forced = await Effect.runPromise(
+			regenerateMeetingSummary({
+				meetingId: meeting.id,
+				meetingContext: "Town Council, 2025-05-27",
+				force: true,
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(forced).toEqual({ regenerated: true });
+		expect(calls).toHaveLength(2);
+	});
+
 	it("keeps an unreadable document out of the summarizer's sources but counts its URL in the fingerprint", async () => {
 		const scanUrl = "https://example.com/doc/scan";
 		const { calls, regenerate, rows } = await setup({
@@ -332,5 +353,49 @@ describe("regenerateMeetingSummary", () => {
 
 		expect(stamped).toEqual({ regenerated: true });
 		expect(calls).toHaveLength(1);
+	});
+});
+
+describe("regenerateSummariesOnDates", () => {
+	const BODY = { slug: "town-council", name: "Town Council" };
+
+	it("rebuilds the current summary of the meeting on each date and names a date with no meeting", async () => {
+		const { calls, layers, regenerate } = await setup({
+			documents: [AGENDA, MINUTES],
+		});
+		await regenerate();
+
+		const outcomes = await Effect.runPromise(
+			regenerateSummariesOnDates({
+				body: BODY,
+				dates: ["2025-05-27", "2025-06-09"],
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(outcomes).toEqual([
+			{ date: "2025-05-27", outcome: "regenerated" },
+			{ date: "2025-06-09", outcome: "no-meeting" },
+		]);
+		expect(calls).toHaveLength(2);
+		expect(calls[1].meetingContext).toBe("Town Council, 2025-05-27");
+	});
+
+	it("reports a date whose summarize call fails and goes on to the next", async () => {
+		const { layers } = await setup({
+			documents: [MINUTES],
+			summarizeError: new Error("quota exceeded"),
+		});
+
+		const outcomes = await Effect.runPromise(
+			regenerateSummariesOnDates({
+				body: BODY,
+				dates: ["2025-05-27", "2025-06-09"],
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(outcomes).toEqual([
+			{ date: "2025-05-27", outcome: "failed", message: "quota exceeded" },
+			{ date: "2025-06-09", outcome: "no-meeting" },
+		]);
 	});
 });
