@@ -218,6 +218,113 @@ describe("listRecentMeetingsQuery", () => {
 	});
 });
 
+describe("totals count approved decisions only", () => {
+	/** One meeting with an approved, a tabled and a denied decision. */
+	async function seedMixedStatuses() {
+		const db = await createTestDb();
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2026-03-23", {
+			fiscalDecisions: [
+				{
+					title: "Roads",
+					amount: 50000,
+					originalAmount: "$50,000",
+					budgetCategory: "infrastructure",
+				},
+				{
+					title: "Roof bids",
+					amount: 209563.79,
+					originalAmount: "$209,563.79",
+					status: "tabled",
+					budgetCategory: "facilities",
+				},
+				{
+					title: "Signs",
+					amount: 1200,
+					originalAmount: "$1,200",
+					status: "denied",
+					budgetCategory: "infrastructure",
+				},
+			],
+		});
+		return db;
+	}
+
+	it("a meeting's total in the recent meetings list", async () => {
+		const db = await seedMixedStatuses();
+
+		const [meeting] = await listRecentMeetingsQuery(db);
+
+		expect(meeting.totalSpending).toBe(50000);
+		expect(meeting.fiscalDecisionCount).toBe(3);
+	});
+
+	it("the total by governing body", async () => {
+		const db = await seedMixedStatuses();
+
+		const [row] = await aggregateFiscalByBodyQuery(db);
+
+		expect(row.totalAmount).toBe(50000);
+		expect(row.decisionCount).toBe(3);
+	});
+
+	it("the total by category, keeping a category whose decisions were all tabled", async () => {
+		const db = await seedMixedStatuses();
+
+		const rows = await aggregateFiscalByCategoryQuery(db);
+
+		expect(
+			rows.find((r) => r.budgetCategory === "infrastructure")?.totalAmount,
+		).toBe(50000);
+		expect(
+			rows.find((r) => r.budgetCategory === "facilities")?.totalAmount,
+		).toBe(0);
+	});
+
+	it("the total by month", async () => {
+		const db = await seedMixedStatuses();
+
+		const [row] = await aggregateFiscalByTimePeriodQuery(db);
+
+		expect(row.totalAmount).toBe(50000);
+	});
+
+	it("each body's total in the bodies list", async () => {
+		const db = await seedMixedStatuses();
+
+		const [body] = await listBodiesWithStatsQuery(db);
+
+		expect(body.totalSpending).toBe(50000);
+		expect(body.decisionCount).toBe(3);
+	});
+
+	it("one body's total on its own page", async () => {
+		const db = await seedMixedStatuses();
+
+		const body = await getBodyWithStatsBySlugQuery(
+			db,
+			"ellettsville-town-council",
+		);
+
+		expect(body?.totalSpending).toBe(50000);
+		expect(body?.decisionCount).toBe(3);
+	});
+
+	it("one body's total by category, largest approved total first", async () => {
+		const db = await seedMixedStatuses();
+
+		const rows = await aggregateFiscalByCategoryForBodyQuery(
+			db,
+			"ellettsville-town-council",
+		);
+
+		expect(rows.map((r) => [r.budgetCategory, r.totalAmount])).toEqual([
+			["infrastructure", 50000],
+			["facilities", 0],
+		]);
+	});
+});
+
 describe("aggregateFiscalByBodyQuery", () => {
 	it("sums spending by governing body", async () => {
 		const db = await createTestDb();

@@ -203,10 +203,7 @@ function Dateline({ meeting }: { meeting: MeetingDetail }) {
 }
 
 function MeetingHero({ meeting }: { meeting: MeetingDetail }) {
-	const totalSpending = meeting.fiscalDecisions.reduce(
-		(sum, f) => sum + f.amount,
-		0,
-	);
+	const totalSpending = approvedTotal(meeting.fiscalDecisions);
 	const firstHighlight = meeting.summary?.highlights[0];
 	const decisionCount = meeting.fiscalDecisions.length;
 	const withAmount = meeting.fiscalDecisions.filter(statesAmount).length;
@@ -430,9 +427,7 @@ function FiscalReceiptsTable({
 	decisions: FiscalDecisionDetail[];
 	ocrFlagged: boolean;
 }) {
-	const total = decisions
-		.filter((d) => d.status === "approved")
-		.reduce((sum, d) => sum + d.amount, 0);
+	const total = approvedTotal(decisions);
 
 	return (
 		<div className="mt-4 border border-[var(--rule)] bg-[var(--paper)]">
@@ -604,6 +599,15 @@ function FiscalFigure({
 			)}
 		</span>
 	);
+}
+
+/** The sum of the approved decisions. A tabled or denied one adds nothing. */
+function approvedTotal(
+	decisions: readonly { amount: number; status: string }[],
+): number {
+	return decisions
+		.filter((decision) => decision.status === "approved")
+		.reduce((sum, decision) => sum + decision.amount, 0);
 }
 
 /**
