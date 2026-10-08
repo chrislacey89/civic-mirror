@@ -284,6 +284,7 @@ function buildStubLayers(config: StubConfig) {
 			),
 		hasTranscriptForVideo: (sourceUrl) =>
 			Effect.sync(() => (config.storedVideoUrls ?? []).includes(sourceUrl)),
+		getUnassessedTranscript: () => Effect.succeed(null),
 		holdVideo: (input) =>
 			Effect.sync(() => {
 				if (isHeld(input.videoId)) return { created: false };
@@ -2715,6 +2716,122 @@ describe("runPipeline video path", () => {
 			expect(second.drama).toBe(0);
 			expect(result).toEqual({ processed: 0, errors: 0 });
 			expect(await counts()).toEqual(afterFirst);
+		});
+
+		it("scores a stored video whose assessment failed on the next run, from the stored transcript, without transcribing or summarizing again", async () => {
+			const { db, counts } = await setup();
+
+			const first = emptyCallLog();
+			await Effect.runPromise(
+				run(
+					buildStubLayers({
+						log: first,
+						youtubeVideos: [REGULAR],
+						storage: StorageServiceLive(db),
+						dramaDetectionError: new Error("Gemini API down"),
+					}),
+				),
+			);
+			const afterFirst = await counts();
+			expect(afterFirst).toMatchObject({ transcripts: 1, drama: 0 });
+			expect(first.dramaSourceTexts).toHaveLength(1);
+
+			const second = emptyCallLog();
+			const result = await Effect.runPromise(
+				run(
+					buildStubLayers({
+						log: second,
+						youtubeVideos: [REGULAR],
+						storage: StorageServiceLive(db),
+					}),
+				),
+			);
+
+			expect(second.transcribe).toEqual([]);
+			expect(second.summarize).toEqual([]);
+			expect(second.dramaSourceTexts).toEqual(first.dramaSourceTexts);
+			expect(result).toEqual({ processed: 1, errors: 0 });
+			expect(await counts()).toEqual({ ...afterFirst, drama: 1 });
+			const [meeting] = await db.select().from(schema.meetings).all();
+			const [assessment] = await db
+				.select()
+				.from(schema.dramaAssessments)
+				.all();
+			expect(assessment.meetingId).toBe(meeting.id);
+		});
+
+		it("counts one error and alerts when scoring a stored video fails again, and scores it on the run after", async () => {
+			const { db, counts } = await setup();
+			const failing = (log: CallLog) =>
+				buildStubLayers({
+					log,
+					youtubeVideos: [REGULAR],
+					storage: StorageServiceLive(db),
+					dramaDetectionError: new Error("Gemini API down"),
+				});
+			await Effect.runPromise(run(failing(emptyCallLog())));
+
+			const second = emptyCallLog();
+			const result = await Effect.runPromise(run(failing(second)));
+
+			expect(result).toEqual({ processed: 0, errors: 1 });
+			expect(
+				second.alert.filter((a) => a.subject.includes("drama-detection")),
+			).toHaveLength(1);
+			expect(await counts()).toMatchObject({ transcripts: 1, drama: 0 });
+
+			await Effect.runPromise(
+				run(
+					buildStubLayers({
+						log: emptyCallLog(),
+						youtubeVideos: [REGULAR],
+						storage: StorageServiceLive(db),
+					}),
+				),
+			);
+			expect(await counts()).toMatchObject({ transcripts: 1, drama: 1 });
+		});
+
+		it("does not score a stored video on a dry run", async () => {
+			const { db, counts } = await setup();
+			await Effect.runPromise(
+				run(
+					buildStubLayers({
+						log: emptyCallLog(),
+						youtubeVideos: [REGULAR],
+						storage: StorageServiceLive(db),
+						dramaDetectionError: new Error("Gemini API down"),
+					}),
+				),
+			);
+
+			const dry = emptyCallLog();
+			const result = await Effect.runPromise(
+				runPipeline({
+					bodies: [TOWN_COUNCIL],
+					crawlDelayMs: 0,
+					youtubeDelayMs: 0,
+					networkRetry: { attempts: 0, baseDelayMs: 0 },
+					llmRetry: { attempts: 0, baseDelayMs: 0 },
+					extractPdfText: async () => ({
+						text: "unused",
+						method: "text-layer",
+					}),
+					dryRun: true,
+				}).pipe(
+					Effect.provide(
+						buildStubLayers({
+							log: dry,
+							youtubeVideos: [REGULAR],
+							storage: StorageServiceLive(db),
+						}),
+					),
+				),
+			);
+
+			expect(dry.drama).toBe(0);
+			expect(result).toEqual({ processed: 0, errors: 0 });
+			expect(await counts()).toMatchObject({ drama: 0 });
 		});
 
 		it("[QA-RELI] leaves held_videos unchanged and sends no second alert on a second run over a playlist with held videos", async () => {

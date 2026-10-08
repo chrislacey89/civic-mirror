@@ -1273,6 +1273,28 @@ function processPlaylistVideo(
 			session: reading.session,
 		});
 
+		// A stored transcript whose meeting has no assessment is what a failed
+		// assessment leaves. Only the scoring is owed, and it reads the stored
+		// transcript, so the outcomes below that settle a stored video still
+		// apply after it.
+		const unassessed = config.dryRun
+			? null
+			: yield* storage.getUnassessedTranscript(sourceUrl);
+		const settled: ItemResult = unassessed
+			? {
+					...(yield* assessOrAlert(
+						{
+							body,
+							video,
+							meetingId: unassessed.meetingId,
+							transcript: unassessed.transcript,
+						},
+						"item",
+					)),
+					requested: false,
+				}
+			: SETTLED_WITHOUT_REQUEST;
+
 		// This video's transcript was attached through a match and the summary
 		// was not rebuilt with it, which is what a failed regeneration leaves.
 		// The transcript is stored, so only the regeneration is owed.
@@ -1288,14 +1310,14 @@ function processPlaylistVideo(
 					config,
 				});
 			}
-			return SETTLED_WITHOUT_REQUEST;
+			return settled;
 		}
 
 		if (
 			(yield* storage.hasTranscriptForVideo(sourceUrl)) ||
 			(yield* storage.isVideoHeld(video.videoId))
 		) {
-			return SETTLED_WITHOUT_REQUEST;
+			return settled;
 		}
 
 		if (existing === null) {
@@ -1723,6 +1745,35 @@ function runDramaDetection(input: {
 			narrative: assessment.narrative,
 			categoryScores,
 		});
+	});
+}
+
+/**
+ * Scores a transcript and stores the assessment, and reports how it went as
+ * a result. A failure alerts the operator and is counted, never raised: the
+ * transcript is stored either way, and `processPlaylistVideo` scores it on
+ * the next run.
+ */
+function assessOrAlert(
+	input: Parameters<typeof runDramaDetection>[0],
+	scope: AlertScope,
+): Effect.Effect<
+	PipelineResult,
+	never,
+	DramaDetectionService | StorageService | AlertService
+> {
+	return Effect.gen(function* () {
+		yield* Effect.log("youtube.drama.start");
+		const result = yield* runDramaDetection(input).pipe(
+			Effect.as({ processed: 1, errors: 0 }),
+			Effect.catch((error) =>
+				alertDramaFailure(input.body, error, scope).pipe(
+					Effect.as({ processed: 0, errors: 1 }),
+				),
+			),
+		);
+		yield* Effect.log("youtube.drama.finish");
+		return result;
 	});
 }
 

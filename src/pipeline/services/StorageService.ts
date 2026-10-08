@@ -14,6 +14,10 @@ import { DatabaseError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
 import type { MatchableSummary } from "#/pipeline/services/MeetingMatchService.ts";
 import type {
+	TranscriptResult,
+	TranscriptSegment,
+} from "#/pipeline/services/TranscriptionService.ts";
+import type {
 	SourceDisagreement,
 	SourceKind,
 	UnfingerprintedSummarySources,
@@ -240,6 +244,18 @@ interface StorageServiceInterface {
 	hasTranscriptForVideo(
 		sourceUrl: string,
 	): Effect.Effect<boolean, DatabaseError>;
+	/**
+	 * The stored transcript that came from `sourceUrl` and the meeting holding
+	 * it, when that meeting has no drama assessment under any prompt version
+	 * or model. Null when no transcript came from `sourceUrl`, and when its
+	 * meeting has an assessment.
+	 */
+	getUnassessedTranscript(
+		sourceUrl: string,
+	): Effect.Effect<
+		{ meetingId: number; transcript: TranscriptResult } | null,
+		DatabaseError
+	>;
 	/** Insert-if-absent on videoId. created is false when the video was already held. */
 	holdVideo(
 		input: HeldVideoInput,
@@ -451,6 +467,15 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		getUnassessedTranscript: (sourceUrl) =>
+			Effect.tryPromise({
+				try: () => getUnassessedTranscriptQuery(db, sourceUrl),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "getUnassessedTranscript",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 		holdVideo: (input) =>
 			Effect.tryPromise({
 				try: async () => {
@@ -621,6 +646,41 @@ async function getMeetingSourceStateQuery(
 		.get();
 	if (!meeting) return null;
 	return sourceStateOfMeeting(db, meeting);
+}
+
+async function getUnassessedTranscriptQuery(
+	db: LibSQLDatabase<typeof schema>,
+	sourceUrl: string,
+): Promise<{ meetingId: number; transcript: TranscriptResult } | null> {
+	const row = await db
+		.select({
+			meetingId: schema.transcripts.meetingId,
+			source: schema.transcripts.source,
+			rawText: schema.transcripts.rawText,
+			segments: schema.transcripts.segments,
+		})
+		.from(schema.transcripts)
+		.where(eq(schema.transcripts.sourceUrl, sourceUrl))
+		.orderBy(schema.transcripts.id)
+		.limit(1)
+		.get();
+	if (!row) return null;
+	const assessment = await db
+		.select({ id: schema.dramaAssessments.id })
+		.from(schema.dramaAssessments)
+		.where(eq(schema.dramaAssessments.meetingId, row.meetingId))
+		.limit(1)
+		.get();
+	if (assessment) return null;
+	return {
+		meetingId: row.meetingId,
+		transcript: {
+			source: row.source as TranscriptResult["source"],
+			rawText: row.rawText,
+			// Stored as given to `storeTranscript`, which takes them optionally.
+			segments: (row.segments as TranscriptSegment[] | null) ?? [],
+		},
+	};
 }
 
 async function sourceStateOfMeeting(
