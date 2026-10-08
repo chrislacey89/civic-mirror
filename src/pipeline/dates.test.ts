@@ -3,6 +3,7 @@ import * as dates from "#/pipeline/dates.ts";
 import {
 	extractLongFormDate,
 	extractMeetingDateFromTitle,
+	extractOpeningDate,
 	readFinalsiteDate,
 } from "#/pipeline/dates.ts";
 
@@ -199,11 +200,38 @@ describe("readFinalsiteDate", () => {
  * call that hands it undated input, anything else by name. A new export fails
  * the first test until it is added to one of the two lists.
  */
+describe("extractOpeningDate", () => {
+	it("reads the date minutes state in their heading, past OCR noise", () => {
+		expect(
+			extractOpeningDate(
+				"July 28, 2025 _— ee The Ellettsville, Indiana Town Council met for a regular meeting on Monday, July 28, 2025",
+			),
+		).toBe("2025-07-28");
+	});
+
+	it("reads the first date when the opening names a second one", () => {
+		expect(
+			extractOpeningDate(
+				"August 25, 2025 The Council approved the minutes of July 28, 2025.",
+			),
+		).toBe("2025-08-25");
+	});
+
+	it("does not read a date that first appears deep in the document", () => {
+		const body = "The Council discussed paving at length. ".repeat(20);
+		expect(
+			extractOpeningDate(`${body}The next meeting is September 8, 2025.`),
+		).toBeNull();
+	});
+});
+
 describe("date readers never guess", () => {
 	const undatedCalls: Record<string, () => string | null> = {
 		extractLongFormDate: () => extractLongFormDate("Town Council 03-23-26"),
 		extractMeetingDateFromTitle: () =>
 			extractMeetingDateFromTitle("Town Council Annual Report"),
+		extractOpeningDate: () =>
+			extractOpeningDate("The Town Council met for a regular meeting."),
 		readFinalsiteDate: () => {
 			const reading = readFinalsiteDate("TBD", 2026);
 			return reading.kind === "dated" ? reading.date : null;

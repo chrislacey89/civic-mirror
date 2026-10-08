@@ -17,7 +17,7 @@ The weekly pipeline currently ingests four of them: the Ellettsville Town Counci
 ## How it works
 
 1. **Collect.** Agendas, minutes, and ordinances come from public portals (Ellettsville's eGov document center and the school district's Finalsite pages). Meeting videos come from YouTube.
-2. **Extract.** PDF text is extracted directly. Scanned PDFs go through OCR, and a document that can't be read at all is kept as "unreadable" instead of silently producing an empty summary. The one exception is a meeting that so far has only a video: an unreadable PDF for it is skipped and logged rather than kept, so the first readable PDF still gets the same-meeting check against the video.
+2. **Extract.** PDF text is extracted directly. Scanned PDFs go through OCR, and a document that can't be read at all is kept as "unreadable" instead of silently producing an empty summary. The one exception is a meeting that so far has only a video: an unreadable PDF for it is skipped and logged rather than kept, so the first readable PDF still gets the same-meeting check against the video. An eGov document whose opening states a different date than its listing title is not filed under either date: the operator is alerted and the listing is left for them.
 3. **Summarize.** Gemini turns each meeting into highlights, a prose summary, and structured fiscal decisions.
 4. **Publish.** Results land in a Turso (libSQL) database and are served by a TanStack Start app.
 
@@ -57,7 +57,10 @@ pnpm pipeline:run                             # full run
 pnpm pipeline run --body ellettsville-town-council   # one body only
 pnpm pipeline held:list                       # videos the pipeline holds, and why
 pnpm pipeline summaries:regenerate --body <slug> --dates <YYYY-MM-DD,...>  # rebuild stored summaries from the sources held
+pnpm pipeline document:detach --body <slug> --date <YYYY-MM-DD> --url <source-url>   # preview removing one document from a meeting
 ```
+
+`document:detach` is for a document the source filed under the wrong meeting. It writes nothing until `--confirm` is added, then deletes that one document and rebuilds the meeting's summary from the sources that remain.
 
 Ellettsville's eGov portal enforces a 300-second delay between PDF downloads. `--skip-crawl-delay` is for local testing only.
 
