@@ -102,6 +102,35 @@ describe("buildProductionLayers transcription", () => {
 		vi.unstubAllEnvs();
 	});
 
+	it("transcribes from the English caption track when a video carries translations", async () => {
+		vi.stubEnv("DATABASE_URL", "file::memory:");
+		// The library takes the first listed track unless a language is named,
+		// and CATS videos list their Arabic translation first.
+		fetchTranscript.mockImplementation(
+			async (_videoId: string, config?: { lang?: string }) =>
+				config?.lang === "en"
+					? [
+							{
+								text: "We call the meeting to order.",
+								offset: 700,
+								duration: 2860,
+							},
+						]
+					: [{ text: "نفتتح الاجتماع.", offset: 700, duration: 2860 }],
+		);
+
+		const layers = buildProductionLayers({ dryRun: true });
+		const result = await Effect.runPromise(
+			Effect.gen(function* () {
+				const transcription = yield* TranscriptionService;
+				return yield* transcription.transcribe("abc123");
+			}).pipe(Effect.provide(layers)),
+		);
+
+		expect(result.rawText).toBe("We call the meeting to order.");
+		vi.unstubAllEnvs();
+	});
+
 	describe("when the library reports captions disabled", () => {
 		const videoId = "abc123DEF45";
 		const watchPage = (playerResponse: unknown) =>

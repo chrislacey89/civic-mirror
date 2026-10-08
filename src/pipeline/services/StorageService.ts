@@ -290,6 +290,16 @@ interface StorageServiceInterface {
 		meetingId: number,
 	): Effect.Effect<{ sourceUrl: string | null } | null, DatabaseError>;
 	/**
+	 * Delete the one document a meeting holds under this source URL. Returns
+	 * whether a row was deleted. The summary and everything derived from it are
+	 * not touched, so they still describe the document until the summary is
+	 * regenerated.
+	 */
+	detachDocument(input: {
+		meetingId: number;
+		sourceUrl: string;
+	}): Effect.Effect<boolean, DatabaseError>;
+	/**
 	 * Record what a summary stored without a fingerprint was built from: the
 	 * fingerprint of those sources and the one kind it read, in one update. A
 	 * summary that already has a fingerprint, and a meeting with no summary,
@@ -620,6 +630,26 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				catch: (error) =>
 					new DatabaseError({
 						operation: "detachTranscript",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		detachDocument: (input) =>
+			Effect.tryPromise({
+				try: async () => {
+					const deleted = await db
+						.delete(schema.documents)
+						.where(
+							and(
+								eq(schema.documents.meetingId, input.meetingId),
+								eq(schema.documents.sourceUrl, input.sourceUrl),
+							),
+						)
+						.returning({ id: schema.documents.id });
+					return deleted.length > 0;
+				},
+				catch: (error) =>
+					new DatabaseError({
+						operation: "detachDocument",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),

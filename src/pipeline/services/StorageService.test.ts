@@ -1863,6 +1863,54 @@ describe("StorageService", () => {
 		});
 	});
 
+	describe("detachDocument", () => {
+		const SHARED_URL = testMeetingInput.documents[0].sourceUrl;
+
+		it("deletes the document from the named meeting and leaves the same URL on another meeting", async () => {
+			const db = await createTestDb();
+			const { meeting, other } = await run(db, (storage) =>
+				Effect.gen(function* () {
+					const meeting = yield* storage.storeMeeting(testMeetingInput);
+					const other = yield* storage.storeMeeting({
+						...testMeetingInput,
+						date: "2026-04-13",
+					});
+					return { meeting, other };
+				}),
+			);
+
+			const deleted = await run(db, (storage) =>
+				storage.detachDocument({
+					meetingId: meeting.id,
+					sourceUrl: SHARED_URL,
+				}),
+			);
+
+			expect(deleted).toBe(true);
+			const documents = await db.select().from(schema.documents).all();
+			expect(
+				documents.map((d) => ({ meetingId: d.meetingId, url: d.sourceUrl })),
+			).toEqual([{ meetingId: other.id, url: SHARED_URL }]);
+		});
+
+		it("returns false and deletes nothing for a URL the meeting does not hold", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (storage) =>
+				storage.storeMeeting(testMeetingInput),
+			);
+
+			const deleted = await run(db, (storage) =>
+				storage.detachDocument({
+					meetingId: meeting.id,
+					sourceUrl: "https://ellettsville.in.us/egov/docs/other.pdf",
+				}),
+			);
+
+			expect(deleted).toBe(false);
+			expect(await db.select().from(schema.documents).all()).toHaveLength(1);
+		});
+	});
+
 	describe("held videos", () => {
 		const held = {
 			bodySlug: "ellettsville-town-council",

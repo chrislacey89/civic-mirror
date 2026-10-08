@@ -84,6 +84,21 @@ export function extractLongFormDate(text: string): string | null {
 }
 
 /**
+ * How far into a document its own date is looked for. Minutes and agendas
+ * state the meeting date in their heading; further in, the dates are other
+ * meetings' (the minutes being approved, the next meeting).
+ */
+const OPENING_LENGTH = 400;
+
+/**
+ * The date a document states in its opening, or null when the opening has
+ * none the reader can turn into a day that exists.
+ */
+export function extractOpeningDate(text: string): string | null {
+	return extractLongFormDate(text.slice(0, OPENING_LENGTH));
+}
+
+/**
  * A run directly after "Resolution" or "Ordinance" (optionally "No." or "#")
  * is that document's number, which can be date-shaped ("Resolution 01-02-26").
  * It is passed over rather than read as the meeting date.
