@@ -236,6 +236,14 @@ function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * The meetings are held in English. A video can also carry translated caption
+ * tracks, and youtube-transcript takes the first one listed unless a language
+ * is named. A video with no English track fails with the library's own
+ * message, which lists the languages it does have.
+ */
+const CAPTION_LANGUAGE = "en";
+
 async function defaultFetchTranscript(
 	videoId: string,
 ): Promise<CaptionSegment[]> {
@@ -243,7 +251,9 @@ async function defaultFetchTranscript(
 		"youtube-transcript"
 	);
 	try {
-		return await YoutubeTranscript.fetchTranscript(videoId);
+		return await YoutubeTranscript.fetchTranscript(videoId, {
+			lang: CAPTION_LANGUAGE,
+		});
 	} catch (error) {
 		if (error instanceof YoutubeTranscriptDisabledError) {
 			throw new CaptionTracksMissingError(videoId);
