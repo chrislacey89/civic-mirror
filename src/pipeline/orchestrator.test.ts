@@ -569,6 +569,65 @@ describe("runPipeline", () => {
 		expect(result).toEqual({ processed: 1, errors: 1 });
 	});
 
+	it("holds an eGov listing whose document opens with a different date than its title and alerts instead of filing it under the title's date", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 1582,
+					title: "Town Council Meeting Minutes August 25, 2025",
+					date: "09/30/2025",
+					downloadUrl: "https://example.com/doc/1582",
+					meetingDate: "2025-08-25",
+					documentType: "minutes",
+				},
+				{
+					id: 1619,
+					title: "Town Council Meeting Minutes August 25, 2025",
+					date: "10/20/2025",
+					downloadUrl: "https://example.com/doc/1619",
+					meetingDate: "2025-08-25",
+					documentType: "minutes",
+				},
+			],
+		});
+		const texts = [
+			"July 28, 2025 _— ee The Ellettsville, Indiana Town Council met for a regular meeting on Monday, July 28, 2025. The Council awarded the bridge bid.",
+			"August 25, 2025 -_ The Ellettsville, Indiana Town Council met for a regular meeting on Monday, August 25, 2025. The minutes of July 28, 2025 were approved.",
+		];
+
+		const program = runPipeline({
+			bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: texts[log.egovDownload.length - 1],
+				method: "text-layer",
+			}),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// The misdated document is downloaded, which is how its date is read,
+		// but never summarized or stored. The one behind it still goes through.
+		expect(log.egovDownload).toEqual([
+			"https://example.com/doc/1582",
+			"https://example.com/doc/1619",
+		]);
+		expect(log.summarize.map((s) => s.sources[0].text)).toEqual([texts[1]]);
+		expect(log.store.map((s) => s.date)).toEqual(["2025-08-25"]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain(
+			"Town Council Meeting Minutes August 25, 2025",
+		);
+		expect(log.alert[0].body).toContain("2025-07-28");
+		expect(result).toEqual({ processed: 1, errors: 1 });
+	});
+
 	it("spends the crawl delay only on the eGov listing it downloaded, not on one held for its date", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({

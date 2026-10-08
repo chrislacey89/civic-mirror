@@ -3,7 +3,11 @@ import {
 	DRAMA_CATEGORIES,
 	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
-import { extractLongFormDate, readFinalsiteDate } from "#/pipeline/dates.ts";
+import {
+	extractLongFormDate,
+	extractOpeningDate,
+	readFinalsiteDate,
+} from "#/pipeline/dates.ts";
 import {
 	type DatabaseError,
 	type LlmError,
@@ -796,6 +800,20 @@ function processEgovListing(
 		yield* Effect.log("egov.extract.finish").pipe(
 			Effect.annotateLogs({ method: extraction.method }),
 		);
+
+		// The title is the portal's label for the upload, and the upload can be
+		// another meeting's document. A document that states a different date
+		// than its title is held for the operator, since either could be wrong.
+		const openingDate = extractOpeningDate(extraction.text);
+		if (openingDate !== null && openingDate !== meetingDate) {
+			return yield* Effect.fail(
+				new MisdatedListingError({
+					title: listing.title,
+					titleDate: meetingDate,
+					openingDate,
+				}),
+			);
+		}
 
 		// A meeting that already has documents takes this one as a further
 		// source of the same summary. One that has only a transcript is
@@ -1778,6 +1796,19 @@ class UndatedListingError {
 	}
 }
 
+/** A listing whose document opens with a different date than its title carries. */
+class MisdatedListingError {
+	readonly _tag = "MisdatedListingError";
+	readonly message: string;
+	constructor(input: {
+		title: string;
+		titleDate: string;
+		openingDate: string;
+	}) {
+		this.message = `"${input.title}" is titled for ${input.titleDate}, but its document opens with ${input.openingDate}. The listing was not ingested.`;
+	}
+}
+
 /** A listing whose type cell has no letters or digits to name its session. */
 class UnsessionedListingError {
 	readonly _tag = "UnsessionedListingError";
@@ -1796,6 +1827,7 @@ type TaggedPipelineError =
 	| DatabaseError
 	| PipelineExtractError
 	| UndatedListingError
+	| MisdatedListingError
 	| UnsessionedListingError;
 
 function listingFailureStage(error: TaggedPipelineError): string {
@@ -1807,6 +1839,8 @@ function listingFailureStage(error: TaggedPipelineError): string {
 		case "PipelineExtractError":
 			return "extract";
 		case "UndatedListingError":
+			return "date";
+		case "MisdatedListingError":
 			return "date";
 		case "UnsessionedListingError":
 			return "session";
