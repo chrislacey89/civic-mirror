@@ -41,6 +41,25 @@ describe("SummarizationService", () => {
 		});
 	});
 
+	describe("figureIsIn, as a written dollar amount", () => {
+		it.each([
+			["$215.10", "E & B Paving for fpaa-215.10 and Milestone", false],
+			["$277,571.80", "Milestone Paving for $277,571.80.", true],
+			["$258,400.00", "not to exceed $258.400.00.", true],
+			["$5,000", "a transfer of $ 5,000 from the fund", true],
+			["$5,000", "5,000 square feet at $2.00", false],
+			["$43,900.00", "in the amount of 43,900.00", false],
+			["not stated", "the amount is not stated", true],
+		])("%j in %j is %s", (amount, text, expected) => {
+			expect(figureIsIn(amount, text, { asDollarAmount: true })).toBe(expected);
+		});
+
+		it("still finds a figure with no dollar sign when one is not asked for", () => {
+			expect(figureIsIn("$215.10", "for fpaa-215.10 and")).toBe(true);
+			expect(figureIsIn("$196,486.51", "the bid was 196,48651")).toBe(true);
+		});
+	});
+
 	describe("verifyAmounts", () => {
 		it("keeps full confidence when amounts appear in source text", () => {
 			const decisions = [
@@ -80,6 +99,28 @@ describe("SummarizationService", () => {
 			const verified = verifyAmounts(decisions, SOURCE_TEXT);
 
 			expect(verified[0].confidence).toBeCloseTo(0.32, 5);
+		});
+	});
+
+	describe("verifyAmounts, against documents", () => {
+		it("lowers confidence for a figure the documents hold only as a bare number", () => {
+			const decision = {
+				title: "Paving bid",
+				description: "Low bid",
+				amount: 215.1,
+				originalAmount: "$215.10",
+				confidence: 0.9,
+			};
+
+			const [bare] = verifyAmounts([decision], "Paving for fpaa-215.10 and", {
+				asDollarAmount: true,
+			});
+			const [written] = verifyAmounts([decision], "Paving for $215.10 and", {
+				asDollarAmount: true,
+			});
+
+			expect(bare.confidence).toBeCloseTo(0.36, 5);
+			expect(written.confidence).toBe(0.9);
 		});
 	});
 
@@ -876,6 +917,22 @@ describe("SummarizationService", () => {
 					warn.mockRestore();
 				}
 			});
+		});
+
+		it("does not let the documents govern a fragment of a figure the scan destroyed", async () => {
+			const fragment = { ...PAVING, amount: 215.1, originalAmount: "$215.10" };
+			const { calls, result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
+				fromDocuments: [fragment],
+				fromEverySource: [
+					{ ...PAVING, amount: 244215.1, originalAmount: "$244,21510" },
+				],
+			});
+
+			const summary = await result;
+
+			expect(calls[1].unreadFigures).toEqual([fragment]);
+			expect(summary.fiscalDecisions.map((d) => d.amount)).toEqual([244215.1]);
+			expect(summary.sourceDisagreements).toHaveLength(1);
 		});
 
 		it("stores no amount when the transcript's figure for that decision is not in the transcript either", async () => {

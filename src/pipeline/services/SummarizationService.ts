@@ -49,9 +49,12 @@ type FiscalDecisionCandidate = {
 function verifyAmounts<T extends FiscalDecisionCandidate>(
 	decisions: T[],
 	sourceText: string,
+	options: FigureSearch = {},
 ): T[] {
 	return decisions.map((decision) => {
-		if (figureIsIn(decision.originalAmount, sourceText)) return decision;
+		if (figureIsIn(decision.originalAmount, sourceText, options)) {
+			return decision;
+		}
 		return { ...decision, confidence: decision.confidence * 0.4 };
 	});
 }
@@ -60,10 +63,11 @@ function verifyAmounts<T extends FiscalDecisionCandidate>(
  * A written dollar figure: whole dollars in groups of three digits, then
  * cents. The separator before the cents may be a period, a comma, or missing
  * after a comma group, as a caption writes "$244,21510". A number followed by
- * more digits ends where the cents or the group would stop.
+ * more digits ends where the cents or the group would stop. A dollar sign
+ * directly before the number, with at most one space between, is noted.
  */
 const FIGURE_PATTERN =
-	/(?<dollars>\d+(?:[.,]\d{3})*)(?:[.,](?<cents>\d{2})|(?<=,\d{3})(?<runOn>\d{2}))?(?!\d)/g;
+	/(?<dollarSign>\$ ?)?(?<dollars>\d+(?:[.,]\d{3})*)(?:[.,](?<cents>\d{2})|(?<=,\d{3})(?<runOn>\d{2}))?(?!\d)/g;
 
 /**
  * A written number as dollars and cents. Separators in the dollars are
@@ -71,12 +75,27 @@ const FIGURE_PATTERN =
  * missing cents part is ".00". The cents are kept apart from the dollars so a
  * stray or missing separator cannot change the magnitude.
  */
-function figuresIn(text: string): { dollars: string; cents: string }[] {
+function figuresIn(
+	text: string,
+): { dollars: string; cents: string; hasDollarSign: boolean }[] {
 	return [...text.matchAll(FIGURE_PATTERN)].map((match) => ({
 		dollars: (match.groups?.dollars ?? "").replace(/\D/g, ""),
 		cents: match.groups?.cents ?? match.groups?.runOn ?? "00",
+		hasDollarSign: match.groups?.dollarSign !== undefined,
 	}));
 }
+
+/** How strictly a figure must be written to count as found. */
+type FigureSearch = {
+	/**
+	 * Count only an occurrence written with a dollar sign. Documents write
+	 * their figures that way, so a bare number with the same digits is some
+	 * other number, or what is left of a figure the scan destroyed
+	 * ("fpaa-215.10"). Captions often drop the sign, so a transcript is
+	 * searched without this.
+	 */
+	asDollarAmount?: boolean;
+};
 
 /** Whether `originalAmount` names a dollar figure, as opposed to "not stated". */
 function statesFigure(originalAmount: string): boolean {
@@ -91,11 +110,18 @@ function statesFigure(originalAmount: string): boolean {
  * found in "$75,000". A figure broken by a space inside its digits is not
  * found. An amount that names no figure is found by its exact wording.
  */
-function figureIsIn(originalAmount: string, text: string): boolean {
+function figureIsIn(
+	originalAmount: string,
+	text: string,
+	options: FigureSearch = {},
+): boolean {
 	const wanted = figuresIn(originalAmount)[0];
 	if (wanted === undefined) return text.includes(originalAmount);
 	return figuresIn(text).some(
-		(found) => found.dollars === wanted.dollars && found.cents === wanted.cents,
+		(found) =>
+			found.dollars === wanted.dollars &&
+			found.cents === wanted.cents &&
+			(found.hasDollarSign || !options.asDollarAmount),
 	);
 }
 
@@ -382,7 +408,9 @@ function SummarizationServiceLive(
 					const unread = documentDecisions.filter(
 						(decision) =>
 							statesFigure(decision.originalAmount) &&
-							!figureIsIn(decision.originalAmount, documentsText),
+							!figureIsIn(decision.originalAmount, documentsText, {
+								asDollarAmount: true,
+							}),
 					);
 					const read = documentDecisions.filter(
 						(decision) => !unread.includes(decision),
@@ -433,6 +461,7 @@ function SummarizationServiceLive(
 					const verified = verifyAmounts(
 						[...governed, ...transcriptDecisions],
 						verificationText(input.sources),
+						{ asDollarAmount: hasSourceKind(input.sources, "documents") },
 					);
 					// A disagreement needs two kinds of source to disagree; one
 					// reported from a single kind is the model inventing the other. The
