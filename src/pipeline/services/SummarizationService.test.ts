@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	type SummarizationInput,
 	type SummarizationOutput,
@@ -303,6 +303,27 @@ describe("SummarizationService", () => {
 			);
 
 			expect(result.sourceDisagreements).toEqual([PAVING_DISAGREEMENT]);
+		});
+
+		it("logs each dropped name disagreement with its topic and both sides", async () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				await summarizeWith(
+					pavingOutput("$215,215.10", [
+						{ ...NAME_DISAGREEMENT, kind: "name" },
+						{ ...PAVING_DISAGREEMENT, kind: "amount" },
+					]),
+					[DOCUMENTS, TRANSCRIPT],
+				);
+
+				expect(warn).toHaveBeenCalledTimes(1);
+				const message = String(warn.mock.calls[0][0]);
+				expect(message).toContain("Town Marshal's name");
+				expect(message).toContain("Jimmie Durnil");
+				expect(message).toContain("Jimmy Gurnell");
+			} finally {
+				warn.mockRestore();
+			}
 		});
 
 		it("returns no disagreements for a single kind of source, whatever the model reports", async () => {

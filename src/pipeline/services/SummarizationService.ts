@@ -116,12 +116,26 @@ type ReportedDisagreement = z.infer<typeof sourceDisagreementSchema>;
 const droppedDisagreementKinds: ReadonlySet<ReportedDisagreement["kind"]> =
 	new Set(["name"]);
 
-/** The reported disagreements worth showing a reader, without their kind. */
+/**
+ * The reported disagreements worth showing a reader, without their kind.
+ * The model's label is soft, so each disagreement dropped on it is logged
+ * with its topic and both quoted sides, letting an operator check that no
+ * real difference was lost.
+ */
 function keptDisagreements(
 	reported: readonly ReportedDisagreement[],
 ): SourceDisagreement[] {
 	return reported
-		.filter((disagreement) => !droppedDisagreementKinds.has(disagreement.kind))
+		.filter((disagreement) => {
+			if (!droppedDisagreementKinds.has(disagreement.kind)) return true;
+			console.warn(
+				`[summarize] dropped source disagreement labelled "${disagreement.kind}": ` +
+					`topic "${disagreement.topic}", ` +
+					`documents say "${disagreement.documentsSay}", ` +
+					`transcript says "${disagreement.transcriptSays}"`,
+			);
+			return false;
+		})
 		.map(({ topic, documentsSay, transcriptSays }) => ({
 			topic,
 			documentsSay,
