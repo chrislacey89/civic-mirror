@@ -3,7 +3,10 @@ import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import { LlmError } from "#/pipeline/errors.ts";
-import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
+import {
+	regenerateCombinedSummaries,
+	regenerateMeetingSummary,
+} from "#/pipeline/regenerate.ts";
 import {
 	type MeetingInput,
 	StorageService,
@@ -127,11 +130,12 @@ async function setup(options: {
 			.run();
 	}
 
-	const regenerate = () =>
+	const regenerate = (options: { force?: boolean } = {}) =>
 		Effect.runPromise(
 			regenerateMeetingSummary({
 				meetingId: meeting.id,
 				meetingContext: "Town Council, 2025-05-27",
+				...options,
 			}).pipe(Effect.provide(layers)),
 		);
 
@@ -203,6 +207,18 @@ describe("regenerateMeetingSummary", () => {
 		expect(second).toEqual({ regenerated: false });
 		expect(calls).toHaveLength(1);
 		expect(await rows()).toEqual(afterFirst);
+	});
+
+	it("summarizes again when forced, though the sources' fingerprint equals the stored one", async () => {
+		const { calls, regenerate } = await setup({
+			documents: [AGENDA, MINUTES],
+		});
+		await regenerate();
+
+		const result = await regenerate({ force: true });
+
+		expect(result).toEqual({ regenerated: true });
+		expect(calls).toHaveLength(2);
 	});
 
 	it("keeps an unreadable document out of the summarizer's sources but counts its URL in the fingerprint", async () => {
@@ -332,5 +348,115 @@ describe("regenerateMeetingSummary", () => {
 
 		expect(stamped).toEqual({ regenerated: true });
 		expect(calls).toHaveLength(1);
+	});
+});
+
+describe("regenerateCombinedSummaries", () => {
+	const TRANSCRIPT_TEXT = "the paving bid came in at $244,215.10";
+
+	/** Gives the setup's meeting a transcript and a summary built from both kinds. */
+	async function combine(
+		context: Pick<
+			Awaited<ReturnType<typeof setup>>,
+			"meeting" | "layers" | "regenerate"
+		>,
+	) {
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				yield* storage.storeTranscript({
+					meetingId: context.meeting.id,
+					source: "captions",
+					rawText: TRANSCRIPT_TEXT,
+					sourceUrl: VIDEO_URL,
+				});
+			}).pipe(Effect.provide(context.layers)),
+		);
+		await context.regenerate();
+	}
+
+	const regenerateAll = (
+		layers: Awaited<ReturnType<typeof setup>>["layers"],
+		date?: string,
+	) =>
+		Effect.runPromise(
+			regenerateCombinedSummaries({
+				body: { slug: "town-council", name: "Town Council" },
+				date,
+			}).pipe(Effect.provide(layers)),
+		);
+
+	it("summarizes again each meeting of the body whose summary was built from documents and a transcript", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await combine(context);
+		context.calls.length = 0;
+
+		const outcomes = await regenerateAll(context.layers);
+
+		expect(outcomes).toEqual([
+			{
+				meetingId: context.meeting.id,
+				date: "2025-05-27",
+				outcome: "regenerated",
+			},
+		]);
+		expect(context.calls).toEqual([
+			{
+				sources: [
+					{ kind: "documents", text: MINUTES.rawText },
+					{ kind: "transcript", text: TRANSCRIPT_TEXT },
+				],
+				meetingContext: "Town Council, 2025-05-27",
+			},
+		]);
+	});
+
+	it("leaves alone a meeting whose summary was built from documents only", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await context.regenerate();
+		context.calls.length = 0;
+
+		const outcomes = await regenerateAll(context.layers);
+
+		expect(outcomes).toEqual([]);
+		expect(context.calls).toHaveLength(0);
+	});
+
+	it("regenerates only the meeting on the given date", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await combine(context);
+		context.calls.length = 0;
+
+		const otherDate = await regenerateAll(context.layers, "2025-06-09");
+		const thatDate = await regenerateAll(context.layers, "2025-05-27");
+
+		expect(otherDate).toEqual([]);
+		expect(thatDate.map((o) => o.outcome)).toEqual(["regenerated"]);
+		expect(context.calls).toHaveLength(1);
+	});
+
+	it("reports a summarizer failure and leaves that meeting's summary in place", async () => {
+		const context = await setup({
+			documents: [MINUTES],
+			summarizeError: new Error("quota exceeded"),
+		});
+		await context.db
+			.update(schema.summaries)
+			.set({ sourceKinds: ["documents", "transcript"] })
+			.where(eq(schema.summaries.meetingId, context.meeting.id))
+			.run();
+		const before = await context.rows();
+
+		const outcomes = await regenerateAll(context.layers);
+
+		expect(outcomes).toEqual([
+			{
+				meetingId: context.meeting.id,
+				date: "2025-05-27",
+				outcome: "failed",
+				message: "quota exceeded",
+			},
+		]);
+		expect(await context.rows()).toEqual(before);
 	});
 });
