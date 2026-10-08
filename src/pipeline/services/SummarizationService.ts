@@ -268,6 +268,40 @@ function isSameMotion(
 const UNREADABLE_FIGURE =
 	"No readable figure. The summary uses the video's figure.";
 
+/** The words of a topic that are long enough to name something. */
+function topicWords(topic: string): Set<string> {
+	return new Set(normalizedText(topic).match(/[a-z0-9]{4,}/g) ?? []);
+}
+
+/**
+ * Whether a reported disagreement is a second entry for an unread figure
+ * already recorded: an amount whose topic shares at least two words with the
+ * recorded entry's topic, the decision's title, and whose transcript side
+ * quotes the same dollars and cents. Other kinds are never dropped, and each
+ * drop is logged like those of `keptDisagreements`.
+ */
+function repeatsUnreadFigure(
+	reported: ReportedDisagreement,
+	unreadableFigures: readonly SourceDisagreement[],
+): boolean {
+	if (reported.kind !== "amount") return false;
+	const reportedWords = topicWords(reported.topic);
+	const repeated = unreadableFigures.find(
+		(figure) =>
+			figureIsIn(figure.transcriptSays, reported.transcriptSays) &&
+			[...topicWords(figure.topic)].filter((word) => reportedWords.has(word))
+				.length >= 2,
+	);
+	if (repeated === undefined) return false;
+	console.warn(
+		`[summarize] dropped source disagreement repeating the unread figure for "${repeated.topic}": ` +
+			`topic "${reported.topic}", ` +
+			`documents say "${reported.documentsSay}", ` +
+			`transcript says "${reported.transcriptSays}"`,
+	);
+	return true;
+}
+
 /**
  * The full result returned by the service — schema output plus the model
  * identifier, which gets persisted alongside the summary for auditing.
@@ -402,9 +436,9 @@ function SummarizationServiceLive(
 					);
 					// A disagreement needs two kinds of source to disagree; one
 					// reported from a single kind is the model inventing the other. The
-					// unread figures are already recorded above, so a reported
-					// disagreement whose transcript side quotes the same dollars and
-					// cents as one of them is dropped, whatever its topic says.
+					// unread figures are already recorded above, so an amount
+					// disagreement about the same motion whose transcript side quotes the
+					// same dollars and cents as one of them is a second entry for it.
 					return {
 						...raw,
 						fiscalDecisions: verified,
@@ -413,12 +447,7 @@ function SummarizationServiceLive(
 									...keptDisagreements(
 										raw.sourceDisagreements.filter(
 											(reported) =>
-												!unreadableFigures.some((figure) =>
-													figureIsIn(
-														figure.transcriptSays,
-														reported.transcriptSays,
-													),
-												),
+												!repeatsUnreadFigure(reported, unreadableFigures),
 										),
 									),
 									...unreadableFigures,

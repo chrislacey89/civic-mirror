@@ -612,6 +612,9 @@ describe("SummarizationService", () => {
 			text: "we will be going with the low bid from EMB paving for $244,21510",
 		};
 
+		const DECIDED_TITLE =
+			"Approval of bid for Community Crossing Grant Match to E & B Paving";
+
 		function output(
 			fiscalDecisions: SummarizationOutput["fiscalDecisions"],
 			sourceDisagreements: SummarizationOutput["sourceDisagreements"] = [],
@@ -691,9 +694,14 @@ describe("SummarizationService", () => {
 
 		it("returns one disagreement for an unread figure when the model reports its own under another topic", async () => {
 			const { result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
-				fromDocuments: [REBUILT],
+				fromDocuments: [{ ...REBUILT, title: DECIDED_TITLE }],
 				fromEverySource: [
-					{ ...PAVING, amount: 244215.1, originalAmount: "$244,215.10" },
+					{
+						...PAVING,
+						title: DECIDED_TITLE,
+						amount: 244215.1,
+						originalAmount: "$244,215.10",
+					},
 				],
 				disagreements: [
 					{
@@ -709,7 +717,7 @@ describe("SummarizationService", () => {
 
 			expect(summary.sourceDisagreements).toEqual([
 				{
-					topic: PAVING.title,
+					topic: DECIDED_TITLE,
 					documentsSay:
 						"No readable figure. The summary uses the video's figure.",
 					transcriptSays: "$244,215.10",
@@ -745,6 +753,129 @@ describe("SummarizationService", () => {
 				otherAmount.topic,
 				PAVING.title,
 			]);
+		});
+
+		describe("a reported disagreement that quotes the unread figure", () => {
+			const RECORDED = {
+				...PAVING,
+				amount: 244215.1,
+				originalAmount: "$244,215.10",
+			};
+			const UNREAD = { ...REBUILT, originalAmount: "$5,000" };
+			const FIVE_THOUSAND = {
+				...PAVING,
+				amount: 5000,
+				originalAmount: "$5,000",
+			};
+
+			function run(
+				disagreement: SummarizationOutput["sourceDisagreements"][number],
+			) {
+				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+				const { result } = summarizeBoth(
+					[
+						{
+							kind: "documents",
+							text: "Bid from E & B Paving for fpaa-5x00.",
+						},
+						{ kind: "transcript", text: "the paving bid is $5,000 and 5-0" },
+					],
+					{
+						fromDocuments: [UNREAD],
+						fromEverySource: [FIVE_THOUSAND],
+						disagreements: [disagreement],
+					},
+				);
+				return { warn, result };
+			}
+
+			it("keeps a vote whose transcript side has the same digits as the figure", async () => {
+				const { warn, result } = run({
+					topic: "Vote on the paving bid award to E & B Paving",
+					documentsSay: "4-1",
+					transcriptSays: "$5 vote, 5-0",
+					kind: "vote",
+				});
+				try {
+					const summary = await result;
+					expect(summary.sourceDisagreements.map((d) => d.topic)).toEqual([
+						"Vote on the paving bid award to E & B Paving",
+						PAVING.title,
+					]);
+					expect(warn).not.toHaveBeenCalled();
+				} finally {
+					warn.mockRestore();
+				}
+			});
+
+			it("keeps an amount about a different item even when it quotes the same figure", async () => {
+				const { warn, result } = run({
+					topic: "Parks department supplies",
+					documentsSay: "$4,000",
+					transcriptSays: "$5,000",
+					kind: "amount",
+				});
+				try {
+					const summary = await result;
+					expect(summary.sourceDisagreements.map((d) => d.topic)).toEqual([
+						"Parks department supplies",
+						PAVING.title,
+					]);
+					expect(warn).not.toHaveBeenCalled();
+				} finally {
+					warn.mockRestore();
+				}
+			});
+
+			it("keeps an amount about the motion whose transcript side has no figure", async () => {
+				const { warn, result } = run({
+					topic: "E & B Paving bid award amount",
+					documentsSay: "fpaa-5x00",
+					transcriptSays: "a low bid",
+					kind: "amount",
+				});
+				try {
+					const summary = await result;
+					expect(summary.sourceDisagreements).toHaveLength(2);
+				} finally {
+					warn.mockRestore();
+				}
+			});
+
+			it("drops the model's second entry for the motion and logs it", async () => {
+				const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+				try {
+					const title =
+						"Approval of bid for Community Crossing Grant Match to E & B Paving";
+					const { result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
+						fromDocuments: [{ ...REBUILT, title }],
+						fromEverySource: [{ ...RECORDED, title }],
+						disagreements: [
+							{
+								topic: "E & B Paving bid amount for Community Crossing Grant",
+								documentsSay: "fpaa-215.10",
+								transcriptSays: "$244,21510",
+								kind: "amount",
+							},
+						],
+					});
+
+					const summary = await result;
+
+					expect(summary.sourceDisagreements.map((d) => d.topic)).toEqual([
+						title,
+					]);
+					expect(warn).toHaveBeenCalledTimes(1);
+					const message = String(warn.mock.calls[0][0]);
+					expect(message).toContain(
+						"E & B Paving bid amount for Community Crossing Grant",
+					);
+					expect(message).toContain("fpaa-215.10");
+					expect(message).toContain("$244,21510");
+				} finally {
+					warn.mockRestore();
+				}
+			});
 		});
 
 		it("stores no amount when the transcript's figure for that decision is not in the transcript either", async () => {
