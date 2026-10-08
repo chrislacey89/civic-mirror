@@ -73,7 +73,7 @@ const fiscalDecisions = [...documentDecisions, ...raw.fiscalDecisions];
 
 That is the shape #172 shipped; #179 later split the documents' decisions by whether their figure is found in the documents (see the note under Prevention).
 
-"Documents govern" is now a property of the code within one rebuild, which a unit test can hold: the every-source call cannot drop or alter a decision the documents call returned.
+See `summarize` in `src/pipeline/services/SummarizationService.ts`.
 
 That is narrower than "a rebuild cannot lose a decision". The documents call is itself a fresh draw each time, so a rebuilt list can still differ from the stored one, and nothing compares the two. The settled membership rule is what keeps those draws close; the merge does not.
 
