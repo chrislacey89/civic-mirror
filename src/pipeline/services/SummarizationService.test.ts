@@ -868,6 +868,45 @@ describe("SummarizationService", () => {
 				}
 			});
 
+			// The recorded title "Paving bid award to E & B Paving" has the words
+			// of four or more letters "paving" and "award" ("bid", "to", "e", "b" are too short).
+			it("keeps an amount quoting the same figure whose topic shares exactly one word with the title (paving)", async () => {
+				const { warn, result } = run({
+					topic: "Paving crew overtime",
+					documentsSay: "$4,000",
+					transcriptSays: "$5,000",
+					kind: "amount",
+				});
+				try {
+					const summary = await result;
+					expect(summary.sourceDisagreements.map((d) => d.topic)).toEqual([
+						"Paving crew overtime",
+						PAVING.title,
+					]);
+					expect(warn).not.toHaveBeenCalled();
+				} finally {
+					warn.mockRestore();
+				}
+			});
+
+			it("drops an amount quoting the same figure whose topic shares exactly two words with the title (paving, award)", async () => {
+				const { warn, result } = run({
+					topic: "Paving award total",
+					documentsSay: "$4,000",
+					transcriptSays: "$5,000",
+					kind: "amount",
+				});
+				try {
+					const summary = await result;
+					expect(summary.sourceDisagreements.map((d) => d.topic)).toEqual([
+						PAVING.title,
+					]);
+					expect(warn).toHaveBeenCalledTimes(1);
+				} finally {
+					warn.mockRestore();
+				}
+			});
+
 			it("keeps an amount about the motion whose transcript side has no figure", async () => {
 				const { warn, result } = run({
 					topic: "E & B Paving bid award amount",
