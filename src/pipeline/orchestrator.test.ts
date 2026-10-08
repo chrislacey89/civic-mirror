@@ -3578,8 +3578,13 @@ describe("runPipeline document regeneration", () => {
 		const run = async (
 			{
 				crawlDelayMs = 0,
+				extractedText,
 				...config
-			}: Omit<StubConfig, "log"> & { crawlDelayMs?: number },
+			}: Omit<StubConfig, "log"> & {
+				crawlDelayMs?: number;
+				/** Replaces the numbered stub text for every document in the run. */
+				extractedText?: string;
+			},
 			body: Parameters<typeof runPipeline>[0]["bodies"][number] = COUNCIL,
 			unreadable = false,
 		) => {
@@ -3597,7 +3602,9 @@ describe("runPipeline document regeneration", () => {
 						unreadable
 							? { text: "", method: "unreadable" }
 							: {
-									text: `document text ${log.egovDownload.length + log.finalsiteDownload.length}`,
+									text:
+										extractedText ??
+										`document text ${log.egovDownload.length + log.finalsiteDownload.length}`,
 									method: "text-layer",
 								},
 					dryRun: false,
@@ -3918,6 +3925,28 @@ describe("runPipeline document regeneration", () => {
 
 		expect(third.log.summarize).toEqual([]);
 		expect(await rows()).toEqual(after);
+	});
+
+	it("holds a misdated eGov listing for a meeting that already holds a document, without attaching it or rebuilding the summary", async () => {
+		const { rows, run } = await setup();
+		await run({ egovListings: [AGENDA] });
+		const before = await rows();
+
+		const { log, result } = await run({
+			egovListings: [AGENDA, MINUTES],
+			// The title says May 27; the document opens with April 28.
+			extractedText:
+				"April 28, 2025 The Town Council met for a regular meeting on Monday, April 28, 2025.",
+			summarizationResult: REGENERATED,
+		});
+
+		expect(log.egovDownload).toEqual([MINUTES.downloadUrl]);
+		expect(log.summarize).toEqual([]);
+		expect(log.store).toEqual([]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("2025-04-28");
+		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(await rows()).toEqual(before);
 	});
 
 	describe("an eGov listing whose document the meeting already holds", () => {
