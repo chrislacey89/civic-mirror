@@ -1540,21 +1540,13 @@ function processYouTubeVideo(
 
 		// Drama detection runs AFTER transcript storage. Failure must not
 		// regress transcript or summary persistence — those are first-class
-		// transparency artifacts. The catch below absorbs any error,
-		// alerts the operator, and returns Effect.void so the orchestrator's
-		// tagged-error channel is unaffected.
-		yield* Effect.log("youtube.drama.start");
-		yield* runDramaDetection({
-			body,
-			video,
-			meetingId: meeting.id,
-			transcript,
-		}).pipe(
-			Effect.catch((error) => alertDramaFailure(body, error, dramaAlertScope)),
+		// transparency artifacts — so it is counted here and never raised.
+		const assessed = yield* assessOrAlert(
+			{ body, video, meetingId: meeting.id, transcript },
+			dramaAlertScope,
 		);
-		yield* Effect.log("youtube.drama.finish");
 
-		return { processed: 1, errors: 0 };
+		return { processed: 1, errors: assessed.errors };
 	}).pipe(Effect.annotateLogs({ body: body.slug, videoId: video.videoId }));
 }
 
@@ -1682,14 +1674,10 @@ function matchVideoToMeeting(input: {
 		// the new summary. It runs first because a failed regeneration ends
 		// this video's turn, and the run that retries the regeneration does
 		// not come back through here.
-		yield* Effect.log("youtube.drama.start");
-		yield* runDramaDetection({
-			body,
-			video,
-			meetingId: meeting.meetingId,
-			transcript,
-		}).pipe(Effect.catch((error) => alertDramaFailure(body, error, "item")));
-		yield* Effect.log("youtube.drama.finish");
+		const assessed = yield* assessOrAlert(
+			{ body, video, meetingId: meeting.meetingId, transcript },
+			"item",
+		);
 
 		yield* regenerateWithRetry({
 			meetingId: meeting.meetingId,
@@ -1697,7 +1685,7 @@ function matchVideoToMeeting(input: {
 			config,
 		});
 
-		return { processed: 1, errors: 0 };
+		return { processed: 1, errors: assessed.errors };
 	});
 }
 

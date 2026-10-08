@@ -1313,7 +1313,7 @@ describe("runPipeline", () => {
 		expect(result).toEqual({ processed: 1, errors: 0 });
 	});
 
-	it("does not block transcript storage when drama detection fails", async () => {
+	it("stores the transcript and summary and counts one error when drama detection fails", async () => {
 		const log = emptyCallLog();
 		const layers = buildStubLayers({
 			log,
@@ -1346,10 +1346,10 @@ describe("runPipeline", () => {
 
 		const result = await Effect.runPromise(program);
 
-		// Transcript and summary still landed despite drama detection failure.
+		// Transcript and summary still landed despite drama detection failure,
+		// and the run reports the assessment it could not store.
 		expect(log.store).toHaveLength(1);
-		expect(result.processed).toBe(1);
-		expect(result.errors).toBe(0);
+		expect(result).toEqual({ processed: 1, errors: 1 });
 		// Operator was alerted to the drama failure.
 		expect(log.alert.some((a) => a.subject.includes("drama-detection"))).toBe(
 			true,
@@ -2978,6 +2978,39 @@ describe("runPipeline video path", () => {
 			expect(summary.sourceFingerprint).toBe(
 				computeSourceFingerprint([MINUTES_URL, url("regular")]),
 			);
+			const [drama] = await db.select().from(schema.dramaAssessments).all();
+			expect(drama.meetingId).toBe(meetingId);
+		});
+
+		it("counts one error when the assessment of a matched video fails, and the next run scores it without touching the documents or the combined summary", async () => {
+			const { db, counts } = await setup();
+			const meetingId = await seedMinutesMeeting(db, "2025-08-25");
+
+			const first = await runAgainst(db, {
+				dramaDetectionError: new Error("Gemini API down"),
+			});
+
+			expect(first.result).toEqual({ processed: 1, errors: 1 });
+			const afterFirst = await counts();
+			expect(afterFirst).toMatchObject({ transcripts: 1, drama: 0 });
+			const stored = async () => ({
+				summaries: await db.select().from(schema.summaries).all(),
+				documents: await db.select().from(schema.documents).all(),
+			});
+			const before = await stored();
+			expect(before.summaries[0].sourceKinds).toEqual([
+				"documents",
+				"transcript",
+			]);
+
+			const second = await runAgainst(db, {});
+
+			expect(second.result).toEqual({ processed: 1, errors: 0 });
+			expect(second.log.transcribe).toEqual([]);
+			expect(second.log.summarize).toEqual([]);
+			expect(second.log.match).toEqual([]);
+			expect(await counts()).toEqual({ ...afterFirst, drama: 1 });
+			expect(await stored()).toEqual(before);
 			const [drama] = await db.select().from(schema.dramaAssessments).all();
 			expect(drama.meetingId).toBe(meetingId);
 		});
