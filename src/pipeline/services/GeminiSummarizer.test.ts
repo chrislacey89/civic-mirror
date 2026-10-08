@@ -88,4 +88,46 @@ describe("buildSummarizationPrompt", () => {
 
 		expect(prompt).not.toContain("RECORDED DECISIONS");
 	});
+
+	it("lists unread figures under their own label, by title alone", () => {
+		const prompt = buildSummarizationPrompt({
+			sources: [
+				{ kind: "documents", text: "MINUTES TEXT" },
+				{ kind: "transcript", text: "CAPTION TEXT" },
+			],
+			meetingContext: "Town Council, May 27, 2025",
+			unreadFigures: [
+				{
+					title: "Paving bid award to E & B Paving",
+					description: "Accepted the low bid",
+					amount: 215215.1,
+					originalAmount: "$215,215.10",
+					status: "approved",
+					confidence: 0.9,
+					isRecurring: false,
+				},
+			],
+		});
+
+		const label = prompt.indexOf("UNREAD FIGURES");
+
+		expect(label).toBeGreaterThan(prompt.indexOf("CAPTION TEXT"));
+		expect(
+			prompt.indexOf("- Paving bid award to E & B Paving\n"),
+		).toBeGreaterThan(label);
+		expect(prompt).not.toContain("$215,215.10");
+	});
+
+	it("leaves out the unread figures label when there are none", () => {
+		const prompt = buildSummarizationPrompt({
+			sources: [
+				{ kind: "documents", text: "MINUTES TEXT" },
+				{ kind: "transcript", text: "CAPTION TEXT" },
+			],
+			meetingContext: "Town Council, May 27, 2025",
+			unreadFigures: [],
+		});
+
+		expect(prompt).not.toContain("UNREAD FIGURES");
+	});
 });

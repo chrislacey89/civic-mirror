@@ -55,6 +55,7 @@ Each source is labelled. DOCUMENTS is the official written record: agendas, minu
 17. Set kind on every entry: "amount" for a dollar amount or a count, "vote" for a vote tally or the outcome of a motion, "date" for a date or a time, "name" when the two differ only in how a person, place, body or title is named or spelled, "other" for anything else.
 18. Leave sourceDisagreements empty when only one kind of source is present, or when the two do not disagree.
 19. RECORDED DECISIONS, when present, lists the fiscal decisions already taken from DOCUMENTS. Do not return any of them in fiscalDecisions, under any wording. Return there only motions that TRANSCRIPT shows were voted on or tabled and that are not in that list, and return none when there are none. Still cover every decision in highlights and prose.
+20. UNREAD FIGURES, when present, lists motions DOCUMENTS records whose dollar figure could not be read from DOCUMENTS. Return one entry in fiscalDecisions for each, with its title copied exactly. Take its amount and originalAmount from the figure TRANSCRIPT states for that motion, and never from DOCUMENTS. When TRANSCRIPT states no figure for it, set amount to 0 and originalAmount to "not stated".
 `.trim();
 
 const SOURCE_LABELS = {
@@ -64,7 +65,9 @@ const SOURCE_LABELS = {
 
 /**
  * One labelled block per kind of source present, documents first, then the
- * recorded decisions when there are any.
+ * recorded decisions and the unread figures when there are any. An unread
+ * figure is listed by title alone, so the figure the documents call rebuilt
+ * is not put in front of the model again.
  */
 function buildSummarizationPrompt(input: SummarizationInput): string {
 	const blocks = (["documents", "transcript"] as const)
@@ -81,6 +84,12 @@ function buildSummarizationPrompt(input: SummarizationInput): string {
 				`- ${decision.title} (${decision.originalAmount}, ${decision.status})`,
 		);
 		blocks.push(`RECORDED DECISIONS:\n---\n${lines.join("\n")}\n---`);
+	}
+
+	const unread = input.unreadFigures ?? [];
+	if (unread.length > 0) {
+		const lines = unread.map((decision) => `- ${decision.title}`);
+		blocks.push(`UNREAD FIGURES:\n---\n${lines.join("\n")}\n---`);
 	}
 
 	return `
