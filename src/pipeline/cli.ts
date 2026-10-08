@@ -6,12 +6,14 @@ import { Command, Flag } from "effect/cli";
 
 loadDotenv({ path: [".env.local", ".env"] });
 
+import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import {
 	buildProductionLayers,
 	DEFAULT_BODIES,
 	extractPdfText,
 	parseSourcesFlag,
 } from "#/pipeline/composition.ts";
+import { detachDocumentAndRegenerate } from "#/pipeline/detach.ts";
 import { resolveDetectMeeting } from "#/pipeline/detect-date.ts";
 import { formatHeldVideoLine } from "#/pipeline/held.ts";
 import {
@@ -272,6 +274,128 @@ const heldListCommand = Command.make(
 );
 
 // ---------------------------------------------------------------------------
+// `document:detach` subcommand — removes one document from a meeting and
+// rebuilds the meeting's summary from the sources that remain. For a document
+// the source filed under the wrong meeting. Reports what it would do until
+// `--confirm` is passed.
+// ---------------------------------------------------------------------------
+
+const detachBodySlug = Flag.String("body").pipe(
+	Flag.withDescription("Slug of the body whose meeting holds the document."),
+);
+
+const detachMeetingDate = Flag.String("date").pipe(
+	Flag.withDescription("ISO date (YYYY-MM-DD) of the meeting."),
+);
+
+const detachSession = Flag.String("session").pipe(
+	Flag.withDefault(""),
+	Flag.withDescription(
+		"Session slug of the meeting (defaults to the meeting stored without one).",
+	),
+);
+
+const detachUrl = Flag.String("url").pipe(
+	Flag.withDescription("Source URL of the document, as stored."),
+);
+
+const detachConfirm = Flag.Boolean("confirm").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
+		"Delete the document and rebuild the summary. Without it, nothing is written.",
+	),
+);
+
+const documentDetachCommand = Command.make(
+	"document:detach",
+	{
+		bodySlug: detachBodySlug,
+		date: detachMeetingDate,
+		session: detachSession,
+		url: detachUrl,
+		confirm: detachConfirm,
+	},
+	({ bodySlug, date, session, url, confirm }) =>
+		Effect.gen(function* () {
+			const body = DEFAULT_BODIES.find((b) => b.slug === bodySlug);
+			if (!body) {
+				return yield* Effect.fail(
+					new Error(
+						`Unknown body slug: ${bodySlug}. Known slugs: ${DEFAULT_BODIES.map((b) => b.slug).join(", ")}`,
+					),
+				);
+			}
+
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			yield* Effect.gen(function* () {
+				const storage = yield* StorageService;
+				const meeting = yield* storage.getMeetingSourceState({
+					bodySlug,
+					date,
+					session,
+				});
+				if (meeting === null) {
+					return yield* Effect.fail(
+						new Error(
+							`No meeting for ${bodySlug} on ${date} with session ${JSON.stringify(session)}.`,
+						),
+					);
+				}
+
+				const held = yield* storage.getMeetingSources(meeting.meetingId);
+				yield* Console.log(
+					`[document:detach] target=${(resolveDatabaseUrl() ?? "").replace(/\?.*$/, "")}`,
+				);
+				yield* Console.log(
+					`[document:detach] meeting id=${meeting.meetingId} body=${bodySlug} date=${date} session=${JSON.stringify(session)}`,
+				);
+				for (const document of held.documents) {
+					const action = document.sourceUrl === url ? "detach" : "keep  ";
+					const opening = document.rawText.replace(/\s+/g, " ").slice(0, 60);
+					yield* Console.log(
+						`  ${action} ${document.sourceUrl} ${JSON.stringify(opening)}`,
+					);
+				}
+				if (held.transcript) {
+					yield* Console.log(`  keep   ${held.transcript.sourceUrl}`);
+				}
+
+				if (!confirm) {
+					yield* Console.log(
+						held.documents.some((d) => d.sourceUrl === url)
+							? "[document:detach] dry run. Re-run with --confirm to detach and rebuild the summary."
+							: "[document:detach] dry run. The meeting holds no document under that URL; --confirm would only rebuild a summary that is behind its sources.",
+					);
+					return;
+				}
+
+				const result = yield* detachDocumentAndRegenerate({
+					meetingId: meeting.meetingId,
+					sourceUrl: url,
+					meetingContext: `${body.name}, ${date}`,
+				});
+				if (result.outcome === "last-source") {
+					return yield* Effect.fail(
+						new Error(
+							"That document is the last source this meeting's summary can be built from. Nothing was removed; delete the meeting with src/pipeline/scripts/delete-meeting.ts instead.",
+						),
+					);
+				}
+				yield* Console.log(
+					`[document:detach] done: outcome=${result.outcome} regenerated=${result.regenerated}`,
+				);
+			}).pipe(Effect.provide(layers));
+		}),
+);
+
+// ---------------------------------------------------------------------------
 // Command root and entrypoint
 // ---------------------------------------------------------------------------
 
@@ -285,6 +409,7 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		listBodiesCommand,
 		dramaDetectCommand,
 		heldListCommand,
+		documentDetachCommand,
 	]),
 );
 

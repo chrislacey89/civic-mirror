@@ -56,7 +56,10 @@ pnpm pipeline:dry                             # full run, no writes or alerts
 pnpm pipeline:run                             # full run
 pnpm pipeline run --body ellettsville-town-council   # one body only
 pnpm pipeline held:list                       # videos the pipeline holds, and why
+pnpm pipeline document:detach --body <slug> --date <YYYY-MM-DD> --url <source-url>   # preview removing one document from a meeting
 ```
+
+`document:detach` is for a document the source filed under the wrong meeting. It writes nothing until `--confirm` is added, then deletes that one document and rebuilds the meeting's summary from the sources that remain.
 
 Ellettsville's eGov portal enforces a 300-second delay between PDF downloads. `--skip-crawl-delay` is for local testing only.
 
