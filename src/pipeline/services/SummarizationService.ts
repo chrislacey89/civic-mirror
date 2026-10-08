@@ -156,6 +156,33 @@ function verificationText(sources: readonly LabelledSource[]): string {
 		: sourceTextOfKind(sources, "transcript");
 }
 
+function normalizedText(value: string): string {
+	return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Whether `candidate` repeats a decision in `recorded`: the same resolution or
+ * ordinance number, or the same title with the same stated amount. Amount and
+ * status alone never match, because many distinct motions share "not stated",
+ * 0 and "approved".
+ */
+function repeatsRecordedDecision(
+	candidate: SummarizationOutput["fiscalDecisions"][number],
+	recorded: SummarizationOutput["fiscalDecisions"],
+): boolean {
+	const ordinance = normalizedText(candidate.ordinanceNumber ?? "");
+	const title = normalizedText(candidate.title);
+	return recorded.some(
+		(decision) =>
+			(ordinance !== "" &&
+				ordinance === normalizedText(decision.ordinanceNumber ?? "")) ||
+			(title === normalizedText(decision.title) &&
+				candidate.amount === decision.amount &&
+				normalizedText(candidate.originalAmount) ===
+					normalizedText(decision.originalAmount)),
+	);
+}
+
 /**
  * The full result returned by the service — schema output plus the model
  * identifier, which gets persisted alongside the summary for auditing.
@@ -233,8 +260,13 @@ function SummarizationServiceLive(
 							? { ...input, recordedDecisions: documentDecisions }
 							: input,
 					);
+					// A decision the every-source call repeats from the documents is
+					// dropped, so the documents' entry is the only one kept.
+					const transcriptDecisions = raw.fiscalDecisions.filter(
+						(decision) => !repeatsRecordedDecision(decision, documentDecisions),
+					);
 					const verified = verifyAmounts(
-						[...documentDecisions, ...raw.fiscalDecisions],
+						[...documentDecisions, ...transcriptDecisions],
 						verificationText(input.sources),
 					);
 					// A disagreement needs two kinds of source to disagree; one

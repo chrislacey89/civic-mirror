@@ -304,7 +304,9 @@ describe("SummarizationService", () => {
 				TRANSCRIPT,
 			]);
 
+			expect(fromDocuments.fiscalDecisions).toHaveLength(1);
 			expect(fromDocuments.fiscalDecisions[0].confidence).toBe(0.9);
+			expect(fromTranscript.fiscalDecisions).toHaveLength(1);
 			expect(fromTranscript.fiscalDecisions[0].confidence).toBeCloseTo(0.36, 5);
 		});
 
@@ -425,6 +427,82 @@ describe("SummarizationService", () => {
 			);
 			expect(summary.fiscalDecisions[0].confidence).toBe(0.9);
 			expect(summary.fiscalDecisions[1].confidence).toBeCloseTo(0.36, 5);
+		});
+
+		it("drops a transcript decision that repeats a recorded one by ordinance number under another title", async () => {
+			const documents = output(
+				[{ ...CRASH_GRANT, ordinanceNumber: "resolution  38-2025" }],
+				"Minutes only.",
+			);
+			const repeated = summarizeTogether({
+				fromDocuments: documents,
+				fromEverySource: output(
+					[
+						{
+							...CRASH_GRANT,
+							title: "Crash team interlocal grant",
+							ordinanceNumber: "Resolution 38-2025",
+						},
+					],
+					"Minutes and discussion.",
+				),
+			});
+
+			const summary = await repeated.result;
+
+			expect(summary.fiscalDecisions).toEqual(documents.fiscalDecisions);
+		});
+
+		it("drops a transcript decision with the same title and amount as a recorded one", async () => {
+			const { result } = summarizeTogether({
+				fromDocuments: output([CRASH_GRANT], "Minutes only."),
+				fromEverySource: output(
+					[{ ...CRASH_GRANT, title: "  resolution 38-2025 CRASH team grant" }],
+					"Minutes and discussion.",
+				),
+			});
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions).toEqual([CRASH_GRANT]);
+		});
+
+		it("keeps a transcript decision that shares 'not stated' and its status with a recorded one", async () => {
+			const unstated = {
+				...CRASH_GRANT,
+				title: "Hire a clerk",
+				amount: 0,
+				originalAmount: "not stated",
+			};
+			const added = {
+				...unstated,
+				title: "Declare the old plow surplus",
+				confidence: 0.8,
+			};
+			const { result } = summarizeTogether({
+				fromDocuments: output([unstated], "Minutes only."),
+				fromEverySource: output([added], "Minutes and discussion."),
+			});
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions.map((decision) => decision.title)).toEqual(
+				[unstated.title, added.title],
+			);
+		});
+
+		it("keeps a transcript decision with the same stated amount as a recorded one but a different title and no ordinance", async () => {
+			const { result } = summarizeTogether({
+				fromDocuments: output([CRASH_GRANT], "Minutes only."),
+				fromEverySource: output(
+					[{ ...CRASH_GRANT, title: "Second grant, same sum" }],
+					"Minutes and discussion.",
+				),
+			});
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions).toHaveLength(2);
 		});
 
 		it("tells the summary of every source which decisions the documents already gave", async () => {
