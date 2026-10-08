@@ -160,7 +160,7 @@ export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 										}`}
 									>
 										<p className="display m-0 text-[18px]">{bd.topic}</p>
-										{bd.estimatedAmount != null && (
+										{bd.estimatedAmount != null && bd.estimatedAmount !== 0 && (
 											<p className="mono mt-1 text-[12px] uppercase tracking-[0.08em] text-[var(--ink-soft)]">
 												Estimated:{" "}
 												<FiscalFigure
@@ -208,6 +208,8 @@ function MeetingHero({ meeting }: { meeting: MeetingDetail }) {
 		0,
 	);
 	const firstHighlight = meeting.summary?.highlights[0];
+	const decisionCount = meeting.fiscalDecisions.length;
+	const withAmount = meeting.fiscalDecisions.filter(statesAmount).length;
 
 	return (
 		<section className="rise-in pt-10">
@@ -227,7 +229,12 @@ function MeetingHero({ meeting }: { meeting: MeetingDetail }) {
 			<div className="rule-double mt-8 grid grid-cols-2 border-b-[3px] border-double border-[var(--rule)] sm:grid-cols-4">
 				{[
 					{ n: formatCurrency(totalSpending), l: "Approved this meeting" },
-					{ n: meeting.fiscalDecisions.length, l: "Fiscal decisions" },
+					withAmount === decisionCount
+						? { n: decisionCount, l: "Fiscal decisions" }
+						: {
+								n: `${withAmount} of ${decisionCount}`,
+								l: "Decisions with an amount",
+							},
 					{ n: meeting.budgetDiscussions.length, l: "Discussed, no vote" },
 					{ n: meeting.documents.length, l: "Source documents" },
 				].map((s, i, arr) => (
@@ -488,13 +495,19 @@ function FiscalRow({
 					{decision.vendor && <span>Vendor: {decision.vendor}</span>}
 					{decision.fundingSource && <span>{decision.fundingSource}</span>}
 					{decision.ordinanceNumber && (
-						<span>Ord. #{decision.ordinanceNumber}</span>
+						<span>{ordinanceLabel(decision.ordinanceNumber)}</span>
 					)}
 				</div>
 			</div>
 			<div className="mono mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-dotted border-[var(--rule-dot)] pt-3 sm:contents sm:mt-0 sm:border-0 sm:pt-0">
 				<span className="text-[14px] font-bold text-[var(--ink)] sm:text-right">
-					<FiscalFigure amount={decision.amount} ocrFlagged={ocrFlagged} />
+					{statesAmount(decision) ? (
+						<FiscalFigure amount={decision.amount} ocrFlagged={ocrFlagged} />
+					) : (
+						<span className="font-normal text-[var(--ink-soft)]">
+							Not stated
+						</span>
+					)}
 				</span>
 				<span className="text-[13px] font-semibold text-[var(--ink)]">
 					<span className="kicker mr-1 sm:hidden">Vote</span>
@@ -591,6 +604,24 @@ function FiscalFigure({
 			)}
 		</span>
 	);
+}
+
+/**
+ * Whether the record gave a dollar figure for the decision. One stored with
+ * amount 0 is a motion whose amount the record did not state.
+ */
+function statesAmount(decision: { amount: number }): boolean {
+	return decision.amount !== 0;
+}
+
+/**
+ * A resolution or ordinance number as shown. One stored with its type
+ * ("Resolution 38-2025") is shown as written; a bare number gets "No.".
+ */
+function ordinanceLabel(ordinanceNumber: string): string {
+	return /^\d/.test(ordinanceNumber)
+		? `No. ${ordinanceNumber}`
+		: ordinanceNumber;
 }
 
 function firstSentence(prose: string): string {

@@ -65,6 +65,91 @@ describe("MeetingDetailView — text-layer branch", () => {
 	});
 });
 
+describe("MeetingDetailView — decisions with no stated amount", () => {
+	const base = makeMeeting().fiscalDecisions[0];
+	const noAmount = {
+		...base,
+		title: "Fire Services Agreement",
+		amount: 0,
+		originalAmount: "not stated",
+	};
+
+	it("shows a decision with no amount as not stated, and never as $0", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({ fiscalDecisions: [base, noAmount] })}
+			/>,
+		);
+
+		const row = screen.getByText("Fire Services Agreement").closest("div")
+			?.parentElement as HTMLElement;
+		expect(within(row).getByText("Not stated")).toBeDefined();
+		expect(screen.queryByText("$0")).toBeNull();
+	});
+
+	it("counts beside the total only the decisions that state an amount", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({ fiscalDecisions: [base, noAmount] })}
+			/>,
+		);
+
+		expect(screen.getByText("1 of 2")).toBeDefined();
+		expect(screen.getByText("Decisions with an amount")).toBeDefined();
+	});
+
+	it("gives the plain count when every decision states an amount", () => {
+		render(<MeetingDetailView meeting={makeMeeting()} />);
+
+		expect(screen.getByText("Fiscal decisions")).toBeDefined();
+		expect(screen.queryByText("Decisions with an amount")).toBeNull();
+	});
+
+	it("leaves out the estimate of a discussion that has none", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					budgetDiscussions: [
+						{ topic: "Salary ordinance", estimatedAmount: 0, notes: null },
+					],
+				})}
+			/>,
+		);
+
+		expect(screen.getByText("Salary ordinance")).toBeDefined();
+		expect(screen.queryByText(/Estimated/)).toBeNull();
+	});
+});
+
+describe("MeetingDetailView — resolution and ordinance numbers", () => {
+	const base = makeMeeting().fiscalDecisions[0];
+
+	it("shows a number that carries its type as written", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					fiscalDecisions: [{ ...base, ordinanceNumber: "Resolution 38-2025" }],
+				})}
+			/>,
+		);
+
+		expect(screen.getByText("Resolution 38-2025")).toBeDefined();
+		expect(screen.queryByText(/Ord\. #/)).toBeNull();
+	});
+
+	it("labels a bare number", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					fiscalDecisions: [{ ...base, ordinanceNumber: "38-2025" }],
+				})}
+			/>,
+		);
+
+		expect(screen.getByText("No. 38-2025")).toBeDefined();
+	});
+});
+
 describe("MeetingDetailView — ocr branch", () => {
 	it("renders the OCR banner with role=status above the summary", () => {
 		render(

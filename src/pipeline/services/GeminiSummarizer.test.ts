@@ -46,4 +46,46 @@ describe("buildSummarizationPrompt", () => {
 		expect(prompt).toContain("TRANSCRIPT");
 		expect(prompt).not.toContain("DOCUMENTS");
 	});
+
+	it("lists the recorded decisions under their own label, after the sources", () => {
+		const prompt = buildSummarizationPrompt({
+			sources: [
+				{ kind: "documents", text: "MINUTES TEXT" },
+				{ kind: "transcript", text: "CAPTION TEXT" },
+			],
+			meetingContext: "Town Council, November 24, 2025",
+			recordedDecisions: [
+				{
+					title: "Resolution 38-2025 crash team grant",
+					description: "Interlocal agreement for a crash investigation team",
+					amount: 43900,
+					originalAmount: "$43,900.00",
+					status: "approved",
+					confidence: 0.9,
+					isRecurring: false,
+				},
+			],
+		});
+
+		const label = prompt.indexOf("RECORDED DECISIONS");
+		const decision = prompt.indexOf(
+			"Resolution 38-2025 crash team grant ($43,900.00, approved)",
+		);
+
+		expect(label).toBeGreaterThan(prompt.indexOf("CAPTION TEXT"));
+		expect(decision).toBeGreaterThan(label);
+	});
+
+	it("leaves out the recorded decisions label when none are passed", () => {
+		const prompt = buildSummarizationPrompt({
+			sources: [
+				{ kind: "documents", text: "MINUTES TEXT" },
+				{ kind: "transcript", text: "CAPTION TEXT" },
+			],
+			meetingContext: "Town Council, November 24, 2025",
+			recordedDecisions: [],
+		});
+
+		expect(prompt).not.toContain("RECORDED DECISIONS");
+	});
 });

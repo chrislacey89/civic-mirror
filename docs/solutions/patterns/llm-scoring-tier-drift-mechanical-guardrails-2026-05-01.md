@@ -141,6 +141,7 @@ The duplication is intentional and worth a comment at the storage site so future
 - PR: https://github.com/chrislacey89/civic-mirror/pull/65
 - Sibling: `docs/solutions/patterns/tri-state-return-for-pipeline-outcomes-2026-04-13.md`
 - Adjacent: `docs/solutions/integration-issues/gemini-response-schema-numeric-enum-rejection-2026-05-01.md`
+- Second recording, for a field code cannot derive (list membership): `docs/solutions/patterns/llm-list-extraction-single-draw-mistaken-for-baseline-2026-10-07.md`
 - Calibration evidence: PR #65 commit `4241426`'s body — two runs, sum=18 and sum=11 on the same RBB hiring transcript
 
 ## Shelf Life

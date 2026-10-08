@@ -158,6 +158,12 @@ type SummarizationInput = {
 	sources: LabelledSource[];
 	/** Short context line for the prompt (e.g. "Town Council, March 23, 2026"). */
 	meetingContext: string;
+	/**
+	 * Fiscal decisions already taken from the documents among `sources`. The
+	 * generator returns only decisions that are not among them. The service
+	 * sets this; a caller of `summarize` does not.
+	 */
+	recordedDecisions?: SummarizationOutput["fiscalDecisions"];
 };
 
 /** The texts of the sources of one kind, joined. Empty when there is none. */
@@ -187,6 +193,33 @@ function verificationText(sources: readonly LabelledSource[]): string {
 	return hasSourceKind(sources, "documents")
 		? sourceTextOfKind(sources, "documents")
 		: sourceTextOfKind(sources, "transcript");
+}
+
+function normalizedText(value: string): string {
+	return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Whether `candidate` repeats a decision in `recorded`: the same resolution or
+ * ordinance number, or the same title with the same stated amount. Amount and
+ * status alone never match, because many distinct motions share "not stated",
+ * 0 and "approved".
+ */
+function repeatsRecordedDecision(
+	candidate: SummarizationOutput["fiscalDecisions"][number],
+	recorded: SummarizationOutput["fiscalDecisions"],
+): boolean {
+	const ordinance = normalizedText(candidate.ordinanceNumber ?? "");
+	const title = normalizedText(candidate.title);
+	return recorded.some(
+		(decision) =>
+			(ordinance !== "" &&
+				ordinance === normalizedText(decision.ordinanceNumber ?? "")) ||
+			(title === normalizedText(decision.title) &&
+				candidate.amount === decision.amount &&
+				normalizedText(candidate.originalAmount) ===
+					normalizedText(decision.originalAmount)),
+	);
 }
 
 /**
@@ -247,16 +280,38 @@ function SummarizationServiceLive(
 		summarize: (input) =>
 			Effect.tryPromise({
 				try: async () => {
-					const raw = await config.generateFn(input);
+					const bothKinds =
+						hasSourceKind(input.sources, "documents") &&
+						hasSourceKind(input.sources, "transcript");
+					// Documents govern fiscal decisions, so theirs are taken from the
+					// documents alone and kept as extracted: a transcript can add a
+					// decision but cannot remove or alter one.
+					const documentDecisions = bothKinds
+						? (
+								await config.generateFn({
+									sources: input.sources.filter(
+										(source) => source.kind === "documents",
+									),
+									meetingContext: input.meetingContext,
+								})
+							).fiscalDecisions
+						: [];
+					const raw = await config.generateFn(
+						bothKinds
+							? { ...input, recordedDecisions: documentDecisions }
+							: input,
+					);
+					// A decision the every-source call repeats from the documents is
+					// dropped, so the documents' entry is the only one kept.
+					const transcriptDecisions = raw.fiscalDecisions.filter(
+						(decision) => !repeatsRecordedDecision(decision, documentDecisions),
+					);
 					const verified = verifyAmounts(
-						raw.fiscalDecisions,
+						[...documentDecisions, ...transcriptDecisions],
 						verificationText(input.sources),
 					);
 					// A disagreement needs two kinds of source to disagree; one
 					// reported from a single kind is the model inventing the other.
-					const bothKinds =
-						hasSourceKind(input.sources, "documents") &&
-						hasSourceKind(input.sources, "transcript");
 					return {
 						...raw,
 						fiscalDecisions: verified,
