@@ -121,6 +121,43 @@ describe("MeetingDetailView — decisions with no stated amount", () => {
 	});
 });
 
+describe("MeetingDetailView — headline total", () => {
+	const base = makeMeeting().fiscalDecisions[0];
+
+	it("counts only approved decisions as approved this meeting, matching the table's total", () => {
+		render(
+			<MeetingDetailView
+				meeting={makeMeeting({
+					fiscalDecisions: [
+						base,
+						{
+							...base,
+							title: "Roof replacement bids",
+							amount: 209563.79,
+							originalAmount: "$209,563.79",
+							status: "tabled",
+						},
+						{
+							...base,
+							title: "Sign purchase",
+							amount: 1200,
+							originalAmount: "$1,200",
+							status: "denied",
+						},
+					],
+				})}
+			/>,
+		);
+
+		const headline = screen.getByText("Approved this meeting")
+			.parentElement as HTMLElement;
+		const footer = screen.getByText("Total approved, this meeting")
+			.parentElement as HTMLElement;
+		expect(within(headline).getByText("$50,000")).toBeDefined();
+		expect(within(footer).getByText("$50,000")).toBeDefined();
+	});
+});
+
 describe("MeetingDetailView — resolution and ordinance numbers", () => {
 	const base = makeMeeting().fiscalDecisions[0];
 
