@@ -313,6 +313,7 @@ function buildStubLayers(config: StubConfig) {
 				config.log.stamped.push(input.meetingId);
 			}),
 		detachTranscript: () => Effect.succeed(null),
+		detachDocument: () => Effect.succeed(false),
 	});
 
 	const meetingMatch = Layer.succeed(MeetingMatchService, {
@@ -565,6 +566,65 @@ describe("runPipeline", () => {
 		expect(log.alert[0].body).toContain("Town Council Annual Report");
 		expect(log.alert[0].body).toContain("03/15/2026");
 		expect(log.alert[0].body).not.toContain("this body was skipped");
+		expect(result).toEqual({ processed: 1, errors: 1 });
+	});
+
+	it("holds an eGov listing whose document opens with a different date than its title and alerts instead of filing it under the title's date", async () => {
+		const log = emptyCallLog();
+		const layers = buildStubLayers({
+			log,
+			egovListings: [
+				{
+					id: 1582,
+					title: "Town Council Meeting Minutes August 25, 2025",
+					date: "09/30/2025",
+					downloadUrl: "https://example.com/doc/1582",
+					meetingDate: "2025-08-25",
+					documentType: "minutes",
+				},
+				{
+					id: 1619,
+					title: "Town Council Meeting Minutes August 25, 2025",
+					date: "10/20/2025",
+					downloadUrl: "https://example.com/doc/1619",
+					meetingDate: "2025-08-25",
+					documentType: "minutes",
+				},
+			],
+		});
+		const texts = [
+			"July 28, 2025 _— ee The Ellettsville, Indiana Town Council met for a regular meeting on Monday, July 28, 2025. The Council awarded the bridge bid.",
+			"August 25, 2025 -_ The Ellettsville, Indiana Town Council met for a regular meeting on Monday, August 25, 2025. The minutes of July 28, 2025 were approved.",
+		];
+
+		const program = runPipeline({
+			bodies: [{ slug: "body", name: "Body", egovSearchType: "12" }],
+			crawlDelayMs: 0,
+			youtubeDelayMs: 0,
+			networkRetry: { attempts: 0, baseDelayMs: 0 },
+			llmRetry: { attempts: 0, baseDelayMs: 0 },
+			extractPdfText: async () => ({
+				text: texts[log.egovDownload.length - 1],
+				method: "text-layer",
+			}),
+			dryRun: false,
+		}).pipe(Effect.provide(layers));
+
+		const result = await Effect.runPromise(program);
+
+		// The misdated document is downloaded, which is how its date is read,
+		// but never summarized or stored. The one behind it still goes through.
+		expect(log.egovDownload).toEqual([
+			"https://example.com/doc/1582",
+			"https://example.com/doc/1619",
+		]);
+		expect(log.summarize.map((s) => s.sources[0].text)).toEqual([texts[1]]);
+		expect(log.store.map((s) => s.date)).toEqual(["2025-08-25"]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain(
+			"Town Council Meeting Minutes August 25, 2025",
+		);
+		expect(log.alert[0].body).toContain("2025-07-28");
 		expect(result).toEqual({ processed: 1, errors: 1 });
 	});
 
@@ -3518,8 +3578,13 @@ describe("runPipeline document regeneration", () => {
 		const run = async (
 			{
 				crawlDelayMs = 0,
+				extractedText,
 				...config
-			}: Omit<StubConfig, "log"> & { crawlDelayMs?: number },
+			}: Omit<StubConfig, "log"> & {
+				crawlDelayMs?: number;
+				/** Replaces the numbered stub text for every document in the run. */
+				extractedText?: string;
+			},
 			body: Parameters<typeof runPipeline>[0]["bodies"][number] = COUNCIL,
 			unreadable = false,
 		) => {
@@ -3537,7 +3602,9 @@ describe("runPipeline document regeneration", () => {
 						unreadable
 							? { text: "", method: "unreadable" }
 							: {
-									text: `document text ${log.egovDownload.length + log.finalsiteDownload.length}`,
+									text:
+										extractedText ??
+										`document text ${log.egovDownload.length + log.finalsiteDownload.length}`,
 									method: "text-layer",
 								},
 					dryRun: false,
@@ -3858,6 +3925,28 @@ describe("runPipeline document regeneration", () => {
 
 		expect(third.log.summarize).toEqual([]);
 		expect(await rows()).toEqual(after);
+	});
+
+	it("holds a misdated eGov listing for a meeting that already holds a document, without attaching it or rebuilding the summary", async () => {
+		const { rows, run } = await setup();
+		await run({ egovListings: [AGENDA] });
+		const before = await rows();
+
+		const { log, result } = await run({
+			egovListings: [AGENDA, MINUTES],
+			// The title says May 27; the document opens with April 28.
+			extractedText:
+				"April 28, 2025 The Town Council met for a regular meeting on Monday, April 28, 2025.",
+			summarizationResult: REGENERATED,
+		});
+
+		expect(log.egovDownload).toEqual([MINUTES.downloadUrl]);
+		expect(log.summarize).toEqual([]);
+		expect(log.store).toEqual([]);
+		expect(log.alert).toHaveLength(1);
+		expect(log.alert[0].body).toContain("2025-04-28");
+		expect(result).toEqual({ processed: 0, errors: 1 });
+		expect(await rows()).toEqual(before);
 	});
 
 	describe("an eGov listing whose document the meeting already holds", () => {
