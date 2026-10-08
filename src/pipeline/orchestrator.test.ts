@@ -313,6 +313,7 @@ function buildStubLayers(config: StubConfig) {
 				config.log.stamped.push(input.meetingId);
 			}),
 		detachTranscript: () => Effect.succeed(null),
+		detachDocument: () => Effect.succeed(false),
 	});
 
 	const meetingMatch = Layer.succeed(MeetingMatchService, {
