@@ -63,6 +63,8 @@ async function setup(options: {
 	summarized?: boolean;
 	result?: SummarizationResult;
 	summarizeError?: Error;
+	/** Fail only the summarize calls whose meeting context contains this text. */
+	summarizeErrorFor?: string;
 }) {
 	const db = await createMigratedTestDb();
 	await db
@@ -75,7 +77,9 @@ async function setup(options: {
 		summarize: (input) =>
 			Effect.suspend(() => {
 				calls.push(input);
-				return options.summarizeError
+				return options.summarizeError &&
+					(options.summarizeErrorFor === undefined ||
+						input.meetingContext.includes(options.summarizeErrorFor))
 					? Effect.fail(
 							new LlmError({
 								model: "regenerating-model",
@@ -459,6 +463,112 @@ describe("regenerateCombinedSummaries", () => {
 			},
 		]);
 		expect(await context.rows()).toEqual(before);
+	});
+
+	/** Stores a meeting whose summary was built from documents and a transcript. */
+	async function storeCombinedMeeting(
+		context: Pick<Awaited<ReturnType<typeof setup>>, "db" | "layers">,
+		bodySlug: string,
+		date: string,
+	) {
+		const meeting = await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				return yield* storage.storeMeeting({
+					bodySlug,
+					date,
+					meetingType: "regular",
+					documents: [MINUTES],
+					summary: {
+						highlights: ["Original highlight"],
+						prose: "Original prose.",
+						model: "original-model",
+					},
+					fiscalDecisions: [],
+					budgetDiscussions: [],
+				});
+			}).pipe(Effect.provide(context.layers)),
+		);
+		await context.db
+			.update(schema.summaries)
+			.set({
+				sourceKinds: ["documents", "transcript"],
+				sourceFingerprint: computeSourceFingerprint(["stale"]),
+			})
+			.where(eq(schema.summaries.meetingId, meeting.id))
+			.run();
+		return meeting;
+	}
+
+	it("rebuilds only the requested body's meetings, not another body's combined summary", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await combine(context);
+		await context.db
+			.insert(schema.governingBodies)
+			.values({ name: "County Board", slug: "county-board", type: "county" })
+			.run();
+		const other = await storeCombinedMeeting(
+			context,
+			"county-board",
+			"2025-05-27",
+		);
+		const otherSummary = () =>
+			context.db
+				.select()
+				.from(schema.summaries)
+				.where(eq(schema.summaries.meetingId, other.id))
+				.all();
+		const otherBefore = await otherSummary();
+		context.calls.length = 0;
+
+		const outcomes = await regenerateAll(context.layers);
+
+		expect(outcomes.map((o) => o.meetingId)).toEqual([context.meeting.id]);
+		expect(context.calls.map((c) => c.meetingContext)).toEqual([
+			"Town Council, 2025-05-27",
+		]);
+		expect(await otherSummary()).toEqual(otherBefore);
+	});
+
+	it("carries on to the next meeting after one fails, leaving only the failed one's summary in place", async () => {
+		const context = await setup({
+			documents: [MINUTES],
+			summarizeError: new Error("quota exceeded"),
+			summarizeErrorFor: "2025-05-27",
+		});
+		await context.db
+			.update(schema.summaries)
+			.set({ sourceKinds: ["documents", "transcript"] })
+			.where(eq(schema.summaries.meetingId, context.meeting.id))
+			.run();
+		const later = await storeCombinedMeeting(
+			context,
+			"town-council",
+			"2025-06-09",
+		);
+		const summaryOf = (meetingId: number) =>
+			context.db
+				.select()
+				.from(schema.summaries)
+				.where(eq(schema.summaries.meetingId, meetingId))
+				.all();
+		const failedBefore = await summaryOf(context.meeting.id);
+
+		const outcomes = await regenerateAll(context.layers);
+
+		expect(outcomes).toEqual([
+			{
+				meetingId: context.meeting.id,
+				date: "2025-05-27",
+				outcome: "failed",
+				message: "quota exceeded",
+			},
+			{ meetingId: later.id, date: "2025-06-09", outcome: "regenerated" },
+		]);
+		expect(await summaryOf(context.meeting.id)).toEqual(failedBefore);
+		expect(await summaryOf(later.id)).toMatchObject([
+			{ model: "regenerating-model" },
+		]);
 	});
 });
 
