@@ -55,10 +55,13 @@ pnpm pipeline list-bodies                     # show configured bodies
 pnpm pipeline:dry                             # full run, no writes or alerts
 pnpm pipeline:run                             # full run
 pnpm pipeline run --body ellettsville-town-council   # one body only
+pnpm pipeline:run --sources youtube           # video path only
 pnpm pipeline held:list                       # videos the pipeline holds, and why
 ```
 
 Ellettsville's eGov portal enforces a 300-second delay between PDF downloads. `--skip-crawl-delay` is for local testing only.
+
+A video run also scores any stored video whose meeting has no Process Watch assessment, which is what a failed assessment leaves. It reads the stored transcript and changes nothing else on the meeting. A failed assessment counts in the run's `errors`. The weekly schedule does not run the video path, so this happens when a run names `youtube` in `--sources` or passes no `--sources`.
 
 ### Checks
 
