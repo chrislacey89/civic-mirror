@@ -51,9 +51,42 @@ function verifyAmounts<T extends FiscalDecisionCandidate>(
 	sourceText: string,
 ): T[] {
 	return decisions.map((decision) => {
-		const found = sourceText.includes(decision.originalAmount);
-		if (found) return decision;
+		if (figureIsIn(decision.originalAmount, sourceText)) return decision;
 		return { ...decision, confidence: decision.confidence * 0.4 };
+	});
+}
+
+/** A run of digits with any periods and commas inside it, as a scan or a caption writes a number. */
+const NUMBER_PATTERN = /\d[\d.,]*\d|\d/g;
+
+/**
+ * A written number as its digits. `whole` leaves off a two-digit cents part,
+ * so "$5,000.00" and "$5,000" share one.
+ */
+function digitsOf(written: string): { all: string; whole: string } {
+	const cents = /[.,]\d{2}$/.test(written);
+	const all = written.replace(/\D/g, "");
+	return { all, whole: cents ? all.slice(0, -2) : all };
+}
+
+/** Whether `originalAmount` names a dollar figure, as opposed to "not stated". */
+function statesFigure(originalAmount: string): boolean {
+	return /\d/.test(originalAmount);
+}
+
+/**
+ * Whether the first number in `originalAmount` appears in `text`. Digits are
+ * compared, so spacing, a period read for a comma ("$258.400.00") and a
+ * missing cents part do not hide a figure that is there. An amount that names
+ * no figure is found by its exact wording.
+ */
+function figureIsIn(originalAmount: string, text: string): boolean {
+	const written = originalAmount.match(NUMBER_PATTERN)?.[0];
+	if (written === undefined) return text.includes(originalAmount);
+	const wanted = digitsOf(written);
+	return (text.match(NUMBER_PATTERN) ?? []).some((candidate) => {
+		const found = digitsOf(candidate);
+		return found.all === wanted.all || found.whole === wanted.whole;
 	});
 }
 
@@ -164,6 +197,12 @@ type SummarizationInput = {
 	 * sets this; a caller of `summarize` does not.
 	 */
 	recordedDecisions?: SummarizationOutput["fiscalDecisions"];
+	/**
+	 * Decisions taken from the documents whose dollar figure is not in the
+	 * documents. For each, the generator returns an entry under the same title
+	 * carrying the figure the transcript states. The service sets this too.
+	 */
+	unreadFigures?: SummarizationOutput["fiscalDecisions"];
 };
 
 /** The texts of the sources of one kind, joined. Empty when there is none. */
@@ -200,27 +239,25 @@ function normalizedText(value: string): string {
 }
 
 /**
- * Whether `candidate` repeats a decision in `recorded`: the same resolution or
- * ordinance number, or the same title with the same stated amount. Amount and
- * status alone never match, because many distinct motions share "not stated",
- * 0 and "approved".
+ * Whether two entries name one motion: the same resolution or ordinance
+ * number, or the same title. Amounts are not compared, because many distinct
+ * motions share "not stated" and one motion can be given two figures.
  */
-function repeatsRecordedDecision(
-	candidate: SummarizationOutput["fiscalDecisions"][number],
-	recorded: SummarizationOutput["fiscalDecisions"],
+function isSameMotion(
+	a: SummarizationOutput["fiscalDecisions"][number],
+	b: SummarizationOutput["fiscalDecisions"][number],
 ): boolean {
-	const ordinance = normalizedText(candidate.ordinanceNumber ?? "");
-	const title = normalizedText(candidate.title);
-	return recorded.some(
-		(decision) =>
-			(ordinance !== "" &&
-				ordinance === normalizedText(decision.ordinanceNumber ?? "")) ||
-			(title === normalizedText(decision.title) &&
-				candidate.amount === decision.amount &&
-				normalizedText(candidate.originalAmount) ===
-					normalizedText(decision.originalAmount)),
+	const ordinance = normalizedText(a.ordinanceNumber ?? "");
+	return (
+		(ordinance !== "" &&
+			ordinance === normalizedText(b.ordinanceNumber ?? "")) ||
+		normalizedText(a.title) === normalizedText(b.title)
 	);
 }
+
+/** What a disagreement entry says the documents hold for a figure that is not in them. */
+const UNREADABLE_FIGURE =
+	"No readable figure. The summary uses the video's figure.";
 
 /**
  * The full result returned by the service — schema output plus the model
@@ -296,18 +333,62 @@ function SummarizationServiceLive(
 								})
 							).fiscalDecisions
 						: [];
+					// The documents govern a figure only when it can be found in them. A
+					// figure that cannot was rebuilt by the model from an illegible scan.
+					const documentsText = sourceTextOfKind(input.sources, "documents");
+					const unread = documentDecisions.filter(
+						(decision) =>
+							statesFigure(decision.originalAmount) &&
+							!figureIsIn(decision.originalAmount, documentsText),
+					);
+					const read = documentDecisions.filter(
+						(decision) => !unread.includes(decision),
+					);
 					const raw = await config.generateFn(
 						bothKinds
-							? { ...input, recordedDecisions: documentDecisions }
+							? { ...input, recordedDecisions: read, unreadFigures: unread }
 							: input,
 					);
-					// A decision the every-source call repeats from the documents is
-					// dropped, so the documents' entry is the only one kept.
+
+					// An unread figure gives way to the one the transcript states for
+					// the same motion, when the transcript does state it. Otherwise the
+					// decision keeps no amount.
+					const transcriptText = sourceTextOfKind(input.sources, "transcript");
+					const unreadableFigures: SourceDisagreement[] = [];
+					const governed = documentDecisions.map((decision) => {
+						if (!unread.includes(decision)) return decision;
+						const restated = raw.fiscalDecisions.find(
+							(candidate) =>
+								isSameMotion(candidate, decision) &&
+								statesFigure(candidate.originalAmount) &&
+								figureIsIn(candidate.originalAmount, transcriptText),
+						);
+						if (restated === undefined) {
+							return { ...decision, amount: 0, originalAmount: "not stated" };
+						}
+						unreadableFigures.push({
+							topic: decision.title,
+							documentsSay: UNREADABLE_FIGURE,
+							transcriptSays: restated.originalAmount,
+						});
+						return {
+							...decision,
+							amount: restated.amount,
+							originalAmount: restated.originalAmount,
+						};
+					});
+
+					// An entry of the every-source call that names a motion the documents
+					// already gave is dropped, whatever amount it carries, so the
+					// documents' entry is the only one kept.
 					const transcriptDecisions = raw.fiscalDecisions.filter(
-						(decision) => !repeatsRecordedDecision(decision, documentDecisions),
+						(candidate) =>
+							!documentDecisions.some((decision) =>
+								isSameMotion(candidate, decision),
+							),
 					);
 					const verified = verifyAmounts(
-						[...documentDecisions, ...transcriptDecisions],
+						[...governed, ...transcriptDecisions],
 						verificationText(input.sources),
 					);
 					// A disagreement needs two kinds of source to disagree; one
@@ -316,7 +397,10 @@ function SummarizationServiceLive(
 						...raw,
 						fiscalDecisions: verified,
 						sourceDisagreements: bothKinds
-							? keptDisagreements(raw.sourceDisagreements)
+							? [
+									...keptDisagreements(raw.sourceDisagreements),
+									...unreadableFigures,
+								]
 							: [],
 						model: config.model,
 					};

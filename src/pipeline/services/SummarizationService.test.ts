@@ -564,4 +564,178 @@ describe("SummarizationService", () => {
 			expect(calls[1].recordedDecisions).toEqual([CRASH_GRANT]);
 		});
 	});
+	describe("a figure the documents do not contain", () => {
+		const PAVING = {
+			title: "Paving bid award to E & B Paving",
+			description: "Accepted the low bid for the paving grant match",
+			status: "approved" as const,
+			confidence: 0.9,
+			isRecurring: false,
+		};
+		const REBUILT = {
+			...PAVING,
+			amount: 215215.1,
+			originalAmount: "$215,215.10",
+		};
+		const SCANNED_MINUTES = {
+			kind: "documents" as const,
+			text: "two bids from E & B Paving for fpaa-215.10 and Milestone Paving for $277,571.80. Motion carries.",
+		};
+		const CAPTIONS = {
+			kind: "transcript" as const,
+			text: "we will be going with the low bid from EMB paving for $244,21510",
+		};
+
+		function output(
+			fiscalDecisions: SummarizationOutput["fiscalDecisions"],
+		): SummarizationOutput {
+			return {
+				highlights: [],
+				prose: "Summary.",
+				fiscalDecisions,
+				budgetDiscussions: [],
+				sourceDisagreements: [],
+			};
+		}
+
+		function summarizeBoth(
+			sources: SummarizationInput["sources"],
+			answers: {
+				fromDocuments: SummarizationOutput["fiscalDecisions"];
+				fromEverySource: SummarizationOutput["fiscalDecisions"];
+			},
+		) {
+			const calls: SummarizationInput[] = [];
+			const result = Effect.runPromise(
+				Effect.gen(function* () {
+					const service = yield* SummarizationService;
+					return yield* service.summarize({
+						sources,
+						meetingContext: "Town Council, May 27, 2025",
+					});
+				}).pipe(
+					Effect.provide(
+						SummarizationServiceLive({
+							model: "gemini-2.5-flash",
+							generateFn: async (input) => {
+								calls.push(input);
+								return output(
+									input.sources.some((source) => source.kind === "transcript")
+										? answers.fromEverySource
+										: answers.fromDocuments,
+								);
+							},
+						}),
+					),
+				),
+			);
+			return { calls, result };
+		}
+
+		it("takes the transcript's figure for a decision whose documents figure is not in the documents, and records that", async () => {
+			const { calls, result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
+				fromDocuments: [REBUILT],
+				fromEverySource: [
+					{ ...PAVING, amount: 244215.1, originalAmount: "$244,215.10" },
+				],
+			});
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions).toHaveLength(1);
+			expect(summary.fiscalDecisions[0].amount).toBe(244215.1);
+			expect(summary.fiscalDecisions[0].originalAmount).toBe("$244,215.10");
+			expect(summary.fiscalDecisions[0].confidence).toBeCloseTo(0.36, 5);
+			expect(summary.sourceDisagreements).toEqual([
+				{
+					topic: PAVING.title,
+					documentsSay:
+						"No readable figure. The summary uses the video's figure.",
+					transcriptSays: "$244,215.10",
+				},
+			]);
+			expect(calls[1].recordedDecisions).toEqual([]);
+			expect(calls[1].unreadFigures).toEqual([REBUILT]);
+		});
+
+		it("stores no amount when the transcript's figure for that decision is not in the transcript either", async () => {
+			const { result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
+				fromDocuments: [REBUILT],
+				fromEverySource: [
+					{ ...PAVING, amount: 215215.1, originalAmount: "$215,215.10" },
+				],
+			});
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions).toHaveLength(1);
+			expect(summary.fiscalDecisions[0].title).toBe(PAVING.title);
+			expect(summary.fiscalDecisions[0].amount).toBe(0);
+			expect(summary.fiscalDecisions[0].originalAmount).toBe("not stated");
+			expect(summary.sourceDisagreements).toEqual([]);
+		});
+
+		it("stores no amount when the every-source call does not return that decision", async () => {
+			const { result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
+				fromDocuments: [REBUILT],
+				fromEverySource: [],
+			});
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions.map((d) => [d.title, d.amount])).toEqual([
+				[PAVING.title, 0],
+			]);
+		});
+
+		it("keeps a documents figure the scan wrote with a period for the comma, whatever the transcript says", async () => {
+			const scada = {
+				title: "SCADA system migration",
+				description: "Not to exceed amount for the SCADA migration",
+				amount: 258400,
+				originalAmount: "$258,400.00",
+				status: "approved" as const,
+				confidence: 0.9,
+				isRecurring: false,
+			};
+			const { calls, result } = summarizeBoth(
+				[
+					{ kind: "documents", text: "Total was not to exceed $258.400.00." },
+					{ kind: "transcript", text: "not to exceed about $260,000" },
+				],
+				{
+					fromDocuments: [scada],
+					fromEverySource: [
+						{ ...scada, amount: 260000, originalAmount: "$260,000" },
+					],
+				},
+			);
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions).toEqual([scada]);
+			expect(calls[1].recordedDecisions).toEqual([scada]);
+			expect(calls[1].unreadFigures).toEqual([]);
+		});
+
+		it("leaves a decision with no stated amount alone", async () => {
+			const agreement = {
+				...PAVING,
+				title: "Fire services agreement",
+				amount: 0,
+				originalAmount: "not stated",
+			};
+			const { calls, result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
+				fromDocuments: [agreement],
+				fromEverySource: [],
+			});
+
+			const summary = await result;
+
+			expect(summary.fiscalDecisions.map((d) => d.originalAmount)).toEqual([
+				"not stated",
+			]);
+			expect(calls[1].unreadFigures).toEqual([]);
+		});
+	});
 });
