@@ -147,6 +147,12 @@ type MeetingSources = {
 	summary: { sourceKinds: SourceKind[]; sourceFingerprint: string } | null;
 };
 
+/**
+ * Which of a body's summaries a listing takes: `combined` for those built
+ * from both documents and a transcript, `all` for every one.
+ */
+type SummaryScope = "combined" | "all";
+
 /** Transaction handle Drizzle passes to a `db.transaction` callback. */
 type Tx = Parameters<
 	Parameters<LibSQLDatabase<typeof schema>["transaction"]>[0]
@@ -266,12 +272,14 @@ interface StorageServiceInterface {
 		bodySlug?: string;
 	}): Effect.Effect<HeldVideo[], DatabaseError>;
 	/**
-	 * A body's meetings whose summary was built from both documents and a
-	 * transcript, oldest first; the one on `date` when it is given.
+	 * A body's meetings that have a summary, oldest first; the one on `date`
+	 * when it is given. The `combined` scope keeps only a summary built from
+	 * both documents and a transcript.
 	 */
-	listCombinedSummaryMeetings(input: {
+	listSummaryMeetings(input: {
 		bodySlug: string;
 		date?: string;
+		scope: SummaryScope;
 	}): Effect.Effect<{ meetingId: number; date: string }[], DatabaseError>;
 	/**
 	 * Every document and the first transcript a meeting holds, plus the source
@@ -589,7 +597,7 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
-		listCombinedSummaryMeetings: (input) =>
+		listSummaryMeetings: (input) =>
 			Effect.tryPromise({
 				try: async () => {
 					const rows = await db
@@ -620,14 +628,15 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 					return rows
 						.filter(
 							(row) =>
-								row.sourceKinds.includes("documents") &&
-								row.sourceKinds.includes("transcript"),
+								input.scope === "all" ||
+								(row.sourceKinds.includes("documents") &&
+									row.sourceKinds.includes("transcript")),
 						)
 						.map(({ meetingId, date }) => ({ meetingId, date }));
 				},
 				catch: (error) =>
 					new DatabaseError({
-						operation: "listCombinedSummaryMeetings",
+						operation: "listSummaryMeetings",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
@@ -1340,4 +1349,5 @@ export type {
 	MeetingSources,
 	MeetingSourceState,
 	StoreDramaAssessmentInput,
+	SummaryScope,
 };

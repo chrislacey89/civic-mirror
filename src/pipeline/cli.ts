@@ -23,7 +23,7 @@ import {
 } from "#/pipeline/orchestrator.ts";
 import {
 	incompleteRegeneration,
-	regenerateCombinedSummaries,
+	regenerateBodySummaries,
 } from "#/pipeline/regenerate.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 
@@ -401,19 +401,20 @@ const documentDetachCommand = Command.make(
 );
 
 // ---------------------------------------------------------------------------
-// `summaries:regenerate` subcommand — summarizes again a body's meetings whose
-// summary was built from documents and a transcript together, for when the
-// summarizer changed and the sources did not.
+// `summaries:regenerate` subcommand — summarizes again a body's meetings, for
+// when the summarizer changed and the sources did not: those whose summary
+// was built from documents and a transcript together, or every one with
+// `--all`.
 // ---------------------------------------------------------------------------
 
 const regenerateBodySlug = Flag.String("body").pipe(
-	Flag.withDescription("Slug of the body whose combined summaries to rebuild."),
+	Flag.withDescription("Slug of the body whose summaries to rebuild."),
 );
 
 const regenerateDate = Flag.String("date").pipe(
 	Flag.optional,
 	Flag.withDescription(
-		"Only the meeting on this ISO date (defaults to every combined summary of the body).",
+		"Only the meeting on this ISO date (defaults to every summary of the body in scope).",
 	),
 );
 
@@ -424,14 +425,22 @@ const regenerateDryRun = Flag.Boolean("dry-run").pipe(
 	),
 );
 
+const regenerateAll = Flag.Boolean("all").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
+		"Rebuild every summary of the body, not only those built from documents and a transcript together.",
+	),
+);
+
 const summariesRegenerateCommand = Command.make(
 	"summaries:regenerate",
 	{
 		bodySlug: regenerateBodySlug,
 		date: regenerateDate,
 		dryRun: regenerateDryRun,
+		all: regenerateAll,
 	},
-	({ bodySlug, date, dryRun }) =>
+	({ bodySlug, date, dryRun, all }) =>
 		Effect.gen(function* () {
 			const body = DEFAULT_BODIES.find((b) => b.slug === bodySlug);
 			if (!body) {
@@ -442,6 +451,7 @@ const summariesRegenerateCommand = Command.make(
 				);
 			}
 			const onDate = Option.getOrUndefined(date);
+			const scope = all ? "all" : "combined";
 
 			const layers = yield* Effect.try({
 				try: () => buildProductionLayers({ dryRun: false }),
@@ -454,9 +464,10 @@ const summariesRegenerateCommand = Command.make(
 			if (dryRun) {
 				const meetings = yield* Effect.gen(function* () {
 					const storage = yield* StorageService;
-					return yield* storage.listCombinedSummaryMeetings({
+					return yield* storage.listSummaryMeetings({
 						bodySlug: body.slug,
 						date: onDate,
+						scope,
 					});
 				}).pipe(Effect.provide(layers));
 				for (const meeting of meetings) {
@@ -468,9 +479,10 @@ const summariesRegenerateCommand = Command.make(
 				return;
 			}
 
-			const outcomes = yield* regenerateCombinedSummaries({
+			const outcomes = yield* regenerateBodySummaries({
 				body,
 				date: onDate,
+				scope,
 			}).pipe(Effect.provide(layers));
 
 			for (const outcome of outcomes) {

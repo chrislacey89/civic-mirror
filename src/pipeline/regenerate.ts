@@ -1,6 +1,9 @@
 import { Effect } from "effect";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
-import { StorageService } from "#/pipeline/services/StorageService.ts";
+import {
+	StorageService,
+	type SummaryScope,
+} from "#/pipeline/services/StorageService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import {
 	fingerprintOfSources,
@@ -24,13 +27,15 @@ import {
  *
  * `force` regenerates a summary whose fingerprint is current, for when the
  * summarizer changed and the sources did not. It does not reach a summary
- * stored without a fingerprint.
+ * stored without a fingerprint; `evenUnfingerprinted` does, for a run meant
+ * to rebuild every summary from the sources its meeting holds now.
  */
 function regenerateMeetingSummary(input: {
 	meetingId: number;
 	meetingContext: string;
 	glossary: readonly string[] | undefined;
 	force?: boolean;
+	evenUnfingerprinted?: boolean;
 }): Effect.Effect<
 	{ regenerated: boolean },
 	DatabaseError | LlmError,
@@ -46,7 +51,9 @@ function regenerateMeetingSummary(input: {
 			documents: held.documents,
 			transcriptUrl: held.transcript?.sourceUrl,
 		});
-		if (held.summary?.sourceFingerprint === "") return { regenerated: false };
+		if (!input.evenUnfingerprinted && held.summary?.sourceFingerprint === "") {
+			return { regenerated: false };
+		}
 		if (!input.force && held.summary?.sourceFingerprint === sourceFingerprint) {
 			return { regenerated: false };
 		}
@@ -78,7 +85,7 @@ function regenerateMeetingSummary(input: {
 	});
 }
 
-/** What became of one meeting in a `regenerateCombinedSummaries` run. */
+/** What became of one meeting in a `regenerateBodySummaries` run. */
 type RegenerationOutcome = {
 	meetingId: number;
 	date: string;
@@ -88,15 +95,18 @@ type RegenerationOutcome = {
 };
 
 /**
- * Summarizes again every meeting of a body whose summary was built from both
- * documents and a transcript, whether or not its sources changed. For when
- * the summarizer's handling of the two kinds together changed. A summarizer
- * failure on one meeting leaves its summary in place and the run carries on.
+ * Summarizes again a body's meetings, whether or not their sources changed.
+ * The `combined` scope takes each summary built from both documents and a
+ * transcript, for when the summarizer's handling of the two kinds together
+ * changed. The `all` scope takes every summary, for when the summarizer
+ * changed what it makes of any meeting. A summarizer failure on one meeting
+ * leaves its summary in place and the run carries on.
  */
-function regenerateCombinedSummaries(input: {
+function regenerateBodySummaries(input: {
 	body: { slug: string; name: string; glossary?: readonly string[] };
 	/** Only the meeting on this date. */
 	date?: string;
+	scope: SummaryScope;
 }): Effect.Effect<
 	RegenerationOutcome[],
 	DatabaseError,
@@ -104,9 +114,10 @@ function regenerateCombinedSummaries(input: {
 > {
 	return Effect.gen(function* () {
 		const storage = yield* StorageService;
-		const meetings = yield* storage.listCombinedSummaryMeetings({
+		const meetings = yield* storage.listSummaryMeetings({
 			bodySlug: input.body.slug,
 			date: input.date,
+			scope: input.scope,
 		});
 
 		const outcomes: RegenerationOutcome[] = [];
@@ -116,6 +127,7 @@ function regenerateCombinedSummaries(input: {
 				meetingContext: `${input.body.name}, ${meeting.date}`,
 				glossary: input.body.glossary,
 				force: true,
+				evenUnfingerprinted: input.scope === "all",
 			}).pipe(
 				Effect.map(({ regenerated }) => ({
 					outcome: regenerated
@@ -145,7 +157,7 @@ function incompleteRegeneration(
 	outcomes: readonly RegenerationOutcome[],
 ): string | null {
 	if (outcomes.length === 0) {
-		return "No meeting with a combined summary matched, so nothing was rebuilt.";
+		return "No meeting with a summary in scope matched, so nothing was rebuilt.";
 	}
 	const failed = outcomes.filter((o) => o.outcome === "failed").length;
 	const skipped = outcomes.filter((o) => o.outcome === "skipped").length;
@@ -155,7 +167,7 @@ function incompleteRegeneration(
 
 export {
 	incompleteRegeneration,
-	regenerateCombinedSummaries,
+	regenerateBodySummaries,
 	regenerateMeetingSummary,
 };
 export type { RegenerationOutcome };
