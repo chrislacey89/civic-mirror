@@ -19,7 +19,7 @@ function formatCurrency(amount: number): string {
 	}).format(amount);
 }
 
-export function meetingHref(
+function meetingHref(
 	meeting: Pick<MeetingCardData, "bodySlug" | "date" | "session">,
 ): string {
 	return `/meetings/${meeting.bodySlug}/${meeting.date}${

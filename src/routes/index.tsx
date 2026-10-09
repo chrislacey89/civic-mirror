@@ -1,10 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { FiscalSummary } from "#/components/FiscalSummary.tsx";
-import {
-	formatDate,
-	MeetingCard,
-	meetingHref,
-} from "#/components/MeetingCard.tsx";
+import { formatDate, MeetingCard } from "#/components/MeetingCard.tsx";
 import type {
 	FiscalByBody,
 	FiscalByCategory,
@@ -136,12 +132,14 @@ export function LandingPage({
 					</p>
 					<h1 className="display mt-3 text-[44px] leading-[0.98] tracking-[-0.025em] sm:text-[64px]">
 						{lead ? (
-							<a
-								href={meetingHref(lead)}
+							<Link
+								to="/meetings/$bodySlug/$date"
+								params={{ bodySlug: lead.bodySlug, date: lead.date }}
+								search={lead.session ? { session: lead.session } : {}}
 								className="text-inherit! no-underline! hover:underline!"
 							>
 								{leadHeadline(lead)}
-							</a>
+							</Link>
 						) : (
 							"Civic Mirror"
 						)}
@@ -153,12 +151,14 @@ export function LandingPage({
 							</p>
 							<p className="mono mt-4 text-[11px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">
 								{lead.bodyName} · {formatDate(lead.date)} ·{" "}
-								<a
-									href={meetingHref(lead)}
+								<Link
+									to="/meetings/$bodySlug/$date"
+									params={{ bodySlug: lead.bodySlug, date: lead.date }}
+									search={lead.session ? { session: lead.session } : {}}
 									className="font-bold text-[var(--accent)]!"
 								>
 									Read the full summary →
-								</a>
+								</Link>
 							</p>
 						</>
 					) : (
