@@ -138,7 +138,7 @@ export function LandingPage({
 						{lead ? (
 							<a
 								href={meetingHref(lead)}
-								className="text-inherit no-underline hover:underline"
+								className="text-inherit! no-underline! hover:underline!"
 							>
 								{leadHeadline(lead)}
 							</a>
@@ -155,7 +155,7 @@ export function LandingPage({
 								{lead.bodyName} · {formatDate(lead.date)} ·{" "}
 								<a
 									href={meetingHref(lead)}
-									className="font-bold text-[var(--accent)]"
+									className="font-bold text-[var(--accent)]!"
 								>
 									Read the full summary →
 								</a>
