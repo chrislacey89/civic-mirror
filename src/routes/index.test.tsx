@@ -83,6 +83,19 @@ describe("LandingPage", () => {
 		screen.getByText("March 23, 2026");
 	});
 
+	it("links the lead headline and a read-more line to the lead meeting", () => {
+		render(<LandingPage data={populatedData} />);
+
+		const href = "/meetings/ellettsville-town-council/2026-03-23";
+		const headline = screen.getByRole("heading", { level: 1 });
+		expect(headline.querySelector("a")?.getAttribute("href")).toBe(href);
+		expect(
+			screen
+				.getByRole("link", { name: /read the full summary/i })
+				.getAttribute("href"),
+		).toBe(href);
+	});
+
 	it("shows only the first sentence of the lead meeting prose as the lede", () => {
 		const first = "Council accepts $212,400 bid to repave Maple Street.";
 		const second = "The work starts in June.";

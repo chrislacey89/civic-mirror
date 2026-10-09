@@ -1,6 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { FiscalSummary } from "#/components/FiscalSummary.tsx";
-import { MeetingCard } from "#/components/MeetingCard.tsx";
+import {
+	formatDate,
+	MeetingCard,
+	meetingHref,
+} from "#/components/MeetingCard.tsx";
 import type {
 	FiscalByBody,
 	FiscalByCategory,
@@ -131,12 +135,32 @@ export function LandingPage({
 						Civic Mirror — Local government, read and written for residents
 					</p>
 					<h1 className="display mt-3 text-[44px] leading-[0.98] tracking-[-0.025em] sm:text-[64px]">
-						{lead ? leadHeadline(lead) : "Civic Mirror"}
+						{lead ? (
+							<a
+								href={meetingHref(lead)}
+								className="text-inherit no-underline hover:underline"
+							>
+								{leadHeadline(lead)}
+							</a>
+						) : (
+							"Civic Mirror"
+						)}
 					</h1>
 					{lead ? (
-						<p className="lede mt-5 text-[18px] leading-[1.5]">
-							{firstSentence(lead.prose) || lead.highlights[0]}
-						</p>
+						<>
+							<p className="lede mt-5 text-[18px] leading-[1.5]">
+								{firstSentence(lead.prose) || lead.highlights[0]}
+							</p>
+							<p className="mono mt-4 text-[11px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+								{lead.bodyName} · {formatDate(lead.date)} ·{" "}
+								<a
+									href={meetingHref(lead)}
+									className="font-bold text-[var(--accent)]"
+								>
+									Read the full summary →
+								</a>
+							</p>
+						</>
 					) : (
 						<p className="mt-5 max-w-2xl text-[18px] leading-[1.55] text-[var(--ink-mid)]">
 							AI-powered summaries of every public meeting of eight local

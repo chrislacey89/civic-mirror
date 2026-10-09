@@ -1,6 +1,6 @@
 import type { MeetingCardData } from "#/db/queries.ts";
 
-function formatDate(iso: string): string {
+export function formatDate(iso: string): string {
 	const [year, month, day] = iso.split("-");
 	const date = new Date(Number(year), Number(month) - 1, Number(day));
 	return date.toLocaleDateString("en-US", {
@@ -19,6 +19,14 @@ function formatCurrency(amount: number): string {
 	}).format(amount);
 }
 
+export function meetingHref(
+	meeting: Pick<MeetingCardData, "bodySlug" | "date" | "session">,
+): string {
+	return `/meetings/${meeting.bodySlug}/${meeting.date}${
+		meeting.session ? `?session=${encodeURIComponent(meeting.session)}` : ""
+	}`;
+}
+
 export function MeetingCard({ meeting }: { meeting: MeetingCardData }) {
 	const isUnreadable = meeting.extractionMethod === "unreadable";
 	const isOcr = meeting.extractionMethod === "ocr";
@@ -26,11 +34,7 @@ export function MeetingCard({ meeting }: { meeting: MeetingCardData }) {
 	return (
 		<article className="paper-card flex h-full flex-col p-5">
 			<a
-				href={`/meetings/${meeting.bodySlug}/${meeting.date}${
-					meeting.session
-						? `?session=${encodeURIComponent(meeting.session)}`
-						: ""
-				}`}
+				href={meetingHref(meeting)}
 				className="flex h-full flex-col no-underline"
 			>
 				<div className="mono mb-3 flex flex-wrap justify-between gap-2 text-[10px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">
