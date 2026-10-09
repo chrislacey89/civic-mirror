@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/about")({
 	component: About,
@@ -43,6 +43,11 @@ function About() {
 						highlights, a prose summary, and a structured ledger of fiscal
 						decisions. Every figure is linked back to the source document so you
 						can verify it yourself.
+					</p>
+					<p className="mt-4 text-[16px] leading-[1.6] text-[var(--ink)]">
+						<Link to="/how-we-write">How we write</Link> sets out the standard
+						those summaries are held to, with real meetings shown before and
+						after.
 					</p>
 				</div>
 
