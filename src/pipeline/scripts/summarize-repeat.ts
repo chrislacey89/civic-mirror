@@ -1,10 +1,12 @@
 /**
  * Summarizes one stored meeting several times and prints each run's fiscal
- * decisions and source disagreements, so run-to-run differences can be seen
- * before a prompt or summarizer change is trusted. It reads the meeting's
- * stored sources and calls the model; it writes nothing.
+ * decisions, source disagreements, highlights and prose, so run-to-run
+ * differences can be seen before a prompt or summarizer change is trusted. It
+ * reads the meeting's stored sources and calls the model; it writes nothing
+ * to the database. With --json it also writes the runs' highlights and prose
+ * to a file in the shape the article compare page imports.
  *
- *   pnpm tsx src/pipeline/scripts/summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs]
+ *   pnpm tsx src/pipeline/scripts/summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs] [--json <path>]
  *
  * Exit codes:
  *   0  every run gave the same decisions
@@ -13,6 +15,7 @@
  *   3  a model or database call failed, so the runs could not all be compared;
  *      the failed runs are printed and nothing is compared
  */
+import { writeFileSync } from "node:fs";
 import { createClient } from "@libsql/client";
 import { config } from "dotenv";
 import { drizzle } from "drizzle-orm/libsql";
@@ -30,16 +33,24 @@ import {
 	SummarizationServiceLive,
 } from "#/pipeline/services/SummarizationService.ts";
 import { readableSources } from "#/pipeline/sources.ts";
+import { compareImport } from "./summarize-repeat-export.ts";
 import { EXIT_FAILED, judgeRuns } from "./summarize-repeat-verdict.ts";
 
 config({ path: [".env.local", ".env"] });
 
-const [bodySlug, date, runsArg] = process.argv.slice(2);
+const args = process.argv.slice(2);
+const jsonFlag = args.indexOf("--json");
+const jsonPath = jsonFlag === -1 ? null : (args[jsonFlag + 1] ?? null);
+const positional =
+	jsonFlag === -1
+		? args
+		: args.filter((_, i) => i < jsonFlag || i > jsonFlag + 1);
+const [bodySlug, date, runsArg] = positional;
 const runs = Number(runsArg ?? 5);
 const body = DEFAULT_BODIES.find((candidate) => candidate.slug === bodySlug);
 if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? "") || !(runs >= 1)) {
 	console.error(
-		"usage: summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs]\n" +
+		"usage: summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs] [--json <path>]\n" +
 			`known slugs: ${DEFAULT_BODIES.map((candidate) => candidate.slug).join(", ")}`,
 	);
 	process.exit(2);
@@ -117,7 +128,34 @@ results.forEach((result, run) => {
 			`  disagreement  ${disagreement.topic}: ${disagreement.documentsSay} / ${disagreement.transcriptSays}`,
 		);
 	}
+	for (const highlight of summary.highlights) console.log(`  - ${highlight}`);
+	console.log(`\n${summary.prose}\n`);
 });
+
+if (jsonPath !== null) {
+	writeFileSync(
+		jsonPath,
+		JSON.stringify(
+			compareImport(
+				date,
+				modelId,
+				results.map((result) =>
+					Result.isFailure(result)
+						? { failure: result.failure.message }
+						: {
+								summary: {
+									highlights: result.success.highlights,
+									prose: result.success.prose,
+								},
+							},
+				),
+			),
+			null,
+			2,
+		),
+	);
+	console.log(`wrote ${jsonPath}`);
+}
 
 const verdict = judgeRuns(
 	results.map((result) =>
