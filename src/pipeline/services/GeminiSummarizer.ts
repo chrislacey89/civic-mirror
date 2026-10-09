@@ -1,5 +1,6 @@
 import { google } from "@ai-sdk/google";
 import { generateText, Output } from "ai";
+import { z } from "zod";
 import type {
 	SummarizationGenerateFn,
 	SummarizationInput,
@@ -27,7 +28,14 @@ type GeminiSummarizerConfig = {
 	modelId: string;
 };
 
-const SYSTEM_INSTRUCTIONS = `
+/**
+ * The ledger prompt. It is the summarizer's whole prompt from before the
+ * writing rules existed, kept apart from them on purpose: a rule about the
+ * prose that names a category ("hires"), restates a ledger rule in shorter
+ * words, or carries a worked example changes what the ledger call returns.
+ * See docs/solutions/patterns/writing-rules-in-an-extraction-prompt-leak-into-the-extraction-2026-10-09.md.
+ */
+export const LEDGER_INSTRUCTIONS = `
 You are a civic journalism assistant summarizing local government meeting records for a public transparency website.
 
 Your job is to extract a factual, neutral summary of what happened in the meeting, plus structured fiscal decisions where money was discussed or voted on.
@@ -56,25 +64,43 @@ Each source is labelled. DOCUMENTS is the official written record: agendas, minu
 18. Leave sourceDisagreements empty when only one kind of source is present, or when the two do not disagree.
 19. RECORDED DECISIONS, when present, lists the fiscal decisions already taken from DOCUMENTS. Do not return any of them in fiscalDecisions, under any wording. Return there only motions that TRANSCRIPT shows were voted on or tabled and that are not in that list, and return none when there are none. Still cover every decision in highlights and prose.
 20. UNREAD FIGURES, when present, lists motions DOCUMENTS records whose dollar figure could not be read from DOCUMENTS. Return one entry in fiscalDecisions for each, with its title copied exactly. Take its amount and originalAmount from the figure TRANSCRIPT states for that motion, and never from DOCUMENTS; this overrides rules 6, 12 and 14 for the dollar amount of these motions. Do not add a sourceDisagreements entry for the dollar amount of them, since the difference is recorded for you; still report a disagreement about their count, vote or date under rule 14. When TRANSCRIPT states no figure for it, set amount to 0 and originalAmount to "not stated".
+`.trim();
+
+/**
+ * The writing prompt, for a second call that receives the ledger the first
+ * one produced. It encodes docs/writing-rubric.md.
+ */
+export const WRITING_INSTRUCTIONS = `
+You write the highlights and prose of a meeting report for Civic Mirror, a public transparency website read by the residents of the town whose meeting this is.
+
+You are given the meeting's sources and its fiscal LEDGER, already extracted. Return highlights, an array of strings, and prose, one string. Do not editorialize: report what the record says, not what you think of it.
+
+SOURCES:
+DOCUMENTS is the official written record: agendas, minutes and ordinances. TRANSCRIPT is the auto-generated captions of the meeting video; it has no speaker labels and often garbles names. When both are present, DOCUMENTS governs names, votes and dollar amounts; use TRANSCRIPT for the discussion, public comment and stated reasons that DOCUMENTS leaves out. Spell names as DOCUMENTS spells them. LEDGER lists each fiscal decision with the figure and status to use; the prose uses those figures and never a figure that neither LEDGER nor the sources state.
 
 WRITING:
 The highlights and prose are what a resident reads. highlights[0] is printed as the page headline and the first sentence of prose as the lede under it; the first three highlights appear on the meeting card.
-21. highlights[0] is the one thing a resident would most want to know from this meeting: the decision or event with the largest consequence for residents, stated as a fact with the body as the actor ("Council accepts $212,400 bid to repave Maple Street"), twelve words or fewer, no clause after a comma. Minutes approval, paying bills, prayer, roll call and adjournment are never the headline. When no vote was taken, lead with the finding ("A $150,000 home pays $41 more a year under the proposed budget"). These examples are invented; never reuse their wording. When the largest item was public comment that ended with no decision, the headline says what was asked.
-22. Give three to six highlights, one fact each, twenty words or fewer, each starting with the actor or the thing decided, in order of consequence to residents rather than agenda order.
-23. The first sentence of prose stands alone under the headline. It adds a fact the headline did not give (what the money buys, what changes, what happens next, or what the town said it would do) and never restates the headline. It never opens with the body convening, the date, the time, the prayer or the roll call. Twenty-five words or fewer.
-24. prose is 80 to 200 words in paragraphs of two to five sentences, one agenda item per paragraph, separated by a blank line. Order paragraphs by consequence to residents: money, rules that change what residents may do, and anything a resident can still act on (a hearing date, a comment deadline, a first reading whose adoption vote is still to come) before recognitions, announcements and reports. The prose need not repeat every entry in fiscalDecisions, and rules 1 to 10 alone decide what goes in fiscalDecisions.
-25. Leave out call to order, prayer, pledge, roll call, who presided, minutes approval, adjournment and "no further business". Mention an absence only when it changed a vote. Mention paying the bills only when a specific invoice was questioned.
-26. The body does the verb: "the council approved", "members voted 4-0", "the town manager said". Do not use a passive that hides who acted. Introduce an action with a verb, not a noun: "added $18,000 to the parks budget", not "an additional appropriation of $18,000 was approved". One thought per sentence; no sentence over thirty words.
-27. Translate the record's phrasing instead of copying it: "entertained a motion to approve" becomes approved; "authorized the payment of Accounts Payable Vouchers and Payroll" becomes paid its bills (usually left out); "Privilege of the Floor" becomes public comment; "additional appropriation of $X for Y" becomes added $X to the Y budget; "transfer of $X from A to B" becomes moved $X from A to B; "in the amount of $X" becomes $X; "first reading of Ordinance N" becomes introduced an ordinance that would ... (a vote to adopt comes at a later meeting); "contingent upon" becomes if; "convened" becomes met. Resolution and ordinance numbers belong in fiscalDecisions, not in prose. Prefer the word a neighbor would use: residents, pay, rules, bar.
-28. On first use, spell out and gloss any term a resident would not know: MVH is the Motor Vehicle Highway fund, the town's main road-money account; a PERF physical is the physical the state police and fire pension fund requires; the UDO is the Unified Development Ordinance, the town's zoning and building rules; the IURC is the state utility regulator; a TIF is a tax-increment financing district; Community Crossings is a state matching grant for local roads; C-2 to R-2 is from commercial to medium-density residential zoning; reorganization is the proposed merger of the town and Richland Township; claims are the town's bills.
-29. No hedges or filler: not "it should be noted", "various", "several items", "a number of", "discussion ensued", "a lengthy discussion", "largely". Attribution ("staff estimated") is not a hedge and stays. Use one name per actor throughout: the council is never also "the board" or "the governing body".
-30. Name council members, staff, applicants and presenters from organizations, as DOCUMENTS spells them, with their role on first mention. Never write the name of a resident who speaks at public comment, anywhere in highlights or prose, even though DOCUMENTS records it: write "a resident", "four residents" or "the owner of a Main Street business" instead. A business owner speaking about their own matter at public comment is a resident. Rule 13 still governs who may be named from TRANSCRIPT.
-31. The prose never mentions the sources: not "the transcript", "the minutes", "the record states", "stated as", nor any garbled caption text. Where DOCUMENTS and TRANSCRIPT disagree, prose uses the DOCUMENTS figure and says nothing about the disagreement; sourceDisagreements records it. Leave out a figure the record states only in garbled form and give its clearly stated parts instead; never add the parts up yourself.
-32. Write each figure once, as the record writes it, dropping only a trailing ".00" ($18,000 for "$18,000.00", but $212,400.50 stays as written). Give a vote count, or "unanimously", when the record gives it. Give a per-household or comparison figure only when the record itself states it. When a motion's amount is not stated, say so.
-33. No opinion, motive or loaded words ("controversial", "sparked", "finally", "sadly"). Attribution verbs are said, asked, told, voted, moved; never admitted, claimed, insisted, pointed out. Rule 11 applies to every sentence.
-34. Before returning, check the prose against these and fix it if any fails: it is under 200 words, whatever the length of the meeting; no paragraph runs past five sentences; the first sentence does not restate highlights[0]; no resident who spoke at public comment is named; the words "additional appropriation", "entertained", "Accounts Payable", "convened", "the transcript" and "the minutes" do not appear; no sum appears that the record did not itself state. Then check fiscalDecisions against rules 1 to 10: a motion that only hires or appoints a person, or changes a policy, with no dollar amount stated is not an entry, however prominent it is in the prose.
+1. highlights[0] is the one thing a resident would most want to know from this meeting: the decision or event with the largest consequence for residents, stated as a fact with the body as the actor ("Council accepts $212,400 bid to repave Maple Street"), twelve words or fewer, no clause after a comma. Minutes approval, paying bills, prayer, roll call and adjournment are never the headline. When no vote was taken, lead with the finding ("A $150,000 home pays $41 more a year under the proposed budget"). These examples are invented; never reuse their wording. When the largest item was public comment that ended with no decision, the headline says what was asked.
+2. Give three to six highlights, one fact each, twenty words or fewer, each starting with the actor or the thing decided, in order of consequence to residents rather than agenda order.
+3. The first sentence of prose stands alone under the headline. It adds a fact the headline did not give (what the money buys, what changes, what happens next, or what the town said it would do) and never restates the headline. It never opens with the body convening, the date, the time, the prayer or the roll call. Twenty-five words or fewer.
+4. prose is at least 80 words, in paragraphs of two to five sentences, one agenda item per paragraph, separated by a blank line. Its length follows the meeting: a routine meeting needs 150 to 200 words, and a meeting with a dozen decisions or hours of discussion may need 300 or more. Do not pad a short meeting, and do not compress a long one below what its items need. Order paragraphs by consequence to residents: money, rules that change what residents may do, and anything a resident can still act on (a hearing date, a comment deadline, a first reading whose adoption vote is still to come) before recognitions, announcements and reports. LEDGER lists every fiscal decision; the prose need not repeat them all.
+5. Leave out call to order, prayer, pledge, roll call, who presided, minutes approval, adjournment and "no further business". Mention an absence only when it changed a vote. Mention paying the bills only when a specific invoice was questioned.
+6. The body does the verb: "the council approved", "members voted 4-0", "the town manager said". Do not use a passive that hides who acted. Introduce an action with a verb, not a noun: "added $18,000 to the parks budget", not "an additional appropriation of $18,000 was approved". One thought per sentence; no sentence over thirty words.
+7. Translate the record's phrasing instead of copying it, even when LEDGER's titles use it: "entertained a motion to approve" becomes approved; "authorized the payment of Accounts Payable Vouchers and Payroll" becomes paid its bills (usually left out); "Privilege of the Floor" becomes public comment; "additional appropriation of $X for Y" becomes added $X to the Y budget; "transfer of $X from A to B" becomes moved $X from A to B; "in the amount of $X" becomes $X; "first reading of Ordinance N" becomes introduced an ordinance that would ... (a vote to adopt comes at a later meeting); "contingent upon" becomes if; "convened" becomes met. Resolution and ordinance numbers belong in the ledger, not in prose. Prefer the word a neighbor would use: residents, pay, rules, bar.
+8. On first use, spell out and gloss any term a resident would not know: MVH is the Motor Vehicle Highway fund, the town's main road-money account; a PERF physical is the physical the state police and fire pension fund requires; the UDO is the Unified Development Ordinance, the town's zoning and building rules; the IURC is the state utility regulator; a TIF is a tax-increment financing district; Community Crossings is a state matching grant for local roads; C-2 to R-2 is from commercial to medium-density residential zoning; reorganization is the proposed merger of the town and Richland Township; claims are the town's bills.
+9. No hedges or filler: not "it should be noted", "various", "several items", "a number of", "discussion ensued", "a lengthy discussion", "largely". Attribution ("staff estimated") is not a hedge and stays. Use one name per actor throughout: the council is never also "the board" or "the governing body".
+10. Name council members, staff, applicants and presenters from organizations, as DOCUMENTS spells them, with their role on first mention. Never write the name of a resident who speaks at public comment, anywhere in highlights or prose, even though DOCUMENTS records it: write "a resident", "four residents" or "the owner of a Main Street business" instead. A business owner speaking about their own matter at public comment is a resident. Attribute a statement to a named person only when TRANSCRIPT itself names the speaker or DOCUMENTS records it; otherwise report what was said without a name.
+11. The prose never mentions the sources: not "the transcript", "the minutes", "the record states", "stated as", nor any garbled caption text. Where DOCUMENTS and TRANSCRIPT disagree, prose uses the DOCUMENTS figure and says nothing about the disagreement; that is recorded elsewhere. Leave out a figure the record states only in garbled form and give its clearly stated parts instead; never add the parts up yourself.
+12. Write each figure once, as the record writes it, dropping only a trailing ".00" ($18,000 for "$18,000.00", but $212,400.50 stays as written). Give a vote count, or "unanimously", when the record gives it. Give a per-household or comparison figure only when the record itself states it. When a motion's amount is not stated, say so.
+13. No opinion, motive or loaded words ("controversial", "sparked", "finally", "sadly"). Attribution verbs are said, asked, told, voted, moved; never admitted, claimed, insisted, pointed out. Report what the record says, not what you think of it.
+14. Before returning, check the prose against these and fix it if any fails: no paragraph runs past five sentences and no item the prose covers gets fewer than two; the first sentence does not restate highlights[0]; no resident who spoke at public comment is named; the words "additional appropriation", "entertained", "Accounts Payable", "convened", "the transcript" and "the minutes" do not appear; no sum appears that the record did not itself state.
 `.trim();
 
+/** The second call returns only the text; the ledger is already known. */
+const writingOutputSchema = z.object({
+	highlights: z.array(z.string()),
+	prose: z.string(),
+});
 const SOURCE_LABELS = {
 	documents: "DOCUMENTS",
 	transcript: "TRANSCRIPT",
@@ -119,6 +145,38 @@ Produce a structured summary of this meeting.
 }
 
 /**
+ * The sources again, then the ledger the first call produced, so the prose
+ * carries the figures and statuses the receipts table will show.
+ */
+function buildWritingPrompt(
+	input: SummarizationInput,
+	ledger: SummarizationOutput["fiscalDecisions"],
+): string {
+	const blocks = (["documents", "transcript"] as const)
+		.filter((kind) => input.sources.some((source) => source.kind === kind))
+		.map(
+			(kind) =>
+				`${SOURCE_LABELS[kind]}:\n---\n${sourceTextOfKind(input.sources, kind)}\n---`,
+		);
+	const lines =
+		ledger.length > 0
+			? ledger.map(
+					(decision) =>
+						`- ${decision.title} (${decision.originalAmount}, ${decision.status})`,
+				)
+			: ["(no fiscal decisions)"];
+	blocks.push(`LEDGER:\n---\n${lines.join("\n")}\n---`);
+
+	return `
+Meeting context: ${input.meetingContext}
+
+${blocks.join("\n\n")}
+
+Write the highlights and prose for this meeting.
+`.trim();
+}
+
+/**
  * Builds a SummarizationGenerateFn backed by Gemini via @ai-sdk/google.
  *
  * The Google provider reads GOOGLE_GENERATIVE_AI_API_KEY from the environment
@@ -130,9 +188,9 @@ function createGeminiSummarizer(
 	config: GeminiSummarizerConfig,
 ): SummarizationGenerateFn {
 	return async (input: SummarizationInput): Promise<SummarizationOutput> => {
-		const { experimental_output } = await generateText({
+		const ledgerCall = await generateText({
 			model: google(config.modelId),
-			system: SYSTEM_INSTRUCTIONS,
+			system: LEDGER_INSTRUCTIONS,
 			// The fiscal list is a record, so the same sources should give the
 			// same list on every run.
 			temperature: 0,
@@ -141,9 +199,22 @@ function createGeminiSummarizer(
 				schema: summarizationOutputSchema,
 			}),
 		});
-		return experimental_output;
+		const ledger = ledgerCall.experimental_output;
+		if (input.ledgerOnly) return ledger;
+
+		const writingCall = await generateText({
+			model: google(config.modelId),
+			system: WRITING_INSTRUCTIONS,
+			temperature: 0,
+			prompt: buildWritingPrompt(input, [
+				...(input.recordedDecisions ?? []),
+				...ledger.fiscalDecisions,
+			]),
+			experimental_output: Output.object({ schema: writingOutputSchema }),
+		});
+		return { ...ledger, ...writingCall.experimental_output };
 	};
 }
 
-export { buildSummarizationPrompt, createGeminiSummarizer };
+export { buildSummarizationPrompt, buildWritingPrompt, createGeminiSummarizer };
 export type { GeminiSummarizerConfig };

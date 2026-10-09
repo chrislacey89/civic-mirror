@@ -1115,3 +1115,47 @@ describe("SummarizationService", () => {
 		});
 	});
 });
+
+describe("ledger-only pass", () => {
+	it("asks for the ledger alone on the documents pass, and for the text on the combined pass", async () => {
+		const calls: SummarizationInput[] = [];
+		const output: SummarizationOutput = {
+			highlights: ["Accepted the paving bid"],
+			prose: "The council accepted a paving bid.",
+			fiscalDecisions: [],
+			budgetDiscussions: [],
+			sourceDisagreements: [],
+		};
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const service = yield* SummarizationService;
+				return yield* service.summarize({
+					sources: [
+						{ kind: "documents", text: "MINUTES" },
+						{ kind: "transcript", text: "CAPTIONS" },
+					],
+					meetingContext: "Town Council, May 27, 2025",
+				});
+			}).pipe(
+				Effect.provide(
+					SummarizationServiceLive({
+						model: "gemini-2.5-flash",
+						generateFn: async (input) => {
+							calls.push(input);
+							return output;
+						},
+					}),
+				),
+			),
+		);
+
+		expect(calls).toHaveLength(2);
+		expect(calls[0].ledgerOnly).toBe(true);
+		expect(calls[0].sources.map((s) => s.kind)).toEqual(["documents"]);
+		expect(calls[1].ledgerOnly).toBeUndefined();
+		expect(calls[1].sources.map((s) => s.kind)).toEqual([
+			"documents",
+			"transcript",
+		]);
+	});
+});

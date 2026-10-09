@@ -238,6 +238,12 @@ type SummarizationInput = {
 	 * carrying the figure the transcript states. The service sets this too.
 	 */
 	unreadFigures?: SummarizationOutput["fiscalDecisions"];
+	/**
+	 * Only the fiscal decisions are wanted from this call; the generator may
+	 * skip the work of writing highlights and prose. The service sets this on
+	 * the documents-only pass, whose text it discards.
+	 */
+	ledgerOnly?: boolean;
 };
 
 /** The texts of the sources of one kind, joined. Empty when there is none. */
@@ -421,6 +427,7 @@ function SummarizationServiceLive(
 										(source) => source.kind === "documents",
 									),
 									meetingContext: input.meetingContext,
+									ledgerOnly: true,
 								})
 							).fiscalDecisions
 						: [];
