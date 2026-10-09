@@ -1,6 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { FiscalSummary } from "#/components/FiscalSummary.tsx";
-import { MeetingCard } from "#/components/MeetingCard.tsx";
+import { formatDate, MeetingCard } from "#/components/MeetingCard.tsx";
 import type {
 	FiscalByBody,
 	FiscalByCategory,
@@ -131,12 +131,36 @@ export function LandingPage({
 						Civic Mirror — Local government, read and written for residents
 					</p>
 					<h1 className="display mt-3 text-[44px] leading-[0.98] tracking-[-0.025em] sm:text-[64px]">
-						{lead ? leadHeadline(lead) : "Civic Mirror"}
+						{lead ? (
+							<Link
+								to="/meetings/$bodySlug/$date"
+								params={{ bodySlug: lead.bodySlug, date: lead.date }}
+								search={lead.session ? { session: lead.session } : {}}
+								className="text-inherit! no-underline! hover:underline!"
+							>
+								{leadHeadline(lead)}
+							</Link>
+						) : (
+							"Civic Mirror"
+						)}
 					</h1>
 					{lead ? (
-						<p className="lede mt-5 text-[18px] leading-[1.5]">
-							{firstSentence(lead.prose) || lead.highlights[0]}
-						</p>
+						<>
+							<p className="lede mt-5 text-[18px] leading-[1.5]">
+								{firstSentence(lead.prose) || lead.highlights[0]}
+							</p>
+							<p className="mono mt-4 text-[11px] uppercase tracking-[0.14em] text-[var(--ink-soft)]">
+								{lead.bodyName} · {formatDate(lead.date)} ·{" "}
+								<Link
+									to="/meetings/$bodySlug/$date"
+									params={{ bodySlug: lead.bodySlug, date: lead.date }}
+									search={lead.session ? { session: lead.session } : {}}
+									className="font-bold text-[var(--accent)]!"
+								>
+									Read the full summary →
+								</Link>
+							</p>
+						</>
 					) : (
 						<p className="mt-5 max-w-2xl text-[18px] leading-[1.55] text-[var(--ink-mid)]">
 							AI-powered summaries of every public meeting of eight local
