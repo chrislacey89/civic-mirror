@@ -163,9 +163,11 @@ with `summarize-repeat --json`.
   sentences; the ceiling of five is house)
 - **D6. Length scales with the meeting; no fixed ceiling.** At least 80
   words. A routine meeting lands near 150–200; a meeting with a dozen
-  decisions or hours of discussion may need 300 or more, and compressing it
-  below what its items need fails this check as surely as padding a short one
-  does. The limits that hold are structural: one item per paragraph (D5),
+  decisions or hours of discussion needs 300–400, and compressing it below
+  what its items need fails this check as surely as padding a short one does.
+  Past 400 the prose is repeating the ledger table or the agenda: the first
+  draft of the writing prompt without an upper anchor produced 620–780 words
+  on 2026-07-27, a paragraph per ledger row. The limits that hold are structural: one item per paragraph (D5),
   mechanics cut (D2), ledger entries not repeated (D1). *Test: count the items
   the prose covers; is any covered in fewer than two sentences, or any routine
   item in more than five?* (house; decided 2026-10-09 — "if it is a 4 hour
