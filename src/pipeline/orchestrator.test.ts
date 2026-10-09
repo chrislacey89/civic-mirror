@@ -4126,6 +4126,50 @@ describe("runPipeline document regeneration", () => {
 		expect(await rows()).toEqual(after);
 	});
 
+	it("hands the body's glossary to the summarizer when a document joins a meeting that already has documents, on both the eGov and Finalsite paths", async () => {
+		const glossary = ["UDO — Unified Development Ordinance"];
+
+		const egov = await setup();
+		const council = { ...COUNCIL, glossary };
+		await egov.run({ egovListings: [AGENDA] }, council);
+		const egovAttach = await egov.run(
+			{ egovListings: [AGENDA, MINUTES], summarizationResult: REGENERATED },
+			council,
+		);
+		expect(egovAttach.log.summarize).toHaveLength(1);
+		expect(egovAttach.log.summarize[0].glossary).toEqual(glossary);
+
+		const finalsite = await setup();
+		const board = { ...BOARD, glossary };
+		const document = (name: "agenda" | "minutes") => ({
+			uuid: `uuid-${name}`,
+			documentType: name,
+			downloadUrl: `/fs/resource-manager/view/uuid-${name}`,
+			fileName: `${name}.pdf`,
+		});
+		const listing = (
+			...documents: ReturnType<typeof document>[]
+		): FinalsiteMeetingListing => ({
+			date: "January 20, 2026",
+			meetingType: "Regular Meeting",
+			year: 2026,
+			documents,
+		});
+		await finalsite.run(
+			{ finalsiteListings: [listing(document("agenda"))] },
+			board,
+		);
+		const finalsiteAttach = await finalsite.run(
+			{
+				finalsiteListings: [listing(document("agenda"), document("minutes"))],
+				summarizationResult: REGENERATED,
+			},
+			board,
+		);
+		expect(finalsiteAttach.log.summarize).toHaveLength(1);
+		expect(finalsiteAttach.log.summarize[0].glossary).toEqual(glossary);
+	});
+
 	it("holds a misdated eGov listing for a meeting that already holds a document, without attaching it or rebuilding the summary", async () => {
 		const { rows, run } = await setup();
 		await run({ egovListings: [AGENDA] });

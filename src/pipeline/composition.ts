@@ -14,7 +14,10 @@ import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionSer
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
 import { createGeminiDramaDetector } from "#/pipeline/services/GeminiDramaDetector.ts";
 import { createGeminiMeetingMatcher } from "#/pipeline/services/GeminiMeetingMatcher.ts";
-import { createGeminiSummarizer } from "#/pipeline/services/GeminiSummarizer.ts";
+import {
+	createGeminiSummarizer,
+	createGeminiWriter,
+} from "#/pipeline/services/GeminiSummarizer.ts";
 import { MeetingMatchServiceLive } from "#/pipeline/services/MeetingMatchService.ts";
 import { extractPdfText } from "#/pipeline/services/PdfExtractor.ts";
 import { EgovScraperLive } from "#/pipeline/services/ScraperService.ts";
@@ -43,6 +46,27 @@ import { v2 as dramaProfile } from "../../evals/profiles/v2.ts";
  * not a code change — but for the first end-to-end run, hardcoding keeps the
  * slice small.
  */
+/**
+ * Terms that mean the same in every Indiana body's meetings. The writing
+ * call glosses them from here, so the shared prompt names none.
+ */
+const INDIANA_GLOSSARY = [
+	"MVH — the Motor Vehicle Highway fund, the town's main road-money account",
+	"PERF physical — the physical the state police and fire pension fund requires",
+	"IURC — the state utility regulator",
+	"TIF — a tax-increment financing district",
+	"Community Crossings — a state matching grant for local roads",
+] as const;
+
+/** Ellettsville's own terms, on top of the state-wide ones. */
+const ELLETTSVILLE_GLOSSARY = [
+	...INDIANA_GLOSSARY,
+	"UDO — the Unified Development Ordinance, the town's zoning and building rules",
+	"C-2 to R-2 — from commercial to medium-density residential zoning",
+	"reorganization — the proposed merger of the town and Richland Township",
+	"claims — the town's bills",
+] as const;
+
 const DEFAULT_BODIES: BodyConfig[] = [
 	{
 		slug: "ellettsville-town-council",
@@ -54,12 +78,14 @@ const DEFAULT_BODIES: BodyConfig[] = [
 		youtubePlaylistId: "PLLKIocQNuYstrABBQ0PL_J-B_op4n6Mxo",
 		youtubeTitlePrefix: "Ellettsville Town Council",
 		youtubeSince: "2025-05-27",
+		glossary: ELLETTSVILLE_GLOSSARY,
 	},
 	{
 		slug: "ellettsville-plan-commission",
 		name: "Ellettsville Plan Commission",
 		egovSearchType: "12",
 		egovTitlePattern: /^Plan Commission/i,
+		glossary: ELLETTSVILLE_GLOSSARY,
 	},
 	{
 		// Monroe County lives on its own eGov portal, not Ellettsville's — a
@@ -71,6 +97,7 @@ const DEFAULT_BODIES: BodyConfig[] = [
 		name: "Monroe County Commissioners",
 		egovSearchType: "12",
 		egovTitlePattern: /^Monroe County/i,
+		glossary: INDIANA_GLOSSARY,
 	},
 	{
 		slug: "rbb-school-board",
@@ -177,6 +204,7 @@ function buildProductionLayers(input: BuildLayersInput) {
 	const summarization = SummarizationServiceLive({
 		model: geminiModelId,
 		generateFn: geminiGenerator,
+		writeFn: createGeminiWriter({ modelId: geminiModelId }),
 	});
 
 	const meetingMatch = MeetingMatchServiceLive({

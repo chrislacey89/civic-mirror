@@ -2,12 +2,28 @@ import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
 	figureIsIn,
+	proseWarnings,
 	type SummarizationInput,
 	type SummarizationOutput,
 	SummarizationService,
 	SummarizationServiceLive,
+	type SummarizationWriteFn,
 	verifyAmounts,
 } from "./SummarizationService.ts";
+
+/** A writer stub that returns the given text, whatever the ledger. */
+function writes(
+	text: { highlights: string[]; prose: string } = { highlights: [], prose: "" },
+): SummarizationWriteFn {
+	return async () => ({ highlights: text.highlights, prose: text.prose });
+}
+
+/** One call of the writer, and how many ledger calls preceded it. */
+type Written = {
+	input: SummarizationInput;
+	ledger: SummarizationOutput["fiscalDecisions"];
+	ledgerCallsBefore: number;
+};
 
 const SOURCE_TEXT = `
 The Town Council approved a motion to allocate $50,000 for road repairs
@@ -166,6 +182,7 @@ describe("SummarizationService", () => {
 				Effect.provide(
 					SummarizationServiceLive({
 						model: "gemini-2.5-flash",
+						writeFn: writes(stubOutput),
 						generateFn: async () => stubOutput,
 					}),
 				),
@@ -211,6 +228,7 @@ describe("SummarizationService", () => {
 				Effect.provide(
 					SummarizationServiceLive({
 						model: "gemini-2.5-flash",
+						writeFn: writes(stubOutput),
 						generateFn: async () => stubOutput,
 					}),
 				),
@@ -232,6 +250,7 @@ describe("SummarizationService", () => {
 				Effect.provide(
 					SummarizationServiceLive({
 						model: "gemini-2.5-flash",
+						writeFn: writes(),
 						generateFn: async () => {
 							throw new Error("API quota exceeded");
 						},
@@ -258,6 +277,7 @@ describe("SummarizationService", () => {
 				Effect.provide(
 					SummarizationServiceLive({
 						model: "gemini-2.5-flash",
+						writeFn: writes(),
 						generateFn: async (args) => {
 							calls.push(args);
 							return {
@@ -335,6 +355,7 @@ describe("SummarizationService", () => {
 					Effect.provide(
 						SummarizationServiceLive({
 							model: "gemini-2.5-flash",
+							writeFn: writes(output),
 							generateFn: async () => output,
 						}),
 					),
@@ -487,6 +508,7 @@ describe("SummarizationService", () => {
 			fromEverySource: SummarizationOutput;
 		}) {
 			const calls: SummarizationInput[] = [];
+			const written: Written[] = [];
 			const result = Effect.runPromise(
 				Effect.gen(function* () {
 					const service = yield* SummarizationService;
@@ -506,11 +528,22 @@ describe("SummarizationService", () => {
 									? answers.fromEverySource
 									: answers.fromDocuments;
 							},
+							writeFn: async (input, ledger) => {
+								written.push({
+									input,
+									ledger,
+									ledgerCallsBefore: calls.length,
+								});
+								return {
+									highlights: answers.fromEverySource.highlights,
+									prose: answers.fromEverySource.prose,
+								};
+							},
 						}),
 					),
 				),
 			);
-			return { calls, result };
+			return { calls, written, result };
 		}
 
 		it("keeps a fiscal decision taken from the documents when the summary of every source leaves it out", async () => {
@@ -630,6 +663,38 @@ describe("SummarizationService", () => {
 			expect(calls[1].sources).toEqual([MINUTES, CAPTIONS]);
 			expect(calls[1].recordedDecisions).toEqual([CRASH_GRANT]);
 		});
+
+		it("writes the text once, after both ledger calls, from the ledger the summary returns", async () => {
+			const { written, result } = summarizeTogether({
+				fromDocuments: output([CRASH_GRANT], "Minutes only."),
+				fromEverySource: output([FIRE_TRUCK], "Minutes and discussion."),
+			});
+
+			const summary = await result;
+
+			expect(written).toHaveLength(1);
+			expect(written[0].ledgerCallsBefore).toBe(2);
+			expect(written[0].input.sources).toEqual([MINUTES, CAPTIONS]);
+			expect(written[0].ledger).toEqual(summary.fiscalDecisions);
+			expect(written[0].ledger.map((d) => d.title)).toEqual([
+				CRASH_GRANT.title,
+				FIRE_TRUCK.title,
+			]);
+		});
+
+		it("does not show the writer a transcript entry that repeats a documents motion", async () => {
+			const { written, result } = summarizeTogether({
+				fromDocuments: output([CRASH_GRANT], "Minutes only."),
+				fromEverySource: output(
+					[{ ...CRASH_GRANT, amount: 44000, originalAmount: "$44,000" }],
+					"Minutes and discussion.",
+				),
+			});
+
+			await result;
+
+			expect(written[0].ledger).toEqual([CRASH_GRANT]);
+		});
 	});
 	describe("a figure the documents do not contain", () => {
 		const PAVING = {
@@ -678,6 +743,7 @@ describe("SummarizationService", () => {
 			},
 		) {
 			const calls: SummarizationInput[] = [];
+			const written: Written[] = [];
 			const result = Effect.runPromise(
 				Effect.gen(function* () {
 					const service = yield* SummarizationService;
@@ -700,11 +766,19 @@ describe("SummarizationService", () => {
 										: [],
 								);
 							},
+							writeFn: async (input, ledger) => {
+								written.push({
+									input,
+									ledger,
+									ledgerCallsBefore: calls.length,
+								});
+								return { highlights: [], prose: "Summary." };
+							},
 						}),
 					),
 				),
 			);
-			return { calls, result };
+			return { calls, written, result };
 		}
 
 		it("takes the transcript's figure for a decision whose documents figure is not in the documents, and records that", async () => {
@@ -1051,6 +1125,23 @@ describe("SummarizationService", () => {
 			expect(summary.sourceDisagreements).toEqual([]);
 		});
 
+		it("shows the writer 'not stated', not the transcript's figure, for an unread figure the transcript does not hold", async () => {
+			const { written, result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
+				fromDocuments: [REBUILT],
+				fromEverySource: [
+					{ ...PAVING, amount: 215215.1, originalAmount: "$215,215.10" },
+				],
+			});
+
+			const summary = await result;
+
+			expect(written).toHaveLength(1);
+			expect(written[0].ledger).toEqual(summary.fiscalDecisions);
+			expect(
+				written[0].ledger.map((d) => [d.title, d.amount, d.originalAmount]),
+			).toEqual([[PAVING.title, 0, "not stated"]]);
+		});
+
 		it("stores no amount when the every-source call does not return that decision", async () => {
 			const { result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
 				fromDocuments: [REBUILT],
@@ -1113,5 +1204,106 @@ describe("SummarizationService", () => {
 			]);
 			expect(calls[1].unreadFigures).toEqual([]);
 		});
+	});
+});
+
+describe("proseWarnings", () => {
+	const SHORT = "The council added $18,000 to the parks budget. It voted 4-0.";
+	const words = (count: number) => Array(count).fill("word").join(" ");
+
+	it("returns no warnings for prose and highlights that keep the rules", () => {
+		expect(proseWarnings(SHORT, ["Council adds $18,000 to parks"])).toEqual([]);
+	});
+
+	it("reports prose over 400 words with its count, and not at 400", () => {
+		expect(proseWarnings(words(400), [])).toEqual([]);
+		expect(proseWarnings(words(401), [])).toEqual([
+			"prose is 401 words, over the 400-word ceiling",
+		]);
+	});
+
+	it("reports a paragraph over five sentences by its position", () => {
+		const five = "One. Two. Three. Four. Five.";
+		const six = "One. Two. Three. Four. Five. Six?";
+		expect(proseWarnings(`${five}\n\n${five}`, [])).toEqual([]);
+		expect(proseWarnings(`${five}\n\n${six}`, [])).toEqual([
+			"paragraph 2 has 6 sentences, over the 5-sentence ceiling",
+		]);
+	});
+
+	it.each([
+		"additional appropriation",
+		"entertained a motion",
+		"accounts payable",
+		"privilege of the floor",
+		"the transcript",
+		"the minutes",
+	])("reports %j in the prose, whatever its case", (phrase) => {
+		expect(
+			proseWarnings(`The council heard ${phrase.toUpperCase()} today.`, []),
+		).toEqual([`"${phrase}" appears in prose`]);
+	});
+
+	it("reports a banned phrase in a highlight, and in both places when in both", () => {
+		expect(
+			proseWarnings(SHORT, ["Approved an Additional Appropriation"]),
+		).toEqual(['"additional appropriation" appears in highlights']);
+		expect(
+			proseWarnings("The minutes say so.", ["The minutes say so"]),
+		).toEqual(['"the minutes" appears in prose and highlights']);
+	});
+
+	it("reports more than six highlights, and not six", () => {
+		const six = Array(6).fill("Council acts");
+		expect(proseWarnings(SHORT, six)).toEqual([]);
+		expect(proseWarnings(SHORT, [...six, "Council acts"])).toEqual([
+			"7 highlights, over the 6-highlight ceiling",
+		]);
+	});
+});
+
+describe("summarize logs writing-rule breaches without changing the text", () => {
+	it("warns with the meeting context and returns the writer's text as written", async () => {
+		const output: SummarizationOutput = {
+			highlights: ["Approved an additional appropriation"],
+			prose: "The council entertained a motion on the minutes.",
+			fiscalDecisions: [],
+			budgetDiscussions: [],
+			sourceDisagreements: [],
+		};
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const service = yield* SummarizationService;
+					return yield* service.summarize({
+						sources: [{ kind: "documents", text: "Agenda." }],
+						meetingContext: "Town Council, May 27, 2025",
+					});
+				}).pipe(
+					Effect.provide(
+						SummarizationServiceLive({
+							model: "gemini-2.5-flash",
+							writeFn: writes(output),
+							generateFn: async () => ({
+								...output,
+								highlights: [],
+								prose: "",
+							}),
+						}),
+					),
+				),
+			);
+
+			expect(result.prose).toBe(output.prose);
+			expect(result.highlights).toEqual(output.highlights);
+			const messages = warn.mock.calls.map((call) => String(call[0]));
+			expect(messages).toHaveLength(3);
+			expect(
+				messages.every((m) => m.includes("Town Council, May 27, 2025")),
+			).toBe(true);
+		} finally {
+			warn.mockRestore();
+		}
 	});
 });

@@ -73,7 +73,7 @@ figureIsIn(decision.originalAmount, documentsText, { asDollarAmount: true })
 pnpm tsx src/pipeline/scripts/summarize-repeat.ts ellettsville-town-council 2025-05-27 5
 ```
 
-After any change to the summarizer prompt, run it on 2025-05-27 (unread figure), 2026-02-02 (a scan that writes "$258.400.00") and 2025-11-24 (a control) before rebuilding stored summaries.
+After any change to the summarizer prompt, run it on 2025-05-27 (unread figure), 2026-02-02 (a scan that writes "$258.400.00") and 2025-11-24 (a control) before rebuilding stored summaries. `pnpm summarize:recheck` runs all three, five times each (added 2026-10-09 after a fourteen-rule prompt change shipped with four other meetings checked and none of these; see `writing-rules-in-an-extraction-prompt-leak-into-the-extraction-2026-10-09.md`).
 
 **Clustering note.** This is the third entry on model variance in a load-bearing field, after the tier-drift and single-draw entries. The single-draw entry said the missing mechanism was a committed repeat-run check and that it was not built. It is built here: `summarize-repeat.ts`. It needs live model calls, so it is a tool an operator runs, not a CI gate. On its first run it showed the 2025-05-27 tabled fee ordinance at $750 in one run of three and at no amount in the other two.
 

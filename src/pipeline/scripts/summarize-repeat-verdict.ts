@@ -1,11 +1,18 @@
-/** One summarization run: its fiscal decisions, or why the model call failed. */
+import { accessSync, constants, existsSync, statSync } from "node:fs";
+import { dirname } from "node:path";
+
+/** One summarization run: what it produced, or why the model call failed. */
 export type RepeatRun =
 	| {
-			readonly decisions: ReadonlyArray<{
-				readonly status: string;
-				readonly amount: number | string;
-				readonly ordinanceNumber?: string | null;
-			}>;
+			readonly summary: {
+				readonly fiscalDecisions: ReadonlyArray<{
+					readonly status: string;
+					readonly amount: number | string;
+					readonly ordinanceNumber?: string | null;
+				}>;
+				readonly highlights: ReadonlyArray<string>;
+				readonly prose: string;
+			};
 	  }
 	| { readonly failure: string };
 
@@ -31,8 +38,8 @@ export function judgeRuns(runs: ReadonlyArray<RepeatRun>): {
 	}
 	/** A run's decisions as comparable lines: what was decided and for how much, without the wording. */
 	const fingerprints = runs.map((run) =>
-		"decisions" in run
-			? run.decisions
+		"summary" in run
+			? run.summary.fiscalDecisions
 					.map(
 						(decision) =>
 							`${decision.status} ${decision.amount} ${decision.ordinanceNumber ?? ""}`,
@@ -47,4 +54,72 @@ export function judgeRuns(runs: ReadonlyArray<RepeatRun>): {
 		distinct,
 		failedRuns,
 	};
+}
+
+export type RepeatArgs =
+	| {
+			readonly ok: true;
+			readonly bodySlug: string;
+			readonly date: string;
+			readonly runs: number;
+			readonly jsonPath: string | null;
+			readonly session: string;
+	  }
+	| { readonly ok: false; readonly reason: string };
+
+/**
+ * Reads the script's arguments: up to three positionals (body slug, date,
+ * runs; a missing one comes back as "" for the caller to reject) with --json <path> and --session <name> allowed anywhere among them.
+ * A flag with nothing after it, or followed by another --flag, is refused
+ * rather than skipped: a dropped --session would judge the regular meeting
+ * and a dropped --json would skip the export, both without a word.
+ */
+export function parseRepeatArgs(argv: ReadonlyArray<string>): RepeatArgs {
+	const positional: string[] = [];
+	let jsonPath: string | null = null;
+	let session = "";
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i] as string;
+		if (arg !== "--json" && arg !== "--session") {
+			positional.push(arg);
+			continue;
+		}
+		const value = argv[i + 1];
+		if (value === undefined || value.startsWith("--")) {
+			return { ok: false, reason: `${arg} needs a value after it` };
+		}
+		if (arg === "--json") jsonPath = value;
+		else session = value;
+		i++;
+	}
+	const [bodySlug, date, runsArg] = positional;
+	return {
+		ok: true,
+		bodySlug: bodySlug ?? "",
+		date: date ?? "",
+		runs: Number(runsArg ?? 5),
+		jsonPath,
+		session,
+	};
+}
+
+/**
+ * Why `path` could not be written to, or null when it can. The script checks
+ * this before the model calls so a bad --json path fails in a moment rather
+ * than after a full run: the parent directory must exist and be writable, and
+ * so must the file itself when it is already there. Nothing is created.
+ */
+export function jsonPathProblem(path: string): string | null {
+	const directory = dirname(path);
+	try {
+		if (!statSync(directory).isDirectory()) {
+			return `--json directory ${directory} is not a directory`;
+		}
+		accessSync(directory, constants.W_OK);
+		if (existsSync(path)) accessSync(path, constants.W_OK);
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		return `cannot write --json file ${path}: ${reason}`;
+	}
+	return null;
 }

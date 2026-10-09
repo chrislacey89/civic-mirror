@@ -9,6 +9,7 @@ import type {
 	MeetingCardData,
 	NotableFiscalDecision,
 } from "#/db/queries.ts";
+import { firstSentence } from "#/lib/prose.ts";
 import {
 	aggregateFiscalByBody,
 	aggregateFiscalByCategory,
@@ -134,7 +135,7 @@ export function LandingPage({
 					</h1>
 					{lead ? (
 						<p className="lede mt-5 text-[18px] leading-[1.5]">
-							{lead.prose || lead.highlights[0]}
+							{firstSentence(lead.prose) || lead.highlights[0]}
 						</p>
 					) : (
 						<p className="mt-5 max-w-2xl text-[18px] leading-[1.55] text-[var(--ink-mid)]">
@@ -272,7 +273,7 @@ export function LandingPage({
 function leadHeadline(m: MeetingCardData): string {
 	if (m.highlights[0]) return m.highlights[0];
 	if (m.prose) {
-		const first = m.prose.split(/(?<=[.!?])\s/)[0];
+		const first = firstSentence(m.prose);
 		if (first) return first;
 	}
 	return `${m.bodyName} filed — read the summary`;

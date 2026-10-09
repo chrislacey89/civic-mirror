@@ -4,6 +4,7 @@ import type {
 	MeetingDetail,
 	SummarySources,
 } from "#/db/queries.ts";
+import { firstSentence } from "#/lib/prose.ts";
 import type { SourceDisagreement } from "#/pipeline/sources.ts";
 import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
 
@@ -123,7 +124,14 @@ export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 							<section className="mt-10">
 								<SectionHead kicker="Written for residents" title="Summary" />
 								<div className="drop-cap columns-1 gap-8 text-[16px] leading-[1.62] text-[var(--ink)] md:columns-2 md:[column-rule:1px_dotted_var(--rule-dot)]">
-									<p className="m-0">{meeting.summary.prose}</p>
+									{paragraphs(meeting.summary.prose).map((paragraph, i) => (
+										<p
+											key={paragraph}
+											className={i === 0 ? "m-0" : "mt-4 mb-0"}
+										>
+											{paragraph}
+										</p>
+									))}
 								</div>
 							</section>
 						</>
@@ -631,9 +639,12 @@ function ordinanceLabel(ordinanceNumber: string): string {
 		: ordinanceNumber;
 }
 
-function firstSentence(prose: string): string {
-	const match = prose.split(/(?<=[.!?])\s/)[0];
-	return match ?? prose;
+/** The summary's paragraphs: the summarizer separates them with a blank line. */
+function paragraphs(prose: string): string[] {
+	return prose
+		.split(/\n\s*\n/)
+		.map((paragraph) => paragraph.trim())
+		.filter((paragraph) => paragraph.length > 0);
 }
 
 /** Converts an ISO date string (YYYY-MM-DD) to a human-readable format. */
