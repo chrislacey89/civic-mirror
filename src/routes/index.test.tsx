@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { LandingPage } from "./index.tsx";
 
 afterEach(cleanup);
@@ -81,6 +81,22 @@ describe("LandingPage", () => {
 		render(<LandingPage data={populatedData} />);
 
 		screen.getByText("March 23, 2026");
+	});
+
+	it("shows only the first sentence of the lead meeting prose as the lede", () => {
+		const first = "Council accepts $212,400 bid to repave Maple Street.";
+		const second = "The work starts in June.";
+		const [meeting] = populatedData.meetings;
+		const data = {
+			...populatedData,
+			meetings: [{ ...meeting, prose: `${first} ${second}` }],
+		};
+
+		const { container } = render(<LandingPage data={data} />);
+
+		const lede = container.querySelector(".lede");
+		expect(lede?.textContent).toBe(first);
+		expect(screen.queryByText(second, { exact: false })).toBeNull();
 	});
 
 	it("renders fiscal summary section", () => {
