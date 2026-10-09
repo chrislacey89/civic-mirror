@@ -5,7 +5,7 @@ import * as schema from "#/db/schema.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 import {
 	incompleteRegeneration,
-	regenerateCombinedSummaries,
+	regenerateBodySummaries,
 	regenerateMeetingSummary,
 } from "#/pipeline/regenerate.ts";
 import {
@@ -357,7 +357,7 @@ describe("regenerateMeetingSummary", () => {
 	});
 });
 
-describe("regenerateCombinedSummaries", () => {
+describe("regenerateBodySummaries", () => {
 	const TRANSCRIPT_TEXT = "the paving bid came in at $244,215.10";
 
 	/** Gives the setup's meeting a transcript and a summary built from both kinds. */
@@ -384,11 +384,13 @@ describe("regenerateCombinedSummaries", () => {
 	const regenerateAll = (
 		layers: Awaited<ReturnType<typeof setup>>["layers"],
 		date?: string,
+		scope: "combined" | "all" = "combined",
 	) =>
 		Effect.runPromise(
-			regenerateCombinedSummaries({
+			regenerateBodySummaries({
 				body: { slug: "town-council", name: "Town Council" },
 				date,
+				scope,
 			}).pipe(Effect.provide(layers)),
 		);
 
@@ -426,6 +428,40 @@ describe("regenerateCombinedSummaries", () => {
 
 		expect(outcomes).toEqual([]);
 		expect(context.calls).toHaveLength(0);
+	});
+
+	it("summarizes again a meeting whose summary was built from documents only when the scope is all", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await context.regenerate();
+		context.calls.length = 0;
+
+		const outcomes = await regenerateAll(context.layers, undefined, "all");
+
+		expect(outcomes.map((o) => o.outcome)).toEqual(["regenerated"]);
+		expect(context.calls.map((call) => call.sources)).toEqual([
+			[{ kind: "documents", text: MINUTES.rawText }],
+		]);
+	});
+
+	it("summarizes again a summary stored without a fingerprint when the scope is all, and stamps it", async () => {
+		const context = await setup({ documents: [MINUTES] });
+		await context.db
+			.update(schema.summaries)
+			.set({ sourceFingerprint: "", sourceKinds: [] })
+			.where(eq(schema.summaries.meetingId, context.meeting.id))
+			.run();
+
+		const outcomes = await regenerateAll(context.layers, undefined, "all");
+
+		expect(outcomes.map((o) => o.outcome)).toEqual(["regenerated"]);
+		const { summaries } = await context.rows();
+		expect(summaries).toMatchObject([
+			{
+				prose: REGENERATED.prose,
+				sourceKinds: ["documents"],
+				sourceFingerprint: computeSourceFingerprint([MINUTES_URL]),
+			},
+		]);
 	});
 
 	it("regenerates only the meeting on the given date", async () => {
