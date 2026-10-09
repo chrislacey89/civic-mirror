@@ -13,11 +13,11 @@ Where the text lands on the site decides what each piece has to do:
 | `highlights[1..2]` | The meeting card (first three highlights only) | Carry the next two most important facts. |
 | `highlights[3..]` | The meeting page only | Everything else worth a line. |
 | First sentence of `prose` | The lede under the `<h1>` | Add a fact the headline did not give. Stand alone. |
-| Rest of `prose` | The summary section | Tell what happened, in order of importance, 80–200 words, in paragraphs of two to five sentences. |
+| Rest of `prose` | The summary section | Tell what happened, in order of importance, in paragraphs of two to five sentences; length scales with the meeting (see D6). |
 
-Paragraph breaks are blank lines in `prose`. The meeting page currently renders
-`prose` as one `<p>`, so the breaks collapse on the site; `$date.tsx` needs to
-split on blank lines before residents see them.
+Paragraph breaks are blank lines in `prose`; the meeting page splits on them
+(`$date.tsx`, since 2026-10-09). The home page's lead card still renders the
+whole `prose` in one `<p>` (`index.tsx`), which is a separate fix.
 
 The books behind this: Zinsser *On Writing Well*, Pinker *The Sense of Style*,
 VandeHei/Allen/Schwartz *Smart Brevity*, Klinkenborg *Several Short Sentences
@@ -29,16 +29,19 @@ traceable), not from a book; the books say nothing about figure traceability.
 ## How to score
 
 Section A is a gate. A write-up that fails any A check is not publishable,
-whatever it scores elsewhere. Sections B–G are 1 point per check, 25 points
+whatever it scores elsewhere. Sections B–G are 1 point per check, 26 points
 total. Scoring is deliberately mechanical: each check is a yes/no an editor
 can answer in under ten seconds, so two people get the same number.
 
 Target for a prompt change to count as an improvement: no A failures, and a
-median of 22 or more across the sampled meetings. The current output (October
-2026, `gemini-2.5-flash`) scores 12–16 on the meetings sampled, and fails gate
-A5 on two of them; see "Where the current output fails" below and the scored
-rewrites in `.context/trial-articles.md` (gitignored; four meetings, before and
-after).
+median of 23 or more across the sampled meetings. The output **before the
+writing prompt existed** (`gemini-2.5-flash`, scored 2026-10-09 on four
+meetings) scored
+12–16 and failed gate A5 on two; see "Where the output failed before the writing
+prompt" below. The hand rewrites used to tune this rubric live outside the repo
+(this worktree's `.context/trial-articles.md`); the four meetings are
+2026-05-26, 2026-08-10, 2026-07-27 and 2026-10-05, so they can be regenerated
+with `summarize-repeat --json`.
 
 ## A. Fidelity gates (house)
 
@@ -124,7 +127,7 @@ after).
 - **C4. Twenty-five words or fewer.** *Test: count.* (`smart-brevity/references/
   rules-of-thumb.md`, a takeaway under 12 words; the 25 ceiling is house)
 
-## D. Selection and order (5 points)
+## D. Selection and order (6 points)
 
 - **D1. Importance order, not agenda order.** Money, votes that change what
   residents can do, hires and departures of senior staff, and anything a
@@ -158,6 +161,15 @@ after).
   paragraph; name each paragraph's item in two words.*
   (`smart-brevity/references/axioms-and-formatting.md`, paragraphs of 2–3
   sentences; the ceiling of five is house)
+- **D6. Length scales with the meeting; no fixed ceiling.** At least 80
+  words. A routine meeting lands near 150–200; a meeting with a dozen
+  decisions or hours of discussion may need 300 or more, and compressing it
+  below what its items need fails this check as surely as padding a short one
+  does. The limits that hold are structural: one item per paragraph (D5),
+  mechanics cut (D2), ledger entries not repeated (D1). *Test: count the items
+  the prose covers; is any covered in fewer than two sentences, or any routine
+  item in more than five?* (house; decided 2026-10-09 — "if it is a 4 hour
+  meeting 250 words may even be on the low end")
 
 ## E. Sentences (4 points)
 
@@ -267,10 +279,11 @@ after).
   `originalAmount` "not stated" that the prose gives a number for is a fail.*
   (house, rule 2 of the summarizer prompt)
 
-## Where the current output fails
+## Where the output failed before the writing prompt
 
-Taken from the ten most recent stored summaries, October 2026. Each pair is
-the stored text and a rewrite that passes the check named.
+Taken from the ten most recent stored summaries on 2026-10-09, before the
+prompt carried any writing rules. Each pair is the stored text and a rewrite
+that passes the check named.
 
 **B1, B2 — headline is the minutes approval.** The `<h1>` of the 2026-09-28
 page reads:
@@ -313,8 +326,9 @@ physicals", "Community Crossings grant", each with no gloss.
 Rewrite: give the DOCUMENTS figure, or when there are no documents, give the
 figure the transcript states cleanly and leave out the one that is garbled.
 
-**E3, D2 — length.** 2026-07-27 runs 431 words, 2026-08-10 348, both opening
-with prayer and pledge. The ceiling is 200.
+**D2 — mechanics.** 2026-07-27 runs 431 words, 2026-08-10 348, both opening
+with prayer and pledge; most of the length is ceremony and agenda order, not
+items.
 
 **D5 — paragraphs.** 2026-07-27 (431 words) and 2026-10-05 (273) are each one
 paragraph. 2026-08-10 breaks into four, but the last runs six sentences.
@@ -332,11 +346,11 @@ Meeting: ______________________   Scorer: ______   Date: ______
 A  gates     A1 A2 A3 A4 A5          any fail → not publishable
 B  headline  B1 B2 B3 B4             __ /4
 C  lede      C1 C2 C3 C4             __ /4
-D  selection D1 D2 D3 D4 D5          __ /5
+D  selection D1 D2 D3 D4 D5 D6       __ /6
 E  sentences E1 E2 E3 E4             __ /4
 F  words     F1 F2 F3 F4             __ /4
 G  numbers   G1 G2 G3 G4             __ /4
-                                     __ /25
+                                     __ /26
 Prose words: ____   Longest sentence: ____   Highlights: ____
 Paragraphs: ____    Most sentences in one: ____
 ```
@@ -352,15 +366,13 @@ Paragraphs: ____    Most sentences in one: ____
    is not "$29,425.00". The stricter alternative (copy every string exactly)
    and the looser one (round to the dollar in prose) are both defensible; this
    is the middle.
-3. **Where the rubric is enforced — done 2026-10-09.** Rules 21–34 of
-   `SYSTEM_INSTRUCTIONS` in `src/pipeline/services/GeminiSummarizer.ts` carry
-   sections B–G; the meeting page splits `prose` on blank lines; and
-   `summarize-repeat.ts --json` exports each run's text for the compare page.
-   Two things the repeat runs taught, both now in the prompt: an example
-   headline taken from a real meeting is returned word for word on that
-   meeting, so the examples are invented; and naming "hires" among the items
-   that matter pulled no-dollar hires into the ledger, so the writing rules
-   never name a category the ledger rules exclude. Still open after three
-   runs per meeting: on a transcript-only meeting with twelve decisions
-   (2026-07-27) the prose runs to ~260 words, keeps "additional
-   appropriation", and headlines a total the record never stated.
+3. **Where the rubric is enforced.** `WRITING_INSTRUCTIONS` in
+   `src/pipeline/services/GeminiSummarizer.ts` carries sections B–G, in a
+   second model call that receives the ledger the first call extracted; the
+   meeting page splits `prose` on blank lines; `summarize-repeat.ts --json` exports
+   each run's text for scoring. What the repeat runs taught about writing
+   rules in a shared extraction prompt is in
+   `docs/solutions/patterns/writing-rules-in-an-extraction-prompt-leak-into-the-extraction-2026-10-09.md`.
+   What is still open (long transcript-only meetings keep "additional
+   appropriation" and headline unstated totals) is tracked as a GitHub issue,
+   not here.
