@@ -40,29 +40,24 @@ import { compareImport } from "./summarize-repeat-export.ts";
 import {
 	EXIT_FAILED,
 	judgeRuns,
+	parseRepeatArgs,
 	type RepeatRun,
 } from "./summarize-repeat-verdict.ts";
 
 config({ path: [".env.local", ".env"] });
 
-const args = process.argv.slice(2);
-/** The value after a --flag, or null, and the args with that pair removed. */
-function takeOption(name: string, from: string[]): [string | null, string[]] {
-	const at = from.indexOf(name);
-	if (at === -1) return [null, from];
-	return [from[at + 1] ?? null, from.filter((_, i) => i < at || i > at + 1)];
+const USAGE =
+	"usage: summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs] [--json <path>] [--session <name>]\n" +
+	`known slugs: ${DEFAULT_BODIES.map((candidate) => candidate.slug).join(", ")}`;
+const parsed = parseRepeatArgs(process.argv.slice(2));
+if (!parsed.ok) {
+	console.error(`${parsed.reason}\n${USAGE}`);
+	process.exit(2);
 }
-const [jsonPath, afterJson] = takeOption("--json", args);
-const [sessionArg, positional] = takeOption("--session", afterJson);
-const session = sessionArg ?? "";
-const [bodySlug, date, runsArg] = positional;
-const runs = Number(runsArg ?? 5);
+const { bodySlug, date, runs, jsonPath, session } = parsed;
 const body = DEFAULT_BODIES.find((candidate) => candidate.slug === bodySlug);
-if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? "") || !(runs >= 1)) {
-	console.error(
-		"usage: summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs] [--json <path>] [--session <name>]\n" +
-			`known slugs: ${DEFAULT_BODIES.map((candidate) => candidate.slug).join(", ")}`,
-	);
+if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !(runs >= 1)) {
+	console.error(USAGE);
 	process.exit(2);
 }
 

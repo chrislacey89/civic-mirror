@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { judgeRuns } from "./summarize-repeat-verdict.ts";
+import { judgeRuns, parseRepeatArgs } from "./summarize-repeat-verdict.ts";
 
 const decided = (amount: number) => ({
 	summary: {
@@ -34,5 +34,97 @@ describe("judgeRuns", () => {
 		expect(judgeRuns([decided(5), decided(6), { failure: "x" }]).exitCode).toBe(
 			3,
 		);
+	});
+});
+
+describe("parseRepeatArgs", () => {
+	it("defaults to 5 runs, no export and the regular session", () => {
+		expect(parseRepeatArgs(["council", "2026-09-01"])).toEqual({
+			ok: true,
+			bodySlug: "council",
+			date: "2026-09-01",
+			runs: 5,
+			jsonPath: null,
+			session: "",
+		});
+	});
+
+	it("refuses a trailing --json instead of skipping the export", () => {
+		expect(parseRepeatArgs(["council", "2026-09-01", "--json"])).toMatchObject({
+			ok: false,
+		});
+	});
+
+	it("refuses a trailing --session instead of judging the regular meeting", () => {
+		expect(
+			parseRepeatArgs(["council", "2026-09-01", "--session"]),
+		).toMatchObject({ ok: false });
+	});
+
+	it("refuses a flag followed by another flag, not taking the flag as its value", () => {
+		expect(
+			parseRepeatArgs(["council", "2026-09-01", "--json", "--session", "x"]),
+		).toMatchObject({ ok: false });
+		expect(
+			parseRepeatArgs([
+				"council",
+				"2026-09-01",
+				"--session",
+				"--json",
+				"a.json",
+			]),
+		).toMatchObject({ ok: false });
+	});
+
+	it("reads --json and --session in either order", () => {
+		const expected = {
+			ok: true,
+			bodySlug: "council",
+			date: "2026-09-01",
+			runs: 5,
+			jsonPath: "a.json",
+			session: "budget",
+		};
+		expect(
+			parseRepeatArgs([
+				"council",
+				"2026-09-01",
+				"--json",
+				"a.json",
+				"--session",
+				"budget",
+			]),
+		).toEqual(expected);
+		expect(
+			parseRepeatArgs([
+				"council",
+				"2026-09-01",
+				"--session",
+				"budget",
+				"--json",
+				"a.json",
+			]),
+		).toEqual(expected);
+	});
+
+	it("keeps positional order with flags interleaved", () => {
+		expect(
+			parseRepeatArgs([
+				"--session",
+				"budget",
+				"council",
+				"--json",
+				"a.json",
+				"2026-09-01",
+				"3",
+			]),
+		).toEqual({
+			ok: true,
+			bodySlug: "council",
+			date: "2026-09-01",
+			runs: 3,
+			jsonPath: "a.json",
+			session: "budget",
+		});
 	});
 });

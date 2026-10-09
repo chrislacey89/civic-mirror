@@ -52,3 +52,50 @@ export function judgeRuns(runs: ReadonlyArray<RepeatRun>): {
 		failedRuns,
 	};
 }
+
+export type RepeatArgs =
+	| {
+			readonly ok: true;
+			readonly bodySlug: string;
+			readonly date: string;
+			readonly runs: number;
+			readonly jsonPath: string | null;
+			readonly session: string;
+	  }
+	| { readonly ok: false; readonly reason: string };
+
+/**
+ * Reads the script's arguments: up to three positionals (body slug, date,
+ * runs; a missing one comes back as "" for the caller to reject) with --json <path> and --session <name> allowed anywhere among them.
+ * A flag with nothing after it, or followed by another --flag, is refused
+ * rather than skipped: a dropped --session would judge the regular meeting
+ * and a dropped --json would skip the export, both without a word.
+ */
+export function parseRepeatArgs(argv: ReadonlyArray<string>): RepeatArgs {
+	const positional: string[] = [];
+	let jsonPath: string | null = null;
+	let session = "";
+	for (let i = 0; i < argv.length; i++) {
+		const arg = argv[i] as string;
+		if (arg !== "--json" && arg !== "--session") {
+			positional.push(arg);
+			continue;
+		}
+		const value = argv[i + 1];
+		if (value === undefined || value.startsWith("--")) {
+			return { ok: false, reason: `${arg} needs a value after it` };
+		}
+		if (arg === "--json") jsonPath = value;
+		else session = value;
+		i++;
+	}
+	const [bodySlug, date, runsArg] = positional;
+	return {
+		ok: true,
+		bodySlug: bodySlug ?? "",
+		date: date ?? "",
+		runs: Number(runsArg ?? 5),
+		jsonPath,
+		session,
+	};
+}
