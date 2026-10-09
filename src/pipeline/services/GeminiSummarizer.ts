@@ -5,6 +5,7 @@ import type {
 	SummarizationGenerateFn,
 	SummarizationInput,
 	SummarizationOutput,
+	SummarizationWriteFn,
 } from "./SummarizationService.ts";
 import {
 	sourceTextOfKind,
@@ -18,9 +19,10 @@ import {
  * at import time — tests can import SummarizationService without pulling in
  * the AI SDK and paying its module-load cost.
  *
- * `createGeminiSummarizer` returns a plain async function that matches the
- * `SummarizationGenerateFn` contract. The orchestrator injects this into
- * `SummarizationServiceLive` in production; tests inject a stub instead.
+ * `createGeminiSummarizer` and `createGeminiWriter` return plain async
+ * functions that match the `SummarizationGenerateFn` and
+ * `SummarizationWriteFn` contracts. The orchestrator injects both into
+ * `SummarizationServiceLive` in production; tests inject stubs instead.
  */
 
 type GeminiSummarizerConfig = {
@@ -67,8 +69,8 @@ Each source is labelled. DOCUMENTS is the official written record: agendas, minu
 `.trim();
 
 /**
- * The writing prompt, for a second call that receives the ledger the first
- * one produced. It encodes docs/writing-rubric.md.
+ * The writing prompt, for a second call that receives the ledger the service
+ * settled from the ledger calls. It encodes docs/writing-rubric.md.
  */
 export const WRITING_INSTRUCTIONS = `
 You write the highlights and prose of a meeting report for Civic Mirror, a public transparency website read by the residents of the town whose meeting this is.
@@ -145,8 +147,8 @@ Produce a structured summary of this meeting.
 }
 
 /**
- * The sources again, then the ledger the first call produced, so the prose
- * carries the figures and statuses the receipts table will show.
+ * The sources again, then the service's final ledger, so the prose carries
+ * the figures and statuses the receipts table will show.
  */
 function buildWritingPrompt(
 	input: SummarizationInput,
@@ -184,7 +186,9 @@ Write the highlights and prose for this meeting.
 }
 
 /**
- * Builds a SummarizationGenerateFn backed by Gemini via @ai-sdk/google.
+ * Builds a SummarizationGenerateFn backed by Gemini via @ai-sdk/google: the
+ * ledger call. Its highlights and prose are discarded; the writer's replace
+ * them.
  *
  * The Google provider reads GOOGLE_GENERATIVE_AI_API_KEY from the environment
  * automatically, so no API key is passed here. Callers construct this in the
@@ -206,22 +210,33 @@ function createGeminiSummarizer(
 				schema: summarizationOutputSchema,
 			}),
 		});
-		const ledger = ledgerCall.experimental_output;
-		if (input.ledgerOnly) return ledger;
+		return ledgerCall.experimental_output;
+	};
+}
 
+/**
+ * Builds a SummarizationWriteFn backed by Gemini: the writing call, given the
+ * ledger the service settled. Configured and keyed like the ledger call.
+ */
+function createGeminiWriter(
+	config: GeminiSummarizerConfig,
+): SummarizationWriteFn {
+	return async (input, ledger) => {
 		const writingCall = await generateText({
 			model: google(config.modelId),
 			system: WRITING_INSTRUCTIONS,
 			temperature: 0,
-			prompt: buildWritingPrompt(input, [
-				...(input.recordedDecisions ?? []),
-				...ledger.fiscalDecisions,
-			]),
+			prompt: buildWritingPrompt(input, ledger),
 			experimental_output: Output.object({ schema: writingOutputSchema }),
 		});
-		return { ...ledger, ...writingCall.experimental_output };
+		return writingCall.experimental_output;
 	};
 }
 
-export { buildSummarizationPrompt, buildWritingPrompt, createGeminiSummarizer };
+export {
+	buildSummarizationPrompt,
+	buildWritingPrompt,
+	createGeminiSummarizer,
+	createGeminiWriter,
+};
 export type { GeminiSummarizerConfig };

@@ -14,7 +14,10 @@ import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionSer
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
 import { createGeminiDramaDetector } from "#/pipeline/services/GeminiDramaDetector.ts";
 import { createGeminiMeetingMatcher } from "#/pipeline/services/GeminiMeetingMatcher.ts";
-import { createGeminiSummarizer } from "#/pipeline/services/GeminiSummarizer.ts";
+import {
+	createGeminiSummarizer,
+	createGeminiWriter,
+} from "#/pipeline/services/GeminiSummarizer.ts";
 import { MeetingMatchServiceLive } from "#/pipeline/services/MeetingMatchService.ts";
 import { extractPdfText } from "#/pipeline/services/PdfExtractor.ts";
 import { EgovScraperLive } from "#/pipeline/services/ScraperService.ts";
@@ -201,6 +204,7 @@ function buildProductionLayers(input: BuildLayersInput) {
 	const summarization = SummarizationServiceLive({
 		model: geminiModelId,
 		generateFn: geminiGenerator,
+		writeFn: createGeminiWriter({ modelId: geminiModelId }),
 	});
 
 	const meetingMatch = MeetingMatchServiceLive({

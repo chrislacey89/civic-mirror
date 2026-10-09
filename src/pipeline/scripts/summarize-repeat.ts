@@ -27,7 +27,10 @@ import { Effect, Layer, Result } from "effect";
 import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
 import { DEFAULT_BODIES } from "#/pipeline/composition.ts";
-import { createGeminiSummarizer } from "#/pipeline/services/GeminiSummarizer.ts";
+import {
+	createGeminiSummarizer,
+	createGeminiWriter,
+} from "#/pipeline/services/GeminiSummarizer.ts";
 import {
 	StorageService,
 	StorageServiceLive,
@@ -80,6 +83,7 @@ const layers = Layer.mergeAll(
 	SummarizationServiceLive({
 		model: modelId,
 		generateFn: createGeminiSummarizer({ modelId }),
+		writeFn: createGeminiWriter({ modelId }),
 	}),
 );
 

@@ -243,12 +243,6 @@ type SummarizationInput = {
 	 * carrying the figure the transcript states. The service sets this too.
 	 */
 	unreadFigures?: SummarizationOutput["fiscalDecisions"];
-	/**
-	 * Only the fiscal decisions are wanted from this call; the generator may
-	 * skip the work of writing highlights and prose. The service sets this on
-	 * the documents-only pass, whose text it discards.
-	 */
-	ledgerOnly?: boolean;
 };
 
 /** The texts of the sources of one kind, joined. Empty when there is none. */
@@ -453,19 +447,35 @@ class SummarizationService extends Context.Service<
 
 /**
  * Injectable generator function — this is the boundary between the Effect
- * world and the Vercel AI SDK world. In production, `createGeminiGenerator`
+ * world and the Vercel AI SDK world. In production, `createGeminiSummarizer`
  * (or a Kimi equivalent) returns one of these. In tests, callers pass a stub
  * that returns a canned `SummarizationOutput`, skipping the real HTTP call.
+ * The service keeps only its ledger; its highlights and prose are discarded.
  */
 type SummarizationGenerateFn = (
 	input: SummarizationInput,
 ) => Promise<SummarizationOutput>;
 
+/**
+ * Injectable writer: the highlights and prose for a meeting, given its
+ * sources and the ledger the service will return. In production,
+ * `createGeminiWriter` returns one of these.
+ */
+type SummarizationWriteFn = (
+	input: SummarizationInput,
+	ledger: SummarizationOutput["fiscalDecisions"],
+) => Promise<{ highlights: string[]; prose: string }>;
+
 type SummarizationServiceConfig = {
 	/** Model identifier recorded alongside each summary (e.g. "gemini-2.5-flash"). */
 	model: string;
-	/** Async generator that produces a structured summary from source text. */
+	/** Async generator that extracts the ledger from source text. */
 	generateFn: SummarizationGenerateFn;
+	/**
+	 * Writes the highlights and prose from the final ledger. Required: the
+	 * generator's own text is written before the ledger is settled.
+	 */
+	writeFn: SummarizationWriteFn;
 };
 
 /**
@@ -500,7 +510,6 @@ function SummarizationServiceLive(
 										(source) => source.kind === "documents",
 									),
 									meetingContext: input.meetingContext,
-									ledgerOnly: true,
 								})
 							).fiscalDecisions
 						: [];
@@ -565,10 +574,13 @@ function SummarizationServiceLive(
 						verificationText(input.sources),
 						{ asDollarAmount: hasSourceKind(input.sources, "documents") },
 					);
+					// The text is written from the ledger this summary returns, so
+					// the prose cannot carry a figure or an entry the ledger dropped.
+					const { highlights, prose } = await config.writeFn(input, verified);
 					// Warn-only: the writing rules are the model's to keep, and a
 					// breach is a signal for prompt iteration, never a reason to
 					// change or reject the text.
-					for (const warning of proseWarnings(raw.prose, raw.highlights)) {
+					for (const warning of proseWarnings(prose, highlights)) {
 						console.warn(
 							`[summarize] writing rule breach in "${input.meetingContext}": ${warning}`,
 						);
@@ -580,6 +592,8 @@ function SummarizationServiceLive(
 					// same dollars and cents as one of them is a second entry for it.
 					return {
 						...raw,
+						highlights,
+						prose,
 						fiscalDecisions: verified,
 						sourceDisagreements: bothKinds
 							? [
@@ -621,4 +635,5 @@ export type {
 	SummarizationOutput,
 	SummarizationResult,
 	SummarizationServiceConfig,
+	SummarizationWriteFn,
 };
