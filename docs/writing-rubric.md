@@ -168,8 +168,8 @@ their text for scoring.
   Past 400 the prose is repeating the ledger table: a paragraph per ledger
   row is the sign. The limits that hold are structural: one item per paragraph (D5),
   mechanics cut (D2), ledger entries not repeated (D1). *Test: count the items
-  the prose covers; is any covered in fewer than two sentences, or any routine
-  item in more than five?* (house; decided 2026-10-09 — "if it is a 4 hour
+  the prose covers; is any covered in fewer than two sentences (except as D5
+  allows), or any routine item in more than five?* (house; decided 2026-10-09 — "if it is a 4 hour
   meeting 250 words may even be on the low end")
 
 ## E. Sentences (4 points)
