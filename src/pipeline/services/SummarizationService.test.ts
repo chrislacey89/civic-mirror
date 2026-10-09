@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
 	figureIsIn,
+	proseWarnings,
 	type SummarizationInput,
 	type SummarizationOutput,
 	SummarizationService,
@@ -1157,5 +1158,101 @@ describe("ledger-only pass", () => {
 			"documents",
 			"transcript",
 		]);
+	});
+});
+
+describe("proseWarnings", () => {
+	const SHORT = "The council added $18,000 to the parks budget. It voted 4-0.";
+	const words = (count: number) => Array(count).fill("word").join(" ");
+
+	it("returns no warnings for prose and highlights that keep the rules", () => {
+		expect(proseWarnings(SHORT, ["Council adds $18,000 to parks"])).toEqual([]);
+	});
+
+	it("reports prose over 400 words with its count, and not at 400", () => {
+		expect(proseWarnings(words(400), [])).toEqual([]);
+		expect(proseWarnings(words(401), [])).toEqual([
+			"prose is 401 words, over the 400-word ceiling",
+		]);
+	});
+
+	it("reports a paragraph over five sentences by its position", () => {
+		const five = "One. Two. Three. Four. Five.";
+		const six = "One. Two. Three. Four. Five. Six?";
+		expect(proseWarnings(`${five}\n\n${five}`, [])).toEqual([]);
+		expect(proseWarnings(`${five}\n\n${six}`, [])).toEqual([
+			"paragraph 2 has 6 sentences, over the 5-sentence ceiling",
+		]);
+	});
+
+	it.each([
+		"additional appropriation",
+		"entertained a motion",
+		"accounts payable",
+		"privilege of the floor",
+		"the transcript",
+		"the minutes",
+	])("reports %j in the prose, whatever its case", (phrase) => {
+		expect(
+			proseWarnings(`The council heard ${phrase.toUpperCase()} today.`, []),
+		).toEqual([`"${phrase}" appears in prose`]);
+	});
+
+	it("reports a banned phrase in a highlight, and in both places when in both", () => {
+		expect(
+			proseWarnings(SHORT, ["Approved an Additional Appropriation"]),
+		).toEqual(['"additional appropriation" appears in highlights']);
+		expect(
+			proseWarnings("The minutes say so.", ["The minutes say so"]),
+		).toEqual(['"the minutes" appears in prose and highlights']);
+	});
+
+	it("reports more than six highlights, and not six", () => {
+		const six = Array(6).fill("Council acts");
+		expect(proseWarnings(SHORT, six)).toEqual([]);
+		expect(proseWarnings(SHORT, [...six, "Council acts"])).toEqual([
+			"7 highlights, over the 6-highlight ceiling",
+		]);
+	});
+});
+
+describe("summarize logs writing-rule breaches without changing the text", () => {
+	it("warns with the meeting context and returns the model's text as written", async () => {
+		const output: SummarizationOutput = {
+			highlights: ["Approved an additional appropriation"],
+			prose: "The council entertained a motion on the minutes.",
+			fiscalDecisions: [],
+			budgetDiscussions: [],
+			sourceDisagreements: [],
+		};
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		try {
+			const result = await Effect.runPromise(
+				Effect.gen(function* () {
+					const service = yield* SummarizationService;
+					return yield* service.summarize({
+						sources: [{ kind: "documents", text: "Agenda." }],
+						meetingContext: "Town Council, May 27, 2025",
+					});
+				}).pipe(
+					Effect.provide(
+						SummarizationServiceLive({
+							model: "gemini-2.5-flash",
+							generateFn: async () => output,
+						}),
+					),
+				),
+			);
+
+			expect(result.prose).toBe(output.prose);
+			expect(result.highlights).toEqual(output.highlights);
+			const messages = warn.mock.calls.map((call) => String(call[0]));
+			expect(messages).toHaveLength(3);
+			expect(
+				messages.every((m) => m.includes("Town Council, May 27, 2025")),
+			).toBe(true);
+		} finally {
+			warn.mockRestore();
+		}
 	});
 });

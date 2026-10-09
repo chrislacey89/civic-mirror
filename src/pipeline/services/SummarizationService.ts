@@ -361,6 +361,74 @@ function repeatsUnreadFigure(
 	return true;
 }
 
+const PROSE_WORD_CEILING = 400;
+const PARAGRAPH_SENTENCE_CEILING = 5;
+const HIGHLIGHT_CEILING = 6;
+
+/** Record phrasing the writing prompt tells the model to translate. */
+const BANNED_PHRASES = [
+	"additional appropriation",
+	"entertained a motion",
+	"accounts payable",
+	"privilege of the floor",
+	"the transcript",
+	"the minutes",
+] as const;
+
+/**
+ * One-line warnings for what the writing prompt forbids and code can check
+ * after the call: prose past the length ceiling, a paragraph past five
+ * sentences, record phrasing the prompt says to translate, and too many
+ * highlights. Advisory only; the caller logs them and keeps the text as the
+ * model wrote it. Resident names are not checked: code cannot know who spoke
+ * at public comment.
+ */
+function proseWarnings(prose: string, highlights: readonly string[]): string[] {
+	const warnings: string[] = [];
+
+	const words = prose.split(/\s+/).filter((word) => word !== "").length;
+	if (words > PROSE_WORD_CEILING) {
+		warnings.push(
+			`prose is ${words} words, over the ${PROSE_WORD_CEILING}-word ceiling`,
+		);
+	}
+
+	prose
+		.split(/\n\s*\n/)
+		.map((paragraph) => paragraph.trim())
+		.filter((paragraph) => paragraph !== "")
+		.forEach((paragraph, index) => {
+			const sentences = paragraph
+				.split(/(?<=[.!?])\s+/)
+				.filter((sentence) => sentence !== "").length;
+			if (sentences > PARAGRAPH_SENTENCE_CEILING) {
+				warnings.push(
+					`paragraph ${index + 1} has ${sentences} sentences, over the ${PARAGRAPH_SENTENCE_CEILING}-sentence ceiling`,
+				);
+			}
+		});
+
+	const lowerProse = prose.toLowerCase();
+	const lowerHighlights = highlights.join("\n").toLowerCase();
+	for (const phrase of BANNED_PHRASES) {
+		const where = [
+			lowerProse.includes(phrase) ? "prose" : undefined,
+			lowerHighlights.includes(phrase) ? "highlights" : undefined,
+		].filter((place) => place !== undefined);
+		if (where.length > 0) {
+			warnings.push(`"${phrase}" appears in ${where.join(" and ")}`);
+		}
+	}
+
+	if (highlights.length > HIGHLIGHT_CEILING) {
+		warnings.push(
+			`${highlights.length} highlights, over the ${HIGHLIGHT_CEILING}-highlight ceiling`,
+		);
+	}
+
+	return warnings;
+}
+
 /**
  * The full result returned by the service — schema output plus the model
  * identifier, which gets persisted alongside the summary for auditing.
@@ -497,6 +565,14 @@ function SummarizationServiceLive(
 						verificationText(input.sources),
 						{ asDollarAmount: hasSourceKind(input.sources, "documents") },
 					);
+					// Warn-only: the writing rules are the model's to keep, and a
+					// breach is a signal for prompt iteration, never a reason to
+					// change or reject the text.
+					for (const warning of proseWarnings(raw.prose, raw.highlights)) {
+						console.warn(
+							`[summarize] writing rule breach in "${input.meetingContext}": ${warning}`,
+						);
+					}
 					// A disagreement needs two kinds of source to disagree; one
 					// reported from a single kind is the model inventing the other. The
 					// unread figures are already recorded above, so an amount
@@ -534,6 +610,7 @@ export {
 	sourceTextOfKind,
 	figureIsIn,
 	verifyAmounts,
+	proseWarnings,
 	summarizationOutputSchema,
 };
 export type {
