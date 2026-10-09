@@ -1,4 +1,5 @@
 import "./promise-try-polyfill.ts";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { createWorker, PSM } from "tesseract.js";
 import { getDocumentProxy, renderPageAsImage } from "unpdf";
 
@@ -24,6 +25,10 @@ import { getDocumentProxy, renderPageAsImage } from "unpdf";
  *   silences its "low-resolution page" warning log.
  * - `PSM.SINGLE_BLOCK` — assumes a single column of text per page, which
  *   matches municipal meeting minute and agenda layouts.
+ * - `keepRedChannelOnly` — the minute-book paper these scans come from has
+ *   red ruled margin lines, and the left one runs through the first character
+ *   of every line. Tesseract reads line and character as one shape and
+ *   garbles the character, which turns a line-start "$2" into letters.
  */
 export async function ocrPdf(bytes: ArrayBuffer): Promise<string> {
 	// pdfjs (bundled in unpdf) transfers ownership of the underlying buffer on
@@ -47,11 +52,33 @@ export async function ocrPdf(bytes: ArrayBuffer): Promise<string> {
 				scale: 2.5,
 				canvasImport: () => import("@napi-rs/canvas"),
 			});
-			const { data } = await worker.recognize(Buffer.from(png));
+			const { data } = await worker.recognize(
+				await keepRedChannelOnly(Buffer.from(png)),
+			);
 			pages.push(data.text);
 		}
 		return pages.join("\n\n");
 	} finally {
 		await worker.terminate();
 	}
+}
+
+/**
+ * Re-draws a page as greyscale taken from its red channel alone. Red ink is
+ * as bright as the paper in that channel, so red ruling disappears, while
+ * black and blue ink stay dark. Text printed in red disappears with it.
+ */
+async function keepRedChannelOnly(png: Buffer): Promise<Buffer> {
+	const image = await loadImage(png);
+	const canvas = createCanvas(image.width, image.height);
+	const context = canvas.getContext("2d");
+	context.drawImage(image, 0, 0);
+	const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+	const pixels = imageData.data;
+	for (let i = 0; i < pixels.length; i += 4) {
+		pixels[i + 1] = pixels[i];
+		pixels[i + 2] = pixels[i];
+	}
+	context.putImageData(imageData, 0, 0);
+	return canvas.toBuffer("image/png");
 }
