@@ -52,15 +52,9 @@ export async function ocrPdf(bytes: ArrayBuffer): Promise<string> {
 				scale: 2.5,
 				canvasImport: () => import("@napi-rs/canvas"),
 			});
-			const { image, strayRedPixels, pixelCount } = await keepRedChannelOnly(
-				Buffer.from(png),
+			const { data } = await worker.recognize(
+				await keepRedChannelOnly(Buffer.from(png)),
 			);
-			if (strayRedPixels > pixelCount * MAX_STRAY_RED_SHARE) {
-				throw new Error(
-					`OCR: page ${pageNumber} has red print outside the ruled lines (${strayRedPixels} red pixels); reading the red channel would drop it`,
-				);
-			}
-			const { data } = await worker.recognize(image);
 			pages.push(data.text);
 		}
 		return pages.join("\n\n");
@@ -69,108 +63,22 @@ export async function ocrPdf(bytes: ArrayBuffer): Promise<string> {
 	}
 }
 
-// Share of a page's pixels that may be strongly red away from ruled lines.
-// The ruled minute-book page leaves about 0.02% (stray horizontal ruling
-// ends); a single line of 12pt red text is about 0.1%.
-const MAX_STRAY_RED_SHARE = 0.0005;
-
-// A pixel column is a ruled line when this share of the page's height is
-// strongly red in it (margin ruling is slightly broken, so well below 1). A row
-// is one when its longest unbroken red run covers this share of the width;
-// text rows are many short runs, so they never qualify. Pixels within
-// RULING_MARGIN_PX of a ruled line are part of it.
-const COLUMN_RULING_SHARE = 0.2;
-const ROW_RULING_SHARE = 0.25;
-const RULING_MARGIN_PX = 8;
-
-function isStrongRed(pixels: Uint8ClampedArray, offset: number): boolean {
-	const red = pixels[offset] ?? 0;
-	const other = Math.max(pixels[offset + 1] ?? 0, pixels[offset + 2] ?? 0);
-	return red > 150 && red - other > 100;
-}
-
-/**
- * Marks every index within `margin` of an index whose count exceeds
- * `threshold`.
- */
-function nearLines(
-	counts: number[],
-	threshold: number,
-	margin: number,
-): boolean[] {
-	const near = new Array<boolean>(counts.length).fill(false);
-	counts.forEach((count, index) => {
-		if (count <= threshold) return;
-		const from = Math.max(0, index - margin);
-		const to = Math.min(counts.length - 1, index + margin);
-		for (let i = from; i <= to; i++) near[i] = true;
-	});
-	return near;
-}
-
 /**
  * Re-draws a page as greyscale taken from its red channel alone. Red ink is
  * as bright as the paper in that channel, so red ruling disappears, while
- * black and blue ink stay dark. Text printed in red disappears with it, so
- * this also counts the strongly red pixels that are not part of a ruled line;
- * the caller refuses pages where that count says red print would be lost.
+ * black and blue ink stay dark. Text printed in red disappears with it.
  */
-async function keepRedChannelOnly(png: Buffer): Promise<{
-	image: Buffer;
-	strayRedPixels: number;
-	pixelCount: number;
-}> {
+async function keepRedChannelOnly(png: Buffer): Promise<Buffer> {
 	const image = await loadImage(png);
-	const { width, height } = image;
-	const canvas = createCanvas(width, height);
+	const canvas = createCanvas(image.width, image.height);
 	const context = canvas.getContext("2d");
 	context.drawImage(image, 0, 0);
-	const imageData = context.getImageData(0, 0, width, height);
+	const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
 	const pixels = imageData.data;
-
-	const redPerColumn = new Array<number>(width).fill(0);
-	const longestRunPerRow = new Array<number>(height).fill(0);
-	for (let row = 0; row < height; row++) {
-		let run = 0;
-		for (let column = 0; column < width; column++) {
-			if (isStrongRed(pixels, (row * width + column) * 4)) {
-				redPerColumn[column]++;
-				run++;
-				longestRunPerRow[row] = Math.max(longestRunPerRow[row] ?? 0, run);
-			} else {
-				run = 0;
-			}
-		}
-	}
-	const inRuledColumn = nearLines(
-		redPerColumn,
-		height * COLUMN_RULING_SHARE,
-		RULING_MARGIN_PX,
-	);
-	const inRuledRow = nearLines(
-		longestRunPerRow,
-		width * ROW_RULING_SHARE,
-		RULING_MARGIN_PX,
-	);
-
-	let strayRedPixels = 0;
 	for (let i = 0; i < pixels.length; i += 4) {
-		if (isStrongRed(pixels, i)) {
-			const pixel = i / 4;
-			if (
-				!inRuledColumn[pixel % width] &&
-				!inRuledRow[Math.floor(pixel / width)]
-			) {
-				strayRedPixels++;
-			}
-		}
-		pixels[i + 1] = pixels[i] ?? 0;
-		pixels[i + 2] = pixels[i] ?? 0;
+		pixels[i + 1] = pixels[i];
+		pixels[i + 2] = pixels[i];
 	}
 	context.putImageData(imageData, 0, 0);
-	return {
-		image: canvas.toBuffer("image/png"),
-		strayRedPixels,
-		pixelCount: width * height,
-	};
+	return canvas.toBuffer("image/png");
 }
