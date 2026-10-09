@@ -24,3 +24,6 @@ todos.json
 
 # lfg tracer artifacts
 test-results/
+
+# Scratch from the Playwright MCP browser tool
+.playwright-mcp/

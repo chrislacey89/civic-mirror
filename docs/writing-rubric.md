@@ -352,8 +352,15 @@ Paragraphs: ____    Most sentences in one: ____
    is not "$29,425.00". The stricter alternative (copy every string exactly)
    and the looser one (round to the dollar in prose) are both defensible; this
    is the middle.
-3. **Where the rubric is enforced.** Three places, in order of effort: as a
-   WRITING section appended to `SYSTEM_INSTRUCTIONS` in
-   `src/pipeline/services/GeminiSummarizer.ts`; as a scoring pass in
-   `summarize-repeat.ts` so a prompt change can be judged on prose as well as
-   on the ledger; as a second-model edit pass. Start with the first.
+3. **Where the rubric is enforced — done 2026-10-09.** Rules 21–34 of
+   `SYSTEM_INSTRUCTIONS` in `src/pipeline/services/GeminiSummarizer.ts` carry
+   sections B–G; the meeting page splits `prose` on blank lines; and
+   `summarize-repeat.ts --json` exports each run's text for the compare page.
+   Two things the repeat runs taught, both now in the prompt: an example
+   headline taken from a real meeting is returned word for word on that
+   meeting, so the examples are invented; and naming "hires" among the items
+   that matter pulled no-dollar hires into the ledger, so the writing rules
+   never name a category the ledger rules exclude. Still open after three
+   runs per meeting: on a transcript-only meeting with twelve decisions
+   (2026-07-27) the prose runs to ~260 words, keeps "additional
+   appropriation", and headlines a total the record never stated.
