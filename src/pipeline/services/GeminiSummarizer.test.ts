@@ -161,6 +161,14 @@ describe("the ledger prompt and the writing prompt", () => {
 	// Example headlines in the writing rules are invented. Three repeat runs
 	// on 2026-10-05 returned a worked example verbatim while it was taken from
 	// that meeting's own record.
+	// One town's glossary in the shared prompt glossed another body's
+	// "reorganization" with Ellettsville's merger. Terms come in per body.
+	it("names no body's own terms; the glossary arrives with the input", () => {
+		expect(WRITING_INSTRUCTIONS).not.toContain("Richland Township");
+		expect(WRITING_INSTRUCTIONS).not.toContain("Unified Development Ordinance");
+		expect(WRITING_INSTRUCTIONS).toContain("GLOSSARY");
+	});
+
 	it("uses invented example figures, not ones from a stored meeting", () => {
 		const examples = WRITING_INSTRUCTIONS.match(/\$[\d,]+(?:\.\d\d)?/g) ?? [];
 		expect(examples.length).toBeGreaterThan(0);
@@ -210,5 +218,31 @@ describe("buildWritingPrompt", () => {
 	it("says so when the ledger is empty, rather than leaving the label bare", () => {
 		const prompt = buildWritingPrompt(input, []);
 		expect(prompt).toContain("LEDGER:\n---\n(no fiscal decisions)\n---");
+	});
+
+	it("adds a GLOSSARY block, after the ledger, when the body has one", () => {
+		const prompt = buildWritingPrompt(
+			{
+				...input,
+				glossary: [
+					"UDO — the Unified Development Ordinance",
+					"TIF — a tax-increment financing district",
+				],
+			},
+			[],
+		);
+		expect(prompt).toContain(
+			"GLOSSARY:\n---\n- UDO — the Unified Development Ordinance\n- TIF — a tax-increment financing district\n---",
+		);
+		expect(prompt.indexOf("GLOSSARY:")).toBeGreaterThan(
+			prompt.indexOf("LEDGER:"),
+		);
+	});
+
+	it("leaves the GLOSSARY block out when the body has none or an empty one", () => {
+		expect(buildWritingPrompt(input, [])).not.toContain("GLOSSARY:");
+		expect(buildWritingPrompt({ ...input, glossary: [] }, [])).not.toContain(
+			"GLOSSARY:",
+		);
 	});
 });

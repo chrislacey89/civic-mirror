@@ -227,6 +227,11 @@ type SummarizationInput = {
 	/** Short context line for the prompt (e.g. "Town Council, March 23, 2026"). */
 	meetingContext: string;
 	/**
+	 * Terms the body's meetings use that a resident may not know, one
+	 * "TERM — gloss" line each. Read by the writing call only.
+	 */
+	glossary?: readonly string[];
+	/**
 	 * Fiscal decisions already taken from the documents among `sources`. The
 	 * generator returns only decisions that are not among them. The service
 	 * sets this; a caller of `summarize` does not.

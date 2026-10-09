@@ -29,6 +29,7 @@ import {
 function regenerateMeetingSummary(input: {
 	meetingId: number;
 	meetingContext: string;
+	glossary?: readonly string[];
 	force?: boolean;
 }): Effect.Effect<
 	{ regenerated: boolean },
@@ -56,6 +57,7 @@ function regenerateMeetingSummary(input: {
 		const summary = yield* summarizer.summarize({
 			sources,
 			meetingContext: input.meetingContext,
+			glossary: input.glossary,
 		});
 
 		yield* storage.replaceMeetingSummary({
@@ -92,7 +94,7 @@ type RegenerationOutcome = {
  * failure on one meeting leaves its summary in place and the run carries on.
  */
 function regenerateCombinedSummaries(input: {
-	body: { slug: string; name: string };
+	body: { slug: string; name: string; glossary?: readonly string[] };
 	/** Only the meeting on this date. */
 	date?: string;
 }): Effect.Effect<
@@ -112,6 +114,7 @@ function regenerateCombinedSummaries(input: {
 			const outcome = yield* regenerateMeetingSummary({
 				meetingId: meeting.meetingId,
 				meetingContext: `${input.body.name}, ${meeting.date}`,
+				glossary: input.body.glossary,
 				force: true,
 			}).pipe(
 				Effect.map(({ regenerated }) => ({

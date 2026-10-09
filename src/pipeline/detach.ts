@@ -27,6 +27,7 @@ function detachDocumentAndRegenerate(input: {
 	meetingId: number;
 	sourceUrl: string;
 	meetingContext: string;
+	glossary?: readonly string[];
 }): Effect.Effect<
 	DetachOutcome,
 	DatabaseError | LlmError,
@@ -63,6 +64,7 @@ function detachDocumentAndRegenerate(input: {
 		const { regenerated } = yield* regenerateMeetingSummary({
 			meetingId: input.meetingId,
 			meetingContext: input.meetingContext,
+			glossary: input.glossary,
 		});
 		return { outcome: isHeld ? "detached" : "not-held", regenerated };
 	});

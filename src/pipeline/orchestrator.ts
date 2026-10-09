@@ -170,6 +170,12 @@ type BodyConfig = {
 	youtubeTitlePrefix?: string;
 	/** ISO date; playlist videos dated earlier are ignored. */
 	youtubeSince?: string;
+	/**
+	 * Terms this body's meetings use that a resident may not know, one
+	 * "TERM — gloss" line each. Passed to the summarizer's writing call, so a
+	 * term local to one body is not glossed in another's report.
+	 */
+	glossary?: readonly string[];
 };
 
 /** The source paths a run can be limited to. */
@@ -491,6 +497,7 @@ function attachDocumentsAndRegenerate(input: {
 		"summary" | "fiscalDecisions" | "budgetDiscussions"
 	>;
 	meetingContext: string;
+	glossary?: readonly string[];
 	config: ResolvedConfig;
 }): Effect.Effect<
 	void,
@@ -523,6 +530,7 @@ function attachDocumentsAndRegenerate(input: {
 		yield* regenerateWithRetry({
 			meetingId: input.meetingId,
 			meetingContext: input.meetingContext,
+			glossary: input.glossary,
 			config: input.config,
 		}).pipe(Effect.annotateLogs({ bringsNewDocument }));
 	});
@@ -532,6 +540,7 @@ function attachDocumentsAndRegenerate(input: {
 function regenerateWithRetry(input: {
 	meetingId: number;
 	meetingContext: string;
+	glossary?: readonly string[];
 	config: ResolvedConfig;
 }): Effect.Effect<
 	void,
@@ -545,6 +554,7 @@ function regenerateWithRetry(input: {
 		const { regenerated } = yield* regenerateMeetingSummary({
 			meetingId: input.meetingId,
 			meetingContext: input.meetingContext,
+			glossary: input.glossary,
 		}).pipe(
 			Effect.retry({
 				schedule: input.config.llmSchedule,
@@ -608,6 +618,7 @@ function matchDocumentsToMeeting(input: {
 				meetingId: meeting.meetingId,
 				meeting: input.documents,
 				meetingContext: input.meetingContext,
+				glossary: body.glossary,
 				config,
 			});
 			return { settled: true };
@@ -774,6 +785,7 @@ function processEgovListing(
 				yield* regenerateWithRetry({
 					meetingId: existing.meetingId,
 					meetingContext: `${body.name}, ${meetingDate}`,
+					glossary: body.glossary,
 					config,
 				});
 				return SETTLED_WITHOUT_REQUEST;
@@ -886,6 +898,7 @@ function processEgovListing(
 			.summarize({
 				sources: [{ kind: "documents", text: extraction.text }],
 				meetingContext: `${body.name}, ${meetingDate}`,
+				glossary: body.glossary,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
 		yield* Effect.log("egov.summarize.finish");
@@ -1147,6 +1160,7 @@ function processFinalsiteListing(
 			.summarize({
 				sources: readableSources,
 				meetingContext: `${body.name}, ${listing.date}`,
+				glossary: body.glossary,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
 		yield* Effect.log("finalsite.summarize.finish");
@@ -1330,6 +1344,7 @@ function processPlaylistVideo(
 				yield* regenerateWithRetry({
 					meetingId: existing.meetingId,
 					meetingContext: `${body.name}, ${video.title}`,
+					glossary: body.glossary,
 					config,
 				});
 			}
@@ -1605,6 +1620,7 @@ function transcribeAndSummarize(
 			.summarize({
 				sources: [{ kind: "transcript", text: transcript.rawText }],
 				meetingContext: `${body.name}, ${video.title}`,
+				glossary: body.glossary,
 			})
 			.pipe(Effect.retry(config.llmSchedule));
 		yield* Effect.log("youtube.summarize.finish");
@@ -1705,6 +1721,7 @@ function matchVideoToMeeting(input: {
 		yield* regenerateWithRetry({
 			meetingId: meeting.meetingId,
 			meetingContext: `${body.name}, ${video.title}`,
+			glossary: body.glossary,
 			config,
 		});
 

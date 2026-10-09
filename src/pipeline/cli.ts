@@ -384,6 +384,7 @@ const documentDetachCommand = Command.make(
 					meetingId: meeting.meetingId,
 					sourceUrl: url,
 					meetingContext: `${body.name}, ${date}`,
+					glossary: body.glossary,
 				});
 				if (result.outcome === "last-source") {
 					return yield* Effect.fail(

@@ -87,7 +87,7 @@ The highlights and prose are what a resident reads. highlights[0] is printed as 
 5. Leave out call to order, prayer, pledge, roll call, who presided, minutes approval, adjournment and "no further business". Mention an absence only when it changed a vote. Mention paying the bills only when a specific invoice was questioned.
 6. The body does the verb: "the council approved", "members voted 4-0", "the town manager said". Do not use a passive that hides who acted. Introduce an action with a verb, not a noun: "added $18,000 to the parks budget", not "an additional appropriation of $18,000 was approved". One thought per sentence; no sentence over thirty words.
 7. Translate the record's phrasing instead of copying it, even when LEDGER's titles use it: "entertained a motion to approve" becomes approved; "authorized the payment of Accounts Payable Vouchers and Payroll" becomes paid its bills (usually left out); "Privilege of the Floor" becomes public comment; "additional appropriation of $X for Y" becomes added $X to the Y budget; "transfer of $X from A to B" becomes moved $X from A to B; "in the amount of $X" becomes $X; "first reading of Ordinance N" becomes introduced an ordinance that would ... (a vote to adopt comes at a later meeting); "contingent upon" becomes if; "convened" becomes met. Resolution and ordinance numbers belong in the ledger, not in prose. Prefer the word a neighbor would use: residents, pay, rules, bar.
-8. On first use, spell out and gloss any term a resident would not know: MVH is the Motor Vehicle Highway fund, the town's main road-money account; a PERF physical is the physical the state police and fire pension fund requires; the UDO is the Unified Development Ordinance, the town's zoning and building rules; the IURC is the state utility regulator; a TIF is a tax-increment financing district; Community Crossings is a state matching grant for local roads; C-2 to R-2 is from commercial to medium-density residential zoning; reorganization is the proposed merger of the town and Richland Township; claims are the town's bills.
+8. On first use, spell out and gloss any term a resident would not know: an abbreviation, a program or fund, a zoning code, a legal term. When a GLOSSARY is given and lists the term, use its wording; otherwise give a short plain gloss of your own. GLOSSARY holds only this body's terms, so never borrow a meaning for a term from elsewhere.
 9. No hedges or filler: not "it should be noted", "various", "several items", "a number of", "discussion ensued", "a lengthy discussion", "largely". Attribution ("staff estimated") is not a hedge and stays. Use one name per actor throughout: the council is never also "the board" or "the governing body".
 10. Name council members, staff, applicants and presenters from organizations, as DOCUMENTS spells them, with their role on first mention. Never write the name of a resident who speaks at public comment, anywhere in highlights or prose, even though DOCUMENTS records it: write "a resident", "four residents" or "the owner of a Main Street business" instead. A business owner speaking about their own matter at public comment is a resident. Attribute a statement to a named person only when TRANSCRIPT itself names the speaker or DOCUMENTS records it; otherwise report what was said without a name.
 11. The prose never mentions the sources: not "the transcript", "the minutes", "the record states", "stated as", nor any garbled caption text. For a motion in LEDGER, the prose uses LEDGER's figure and status, even where DOCUMENTS or TRANSCRIPT states another; LEDGER already settled which source governs that figure. For anything not in LEDGER, where DOCUMENTS and TRANSCRIPT disagree the prose uses the DOCUMENTS figure and says nothing about the disagreement; that is recorded elsewhere. Leave out a figure the record states only in garbled form and give its clearly stated parts instead; never add the parts up yourself.
@@ -166,6 +166,13 @@ function buildWritingPrompt(
 				)
 			: ["(no fiscal decisions)"];
 	blocks.push(`LEDGER:\n---\n${lines.join("\n")}\n---`);
+
+	const glossary = input.glossary ?? [];
+	if (glossary.length > 0) {
+		blocks.push(
+			`GLOSSARY:\n---\n${glossary.map((line) => `- ${line}`).join("\n")}\n---`,
+		);
+	}
 
 	return `
 Meeting context: ${input.meetingContext}

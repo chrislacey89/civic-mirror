@@ -103,6 +103,7 @@ const attempt = await Effect.runPromise(
 					.summarize({
 						sources,
 						meetingContext: `${body.name}, ${date}`,
+						glossary: body.glossary,
 					})
 					.pipe(Effect.result),
 			{ concurrency: runs },
