@@ -23,6 +23,7 @@
     "pipeline": "tsx src/pipeline/cli.ts",
     "pipeline:run": "tsx src/pipeline/cli.ts run",
     "pipeline:dry": "tsx src/pipeline/cli.ts run --dry-run --skip-crawl-delay",
+    "summarize:recheck": "for d in 2025-05-27 2026-02-02 2025-11-24; do tsx src/pipeline/scripts/summarize-repeat.ts ellettsville-town-council $d 5 || true; done",
     "ralph:once": "./ralph-once.sh",
     "ralph": "./ralph.sh 5"
   },
