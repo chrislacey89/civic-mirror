@@ -74,4 +74,54 @@ describe("ocrPdf", () => {
 		// crosses its "$2".
 		expect(text).toContain("E & B Paving for\n$244,215.10 and Milestone");
 	});
+
+	it("rejects a page whose text is printed in red", {
+		timeout: 120_000,
+	}, async () => {
+		// Reading only the red channel erases red ink, so a page with red body
+		// text would come back with those words silently missing.
+		const bytes = pdfWithText("1 0 0 rg", "RESOLUTION AMENDED IN RED INK");
+
+		await expect(ocrPdf(bytes)).rejects.toThrow(/red print/i);
+	});
+
+	it("reads black text from a page of the same layout", {
+		timeout: 120_000,
+	}, async () => {
+		const bytes = pdfWithText("0 0 0 rg", "RESOLUTION AMENDED IN BLACK INK");
+
+		const text = await ocrPdf(bytes);
+
+		expect(text.toLowerCase()).toContain("resolution");
+	});
 });
+
+// A one-page PDF with a few large lines of text in the given fill colour.
+// pdfjs rebuilds the cross-reference table, so offsets are left as zero.
+function pdfWithText(fillColour: string, line: string): ArrayBuffer {
+	const stream = [
+		"BT",
+		fillColour,
+		"/F1 28 Tf",
+		"50 700 Td",
+		`(${line}) Tj`,
+		"0 -60 Td",
+		`(${line}) Tj`,
+		"0 -60 Td",
+		`(${line}) Tj`,
+		"ET",
+	].join("\n");
+	const objects = [
+		"<< /Type /Catalog /Pages 2 0 R >>",
+		"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+		"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+		`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+		"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>",
+	];
+	const body = objects
+		.map((object, index) => `${index + 1} 0 obj\n${object}\nendobj\n`)
+		.join("");
+	const text = `%PDF-1.4\n${body}trailer\n<< /Root 1 0 R /Size ${objects.length + 1} >>\n%%EOF\n`;
+	const encoded = new TextEncoder().encode(text);
+	return encoded.buffer.slice(0) as ArrayBuffer;
+}
