@@ -90,6 +90,32 @@ describe("MeetingDetailView — summary paragraphs", () => {
 			expect(texts).toContain(paragraph);
 		}
 	});
+
+	it("drops blank and whitespace-only chunks instead of rendering empty paragraphs", () => {
+		const meeting = makeMeeting({
+			summary: {
+				highlights: ["Council accepts paving bid"],
+				prose:
+					"Milestone was the lowest of three bidders.\n \nThe council also rezoned two parcels.\n\n",
+				model: "gemini-2.5-flash",
+			},
+		});
+		render(<MeetingDetailView meeting={meeting} />);
+
+		const summary = screen.getByText("Summary").closest("section");
+		if (!summary) throw new Error("summary section not rendered");
+		const body = within(summary).getByText(
+			"Milestone was the lowest of three bidders.",
+		).parentElement;
+		if (!body) throw new Error("summary body not rendered");
+		const texts = within(body)
+			.getAllByRole("paragraph")
+			.map((p) => p.textContent);
+		expect(texts).toEqual([
+			"Milestone was the lowest of three bidders.",
+			"The council also rezoned two parcels.",
+		]);
+	});
 });
 
 describe("MeetingDetailView — decisions with no stated amount", () => {
