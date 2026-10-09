@@ -90,8 +90,7 @@ type FigureSearch = {
 	/**
 	 * Count only an occurrence written with a dollar sign. Documents write
 	 * their figures that way, so a bare number with the same digits is some
-	 * other number, or what is left of a figure the scan destroyed
-	 * ("fpaa-215.10"). Captions often drop the sign, so a transcript is
+	 * other number. Captions often drop the sign, so a transcript is
 	 * searched without this.
 	 */
 	asDollarAmount?: boolean;
@@ -424,8 +423,7 @@ function SummarizationServiceLive(
 								})
 							).fiscalDecisions
 						: [];
-					// The documents govern a figure only when it can be found in them. A
-					// figure that cannot was rebuilt by the model from an illegible scan.
+					// The documents govern a figure only when it can be found in them.
 					const documentsText = sourceTextOfKind(input.sources, "documents");
 					const unread = documentDecisions.filter(
 						(decision) =>

@@ -8,6 +8,14 @@ const TEXT_NATIVE_FIXTURE_URL = new URL(
 	import.meta.url,
 );
 
+// Page 1 of the Ellettsville Town Council minutes for 2025-05-27, scanned
+// from a minute book. The paper has red ruled margin lines, and the left one
+// runs through the first character of every line of text.
+const RULED_PAGE_FIXTURE_URL = new URL(
+	"./__fixtures__/ruled-minute-book-page.pdf",
+	import.meta.url,
+);
+
 async function loadFixtureBytes(url: URL): Promise<ArrayBuffer> {
 	const buffer = await readFile(fileURLToPath(url));
 	return buffer.buffer.slice(
@@ -53,5 +61,17 @@ describe("ocrPdf", () => {
 		const page2 = text.toLowerCase().search(/adjourn/);
 		expect(page1).toBeGreaterThanOrEqual(0);
 		expect(page2).toBeGreaterThan(page1);
+	});
+
+	it("reads a dollar figure that a ruled margin line runs through", {
+		timeout: 120_000,
+	}, async () => {
+		const bytes = await loadFixtureBytes(RULED_PAGE_FIXTURE_URL);
+
+		const text = await ocrPdf(bytes);
+
+		// The figure is the first thing on its line, so the margin line
+		// crosses its "$2".
+		expect(text).toContain("E & B Paving for\n$244,215.10 and Milestone");
 	});
 });
