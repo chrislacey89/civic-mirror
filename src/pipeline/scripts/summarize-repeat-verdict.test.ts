@@ -1,5 +1,12 @@
-import { describe, expect, it } from "vitest";
-import { judgeRuns, parseRepeatArgs } from "./summarize-repeat-verdict.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import {
+	jsonPathProblem,
+	judgeRuns,
+	parseRepeatArgs,
+} from "./summarize-repeat-verdict.ts";
 
 const decided = (amount: number) => ({
 	summary: {
@@ -126,5 +133,32 @@ describe("parseRepeatArgs", () => {
 			jsonPath: "a.json",
 			session: "budget",
 		});
+	});
+});
+
+describe("jsonPathProblem", () => {
+	const directory = mkdtempSync(join(tmpdir(), "summarize-repeat-"));
+	afterAll(() => rmSync(directory, { recursive: true, force: true }));
+
+	it("accepts a new file in an existing directory", () => {
+		expect(jsonPathProblem(join(directory, "new.json"))).toBeNull();
+	});
+
+	it("accepts an existing writable file", () => {
+		const file = join(directory, "existing.json");
+		writeFileSync(file, "{}");
+		expect(jsonPathProblem(file)).toBeNull();
+	});
+
+	it("refuses a path whose directory does not exist", () => {
+		expect(jsonPathProblem(join(directory, "missing", "out.json"))).toContain(
+			"cannot write --json file",
+		);
+	});
+
+	it("refuses a path whose parent is a file", () => {
+		const file = join(directory, "plain.txt");
+		writeFileSync(file, "");
+		expect(jsonPathProblem(join(file, "out.json"))).not.toBeNull();
 	});
 });

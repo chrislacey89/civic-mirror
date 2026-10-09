@@ -14,7 +14,8 @@
  * Exit codes:
  *   0  every run gave the same decisions
  *   1  the runs disagree on a decision's amount, status or ordinance number
- *   2  bad usage, or no stored meeting for that body and date
+ *   2  bad usage (including a --json path that cannot be written, checked before
+ *      any model call), or no stored meeting for that body and date
  *   3  a model or database call failed, so the runs could not all be compared;
  *      the failed runs are printed and nothing is compared
  */
@@ -39,6 +40,7 @@ import { readableSources } from "#/pipeline/sources.ts";
 import { compareImport } from "./summarize-repeat-export.ts";
 import {
 	EXIT_FAILED,
+	jsonPathProblem,
 	judgeRuns,
 	parseRepeatArgs,
 	type RepeatRun,
@@ -58,6 +60,11 @@ const { bodySlug, date, runs, jsonPath, session } = parsed;
 const body = DEFAULT_BODIES.find((candidate) => candidate.slug === bodySlug);
 if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !(runs >= 1)) {
 	console.error(USAGE);
+	process.exit(2);
+}
+const jsonProblem = jsonPath === null ? null : jsonPathProblem(jsonPath);
+if (jsonProblem !== null) {
+	console.error(jsonProblem);
 	process.exit(2);
 }
 

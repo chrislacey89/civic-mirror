@@ -1,3 +1,6 @@
+import { accessSync, constants, existsSync, statSync } from "node:fs";
+import { dirname } from "node:path";
+
 /** One summarization run: what it produced, or why the model call failed. */
 export type RepeatRun =
 	| {
@@ -98,4 +101,25 @@ export function parseRepeatArgs(argv: ReadonlyArray<string>): RepeatArgs {
 		jsonPath,
 		session,
 	};
+}
+
+/**
+ * Why `path` could not be written to, or null when it can. The script checks
+ * this before the model calls so a bad --json path fails in a moment rather
+ * than after a full run: the parent directory must exist and be writable, and
+ * so must the file itself when it is already there. Nothing is created.
+ */
+export function jsonPathProblem(path: string): string | null {
+	const directory = dirname(path);
+	try {
+		if (!statSync(directory).isDirectory()) {
+			return `--json directory ${directory} is not a directory`;
+		}
+		accessSync(directory, constants.W_OK);
+		if (existsSync(path)) accessSync(path, constants.W_OK);
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		return `cannot write --json file ${path}: ${reason}`;
+	}
+	return null;
 }
