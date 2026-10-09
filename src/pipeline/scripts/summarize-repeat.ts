@@ -6,7 +6,10 @@
  * to the database. With --json it also writes the runs' highlights and prose
  * to a file in the shape the article compare page imports.
  *
- *   pnpm tsx src/pipeline/scripts/summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs] [--json <path>]
+ *   pnpm tsx src/pipeline/scripts/summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs] [--json <path>] [--session <name>]
+ *
+ * A meeting stored under a named session (a budget hearing, say) is only
+ * found when --session names it; the default is the regular meeting.
  *
  * Exit codes:
  *   0  every run gave the same decisions
@@ -39,18 +42,21 @@ import { EXIT_FAILED, judgeRuns } from "./summarize-repeat-verdict.ts";
 config({ path: [".env.local", ".env"] });
 
 const args = process.argv.slice(2);
-const jsonFlag = args.indexOf("--json");
-const jsonPath = jsonFlag === -1 ? null : (args[jsonFlag + 1] ?? null);
-const positional =
-	jsonFlag === -1
-		? args
-		: args.filter((_, i) => i < jsonFlag || i > jsonFlag + 1);
+/** The value after a --flag, or null, and the args with that pair removed. */
+function takeOption(name: string, from: string[]): [string | null, string[]] {
+	const at = from.indexOf(name);
+	if (at === -1) return [null, from];
+	return [from[at + 1] ?? null, from.filter((_, i) => i < at || i > at + 1)];
+}
+const [jsonPath, afterJson] = takeOption("--json", args);
+const [sessionArg, positional] = takeOption("--session", afterJson);
+const session = sessionArg ?? "";
 const [bodySlug, date, runsArg] = positional;
 const runs = Number(runsArg ?? 5);
 const body = DEFAULT_BODIES.find((candidate) => candidate.slug === bodySlug);
 if (!body || !/^\d{4}-\d{2}-\d{2}$/.test(date ?? "") || !(runs >= 1)) {
 	console.error(
-		"usage: summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs] [--json <path>]\n" +
+		"usage: summarize-repeat.ts <body-slug> <YYYY-MM-DD> [runs] [--json <path>] [--session <name>]\n" +
 			`known slugs: ${DEFAULT_BODIES.map((candidate) => candidate.slug).join(", ")}`,
 	);
 	process.exit(2);
@@ -78,7 +84,7 @@ const attempt = await Effect.runPromise(
 		const meeting = yield* storage.getMeetingSourceState({
 			bodySlug: body.slug,
 			date,
-			session: "",
+			session,
 		});
 		if (meeting === null) return null;
 		const sources = readableSources(
@@ -90,7 +96,7 @@ const attempt = await Effect.runPromise(
 				summarizer
 					.summarize({
 						sources,
-						meetingContext: `${body.name}, ${date}`,
+						meetingContext: `${body.name}, ${date}${session ? ` (${session})` : ""}`,
 					})
 					.pipe(Effect.result),
 			{ concurrency: runs },
@@ -107,7 +113,9 @@ if (Result.isFailure(attempt)) {
 const results = attempt.success;
 
 if (results === null) {
-	console.error(`no meeting stored for ${body.slug} on ${date}`);
+	console.error(
+		`no meeting stored for ${body.slug} on ${date}${session ? ` in session ${session}` : ""}`,
+	);
 	process.exit(2);
 }
 
