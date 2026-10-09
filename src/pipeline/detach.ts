@@ -27,7 +27,7 @@ function detachDocumentAndRegenerate(input: {
 	meetingId: number;
 	sourceUrl: string;
 	meetingContext: string;
-	glossary?: readonly string[];
+	glossary: readonly string[] | undefined;
 }): Effect.Effect<
 	DetachOutcome,
 	DatabaseError | LlmError,

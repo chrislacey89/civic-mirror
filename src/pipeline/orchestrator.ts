@@ -497,7 +497,7 @@ function attachDocumentsAndRegenerate(input: {
 		"summary" | "fiscalDecisions" | "budgetDiscussions"
 	>;
 	meetingContext: string;
-	glossary?: readonly string[];
+	glossary: readonly string[] | undefined;
 	config: ResolvedConfig;
 }): Effect.Effect<
 	void,
@@ -540,7 +540,7 @@ function attachDocumentsAndRegenerate(input: {
 function regenerateWithRetry(input: {
 	meetingId: number;
 	meetingContext: string;
-	glossary?: readonly string[];
+	glossary: readonly string[] | undefined;
 	config: ResolvedConfig;
 }): Effect.Effect<
 	void,
@@ -847,6 +847,7 @@ function processEgovListing(
 					],
 				},
 				meetingContext: `${body.name}, ${meetingDate}`,
+				glossary: body.glossary,
 				config,
 			});
 			return { processed: 1, errors: 0 };
@@ -1111,6 +1112,7 @@ function processFinalsiteListing(
 					documents,
 				},
 				meetingContext: `${body.name}, ${listing.date}`,
+				glossary: body.glossary,
 				config,
 			});
 			return { processed: 1, errors: 0 };

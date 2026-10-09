@@ -140,6 +140,7 @@ async function setup(options: {
 				meetingId: meeting.id,
 				sourceUrl,
 				meetingContext: "Town Council, 2025-08-25",
+				glossary: undefined,
 			}).pipe(Effect.provide(layers)),
 		);
 

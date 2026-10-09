@@ -29,7 +29,7 @@ import {
 function regenerateMeetingSummary(input: {
 	meetingId: number;
 	meetingContext: string;
-	glossary?: readonly string[];
+	glossary: readonly string[] | undefined;
 	force?: boolean;
 }): Effect.Effect<
 	{ regenerated: boolean },
