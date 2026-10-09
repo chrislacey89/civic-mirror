@@ -65,6 +65,33 @@ describe("MeetingDetailView — text-layer branch", () => {
 	});
 });
 
+describe("MeetingDetailView — summary paragraphs", () => {
+	it("renders each blank-line-separated paragraph of the summary on its own", () => {
+		const meeting = makeMeeting({
+			summary: {
+				highlights: ["Council accepts paving bid"],
+				prose:
+					"Milestone was the lowest of three bidders.\n\nThe council also rezoned two parcels.\n\nAnise Osborn has died at 105.",
+				model: "gemini-2.5-flash",
+			},
+		});
+		render(<MeetingDetailView meeting={meeting} />);
+
+		const summary = screen.getByText("Summary").closest("section");
+		if (!summary) throw new Error("summary section not rendered");
+		const texts = within(summary)
+			.getAllByRole("paragraph")
+			.map((p) => p.textContent);
+		for (const paragraph of [
+			"Milestone was the lowest of three bidders.",
+			"The council also rezoned two parcels.",
+			"Anise Osborn has died at 105.",
+		]) {
+			expect(texts).toContain(paragraph);
+		}
+	});
+});
+
 describe("MeetingDetailView — decisions with no stated amount", () => {
 	const base = makeMeeting().fiscalDecisions[0];
 	const noAmount = {
