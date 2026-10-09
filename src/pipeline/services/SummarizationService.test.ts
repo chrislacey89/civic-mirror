@@ -1018,7 +1018,7 @@ describe("SummarizationService", () => {
 			});
 		});
 
-		it("does not let the documents govern a fragment of a figure the scan destroyed", async () => {
+		it("does not let the documents govern a fragment of a figure the OCR garbled", async () => {
 			const fragment = { ...PAVING, amount: 215.1, originalAmount: "$215.10" };
 			const { calls, result } = summarizeBoth([SCANNED_MINUTES, CAPTIONS], {
 				fromDocuments: [fragment],

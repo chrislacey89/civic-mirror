@@ -65,7 +65,7 @@ figureIsIn(decision.originalAmount, documentsText, { asDollarAmount: true })
 
 ## Prevention
 
-**Code-level:** `src/pipeline/services/SummarizationService.test.ts` holds the passage itself: the test "does not let the documents govern a fragment of a figure the scan destroyed" feeds "fpaa-215.10" with a documents answer of "$215.10" and requires the video's figure. The `figureIsIn` tables pin both directions of the comparison.
+**Code-level:** `src/pipeline/services/SummarizationService.test.ts` holds the passage itself: the test "does not let the documents govern a fragment of a figure the OCR garbled" feeds "fpaa-215.10" with a documents answer of "$215.10" and requires the video's figure. The `figureIsIn` tables pin both directions of the comparison.
 
 **Process-level:** a model-dependent check is re-verified after every prompt edit, not once. `src/pipeline/scripts/summarize-repeat.ts` runs the summarizer several times over one stored meeting, read-only, prints each run's decisions and disagreements, and exits 1 when the runs differ:
 
