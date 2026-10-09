@@ -37,7 +37,11 @@ import {
 } from "#/pipeline/services/SummarizationService.ts";
 import { readableSources } from "#/pipeline/sources.ts";
 import { compareImport } from "./summarize-repeat-export.ts";
-import { EXIT_FAILED, judgeRuns } from "./summarize-repeat-verdict.ts";
+import {
+	EXIT_FAILED,
+	judgeRuns,
+	type RepeatRun,
+} from "./summarize-repeat-verdict.ts";
 
 config({ path: [".env.local", ".env"] });
 
@@ -140,38 +144,21 @@ results.forEach((result, run) => {
 	console.log(`\n${summary.prose}\n`);
 });
 
+const repeatRuns: ReadonlyArray<RepeatRun> = results.map((result) =>
+	Result.isFailure(result)
+		? { failure: result.failure.message }
+		: { summary: result.success },
+);
+
 if (jsonPath !== null) {
 	writeFileSync(
 		jsonPath,
-		JSON.stringify(
-			compareImport(
-				date,
-				modelId,
-				results.map((result) =>
-					Result.isFailure(result)
-						? { failure: result.failure.message }
-						: {
-								summary: {
-									highlights: result.success.highlights,
-									prose: result.success.prose,
-								},
-							},
-				),
-			),
-			null,
-			2,
-		),
+		JSON.stringify(compareImport(date, modelId, repeatRuns), null, 2),
 	);
 	console.log(`wrote ${jsonPath}`);
 }
 
-const verdict = judgeRuns(
-	results.map((result) =>
-		Result.isFailure(result)
-			? { failure: result.failure.message }
-			: { decisions: result.success.fiscalDecisions },
-	),
-);
+const verdict = judgeRuns(repeatRuns);
 if (verdict.distinct === null) {
 	console.error(
 		`\n${verdict.failedRuns.length} of ${runs} run(s) failed (${verdict.failedRuns.map((failed) => failed.run).join(", ")}); nothing was compared`,

@@ -1,11 +1,15 @@
-/** One summarization run: its fiscal decisions, or why the model call failed. */
+/** One summarization run: what it produced, or why the model call failed. */
 export type RepeatRun =
 	| {
-			readonly decisions: ReadonlyArray<{
-				readonly status: string;
-				readonly amount: number | string;
-				readonly ordinanceNumber?: string | null;
-			}>;
+			readonly summary: {
+				readonly fiscalDecisions: ReadonlyArray<{
+					readonly status: string;
+					readonly amount: number | string;
+					readonly ordinanceNumber?: string | null;
+				}>;
+				readonly highlights: ReadonlyArray<string>;
+				readonly prose: string;
+			};
 	  }
 	| { readonly failure: string };
 
@@ -31,8 +35,8 @@ export function judgeRuns(runs: ReadonlyArray<RepeatRun>): {
 	}
 	/** A run's decisions as comparable lines: what was decided and for how much, without the wording. */
 	const fingerprints = runs.map((run) =>
-		"decisions" in run
-			? run.decisions
+		"summary" in run
+			? run.summary.fiscalDecisions
 					.map(
 						(decision) =>
 							`${decision.status} ${decision.amount} ${decision.ordinanceNumber ?? ""}`,

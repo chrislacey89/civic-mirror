@@ -6,6 +6,7 @@ describe("compareImport", () => {
 		const out = compareImport("2026-05-26", "gemini-2.5-flash", [
 			{
 				summary: {
+					fiscalDecisions: [],
 					highlights: ["Council accepts paving bid"],
 					prose: "Milestone was the lowest bidder.",
 				},
@@ -13,6 +14,7 @@ describe("compareImport", () => {
 			{ failure: "model timed out" },
 			{
 				summary: {
+					fiscalDecisions: [],
 					highlights: ["Council accepts paving bid", "Parcels rezoned"],
 					prose:
 						"Milestone was the lowest bidder.\n\nTwo parcels were rezoned.",

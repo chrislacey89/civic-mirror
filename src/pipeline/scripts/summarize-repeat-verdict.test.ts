@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import { judgeRuns } from "./summarize-repeat-verdict.ts";
 
 const decided = (amount: number) => ({
-	decisions: [{ status: "approved", amount, ordinanceNumber: "O-1" }],
+	summary: {
+		fiscalDecisions: [{ status: "approved", amount, ordinanceNumber: "O-1" }],
+		highlights: [],
+		prose: "",
+	},
 });
 
 describe("judgeRuns", () => {

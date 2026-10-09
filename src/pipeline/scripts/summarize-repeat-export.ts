@@ -1,12 +1,4 @@
-/** One summarization run's text, or why the model call failed. */
-export type RepeatText =
-	| {
-			readonly summary: {
-				readonly highlights: ReadonlyArray<string>;
-				readonly prose: string;
-			};
-	  }
-	| { readonly failure: string };
+import type { RepeatRun } from "./summarize-repeat-verdict.ts";
 
 /**
  * The runs' highlights and prose in the shape the article compare page
@@ -17,7 +9,7 @@ export type RepeatText =
 export function compareImport(
 	date: string,
 	modelId: string,
-	runs: ReadonlyArray<RepeatText>,
+	runs: ReadonlyArray<RepeatRun>,
 ): Record<
 	string,
 	Record<string, { highlights: ReadonlyArray<string>; prose: string }>
