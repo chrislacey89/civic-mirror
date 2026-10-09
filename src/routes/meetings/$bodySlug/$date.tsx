@@ -4,6 +4,7 @@ import type {
 	MeetingDetail,
 	SummarySources,
 } from "#/db/queries.ts";
+import { firstSentence } from "#/lib/prose.ts";
 import type { SourceDisagreement } from "#/pipeline/sources.ts";
 import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
 
@@ -644,11 +645,6 @@ function paragraphs(prose: string): string[] {
 		.split(/\n\s*\n/)
 		.map((paragraph) => paragraph.trim())
 		.filter((paragraph) => paragraph.length > 0);
-}
-
-function firstSentence(prose: string): string {
-	const match = prose.split(/(?<=[.!?])\s/)[0];
-	return match ?? prose;
 }
 
 /** Converts an ISO date string (YYYY-MM-DD) to a human-readable format. */
