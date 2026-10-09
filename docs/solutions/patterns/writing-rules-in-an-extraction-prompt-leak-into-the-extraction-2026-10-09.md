@@ -16,7 +16,7 @@ One Gemini call returns both the fiscal ledger (`fiscalDecisions`, governed by r
 
 ## Context
 
-PR #186 added rules 21–34 to `SYSTEM_INSTRUCTIONS` in `src/pipeline/services/GeminiSummarizer.ts`, encoding `docs/writing-rubric.md`: headline and lede, importance order, paragraphs, plain words, no residents named, figures as the record writes them. Every rule was about the prose. `summarize-repeat.ts` was run three times per meeting with the old prompt and the new, read-only against production, on the four meetings used to draft the rubric and later on the three meetings `check-on-model-output-passes-or-fails-by-which-output-the-model-gave-2026-10-08.md` says to run after any prompt change.
+PR #186 first added rules 21–34 to the summarizer's single `SYSTEM_INSTRUCTIONS` in `src/pipeline/services/GeminiSummarizer.ts` (since split into `LEDGER_INSTRUCTIONS` and `WRITING_INSTRUCTIONS`), encoding `docs/writing-rubric.md`: headline and lede, importance order, paragraphs, plain words, no residents named, figures as the record writes them. Every rule was about the prose. `summarize-repeat.ts` was run three times per meeting with the old prompt and the new, read-only against production, on the four meetings used to draft the rubric and later on the three meetings `check-on-model-output-passes-or-fails-by-which-output-the-model-gave-2026-10-08.md` says to run after any prompt change.
 
 ## Symptoms
 
@@ -58,11 +58,13 @@ The fix is structural. `createGeminiSummarizer` makes two calls:
 
 The service's documents-only pass, which reads nothing but the ledger, sets `ledgerOnly: true` and skips the second call. The cost is one extra Gemini Flash call per meeting summarized.
 
-The three discipline edits stay, because they are still good writing-prompt hygiene: examples are invented (a real one was returned verbatim), no category the ledger excludes is named as mattering, and no ledger rule is restated.
+Two of the discipline edits stay as writing-prompt hygiene: examples are invented (a real one was returned verbatim), and no category the ledger excludes is named as mattering. The writing prompt does restate the ledger prompt's attribution rule (rule 13 there, rule 10 here), on purpose: the two prompts are separate calls, so a restatement can no longer reach the ledger, and a standalone prompt has to carry the rule itself.
+
+One limit worth knowing: the writing call receives the model's raw ledger for the pass plus the documents' recorded decisions, not the service's final governed ledger (`SummarizationService` resolves unread figures and drops duplicates after the generator returns). In the unread-figure case the writer can see a transcript figure the service later discards. Moving the writing call into the service, after the merge, would close that; it is noted in #187.
 
 ## Prevention
 
-**Code-level:** `src/pipeline/services/GeminiSummarizer.test.ts`, "the ledger prompt and the writing prompt": the ledger prompt contains no writing rule, the writing prompt never asks for `fiscalDecisions`, and every dollar figure in the writing prompt is an invented example. `SummarizationService.test.ts` pins that the documents-only pass asks for the ledger only. A writing rule pasted into the ledger prompt fails the suite before it reaches a model.
+**Code-level:** `src/pipeline/services/GeminiSummarizer.test.ts`, "the ledger prompt and the writing prompt": `LEDGER_INSTRUCTIONS` must equal `__fixtures__/ledger-instructions.txt`, the pre-branch prompt, byte for byte, so any edit to the ledger prompt is a deliberate fixture change; the writing prompt never asks for `fiscalDecisions`; and the writing prompt's dollar figures are not the four real figures that were once pasted in. `SummarizationService.test.ts` pins that the documents-only pass asks for the ledger only.
 
 **Process-level:** `pnpm summarize:recheck` runs the three meetings the 2026-10-08 entry names, five times each. A prompt change is not done until it has been run and its ledgers compared with the old prompt's; the meetings chosen to test the new behaviour are not a substitute. A `/pre-merge` reviewer caught the omission here by reading that entry; the script exists so the next author does not depend on the reviewer.
 

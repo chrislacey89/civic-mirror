@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	buildSummarizationPrompt,
@@ -143,10 +144,12 @@ describe("the ledger prompt and the writing prompt", () => {
 	// to fiscalDecisions while a writing rule named "senior hires" as mattering,
 	// and three on 2026-02-02 dropped a rates resolution while another writing
 	// rule restated rule 2 in shorter words. The two prompts are kept apart.
-	it("keeps every writing rule out of the ledger prompt", () => {
-		expect(LEDGER_INSTRUCTIONS).not.toContain("WRITING");
-		expect(LEDGER_INSTRUCTIONS).not.toContain("highlights[0]");
-		expect(LEDGER_INSTRUCTIONS).not.toContain("paragraph");
+	it("is the ledger prompt from before any writing rule existed, byte for byte", () => {
+		const pinned = readFileSync(
+			new URL("./__fixtures__/ledger-instructions.txt", import.meta.url),
+			"utf8",
+		);
+		expect(LEDGER_INSTRUCTIONS).toBe(pinned.trimEnd());
 	});
 
 	it("never asks the writing call for fiscal decisions", () => {

@@ -38,10 +38,9 @@ median of 23 or more across the sampled meetings. The output **before the
 writing prompt existed** (`gemini-2.5-flash`, scored 2026-10-09 on four
 meetings) scored
 12–16 and failed gate A5 on two; see "Where the output failed before the writing
-prompt" below. The hand rewrites used to tune this rubric live outside the repo
-(this worktree's `.context/trial-articles.md`); the four meetings are
-2026-05-26, 2026-08-10, 2026-07-27 and 2026-10-05, so they can be regenerated
-with `summarize-repeat --json`.
+prompt" below. The four meetings used to tune this rubric are 2026-05-26,
+2026-08-10, 2026-07-27 and 2026-10-05; `summarize-repeat --json` regenerates
+their text for scoring.
 
 ## A. Fidelity gates (house)
 
@@ -75,7 +74,7 @@ with `summarize-repeat --json`.
   comment are "a resident", "four residents", or "the owner of a Main Street
   business", never by name. On a transcript-only meeting, where captions carry
   no speaker labels, most speakers become "staff" or "a council member"; that
-  is expected, not a defect (summarizer prompt rule 13). *Test: every proper
+  is expected, not a defect (writing prompt rule 10). *Test: every proper
   name belongs to someone with a role in the item, and is spelled as DOCUMENTS
   spells it.* (Process Watch prompt, "Naming people"; decided 2026-10-09)
 
@@ -134,7 +133,8 @@ with `summarize-repeat --json`.
   resident could still act on (a hearing date, a comment period) come before
   recognitions, announcements and reports. The prose does not have to mention
   every ledger entry; the receipts table on the page carries the rest, so a
-  twelve-decision meeting still fits 200 words. *Test: is the first paragraph
+  twelve-decision meeting gets paragraphs only for the decisions that change
+  something for residents (length itself is D6). *Test: is the first paragraph
   sentence after the lede about a lower-stakes item than a later one?*
   (`smart-brevity/references/newsletters-and-email.md`; `several-short-
   sentences-about-writing/references/composition-and-revision.md`, "Don't
@@ -161,13 +161,12 @@ with `summarize-repeat --json`.
   paragraph; name each paragraph's item in two words.*
   (`smart-brevity/references/axioms-and-formatting.md`, paragraphs of 2–3
   sentences; the ceiling of five is house)
-- **D6. Length scales with the meeting; no fixed ceiling.** At least 80
+- **D6. Length scales with the meeting, anchored at 300–400 for the largest.** At least 80
   words. A routine meeting lands near 150–200; a meeting with a dozen
   decisions or hours of discussion needs 300–400, and compressing it below
   what its items need fails this check as surely as padding a short one does.
-  Past 400 the prose is repeating the ledger table or the agenda: the first
-  draft of the writing prompt without an upper anchor produced 620–780 words
-  on 2026-07-27, a paragraph per ledger row. The limits that hold are structural: one item per paragraph (D5),
+  Past 400 the prose is repeating the ledger table: a paragraph per ledger
+  row is the sign. The limits that hold are structural: one item per paragraph (D5),
   mechanics cut (D2), ledger entries not repeated (D1). *Test: count the items
   the prose covers; is any covered in fewer than two sentences, or any routine
   item in more than five?* (house; decided 2026-10-09 — "if it is a 4 hour
@@ -265,7 +264,7 @@ with `summarize-repeat --json`.
   the same sum. A figure the record states only in garbled form ("$11,767"
   for a total whose parts are each stated cleanly) is left out; the parts are
   given instead. *Test: compare each prose figure to its ledger
-  `originalAmount`.* (house, rule 6 of the summarizer prompt)
+  `originalAmount`.* (house, rule 6 of the ledger prompt)
 - **G2. Scale comes from the record or not at all.** "$66 more a year on a
   $200,000 home" is in the record and goes in. "Roughly a tenth of the police
   budget" is not in the record and stays out, however helpful. *Test: for every
@@ -279,7 +278,7 @@ with `summarize-repeat --json`.
 - **G4. A sum with no stated amount says so.** "The council paid its bills; no
   total was read into the record." *Test: any decision in the ledger with
   `originalAmount` "not stated" that the prose gives a number for is a fail.*
-  (house, rule 2 of the summarizer prompt)
+  (house, rule 2 of the ledger prompt)
 
 ## Where the output failed before the writing prompt
 
@@ -375,6 +374,6 @@ Paragraphs: ____    Most sentences in one: ____
    each run's text for scoring. What the repeat runs taught about writing
    rules in a shared extraction prompt is in
    `docs/solutions/patterns/writing-rules-in-an-extraction-prompt-leak-into-the-extraction-2026-10-09.md`.
-   What is still open (long transcript-only meetings keep "additional
-   appropriation" and headline unstated totals) is tracked as a GitHub issue,
-   not here.
+   What is still open (long transcript-only meetings run past the D6 anchor
+   and keep "additional appropriation"; the home page lede; a code-side length
+   signal) is issue #187, not this file.
