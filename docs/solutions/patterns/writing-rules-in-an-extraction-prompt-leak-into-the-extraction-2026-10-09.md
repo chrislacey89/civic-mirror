@@ -51,16 +51,16 @@ The restatement is the same failure `references/restated-claims.md` describes fo
 
 Three edits to the writing rules were tried first, each confirmed by three runs against the old prompt's three, and together they were not enough: the paraphrase in rule 34 that stopped the hires on 2026-08-10 was what dropped the rates resolution on 2026-02-02, and removing it brought the hires back. One prompt serving two outputs tipped one way or the other with every wording.
 
-The fix is structural. `createGeminiSummarizer` makes two calls:
+The fix is structural: two calls, two prompts, and the writer runs last.
 
-1. **The ledger call** uses `LEDGER_INSTRUCTIONS`, the summarizer's prompt from before any writing rule existed, byte for byte. It returns `fiscalDecisions`, `budgetDiscussions` and `sourceDisagreements` exactly as it always did, so the ledger cannot regress from a writing edit by construction.
-2. **The writing call** uses `WRITING_INSTRUCTIONS`, a standalone prompt that encodes `docs/writing-rubric.md`, and receives the sources plus the ledger the first call produced (`buildWritingPrompt`). It returns `highlights` and `prose` only.
+1. **The ledger call** (`createGeminiSummarizer`) uses `LEDGER_INSTRUCTIONS`, the summarizer's prompt from before any writing rule existed, byte for byte. It returns `fiscalDecisions`, `budgetDiscussions` and `sourceDisagreements` exactly as it always did, so the ledger cannot regress from a writing edit by construction.
+2. **The writing call** (`createGeminiWriter`, injected into `SummarizationServiceLive` as the required `writeFn`) uses `WRITING_INSTRUCTIONS`, a standalone prompt that encodes `docs/writing-rubric.md`. The service calls it once, after it has resolved unread figures and dropped duplicates, and hands it the sources, the governed ledger and the body's glossary (`buildWritingPrompt`). It returns `highlights` and `prose` only, so the prose is written from the same ledger the page stores.
 
-The service's documents-only pass, which reads nothing but the ledger, sets `ledgerOnly: true` and skips the second call. The cost is one extra Gemini Flash call per meeting summarized.
+The cost is one extra Gemini Flash call per meeting summarized. `writeFn` is required rather than optional so no production path can fall back to the ledger call's discarded text.
 
 Two of the discipline edits stay as writing-prompt hygiene: examples are invented (a real one was returned verbatim), and no category the ledger excludes is named as mattering. The writing prompt does restate the ledger prompt's attribution rule (rule 13 there, rule 10 here), on purpose: the two prompts are separate calls, so a restatement can no longer reach the ledger, and a standalone prompt has to carry the rule itself.
 
-One limit worth knowing: the writing call receives the model's raw ledger for the pass plus the documents' recorded decisions, not the service's final governed ledger (`SummarizationService` resolves unread figures and drops duplicates after the generator returns). In the unread-figure case the writer can see a transcript figure the service later discards. Moving the writing call into the service, after the merge, would close that; it is noted in #187.
+The first version of the split made both calls inside `createGeminiSummarizer`, so the writer saw the pass's raw ledger before the service governed it; the `/pre-merge` review caught that and the writer moved into the service (`SummarizationService.test.ts` pins that it receives the governed ledger, once, after the merge).
 
 ## Prevention
 
