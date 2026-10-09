@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { SITE_URL } from "#/lib/site.ts";
 import {
 	REPORT_URL,
 	RUBRIC_URL,
@@ -8,9 +9,31 @@ import {
 	type WritingExample,
 } from "#/lib/writing-standard.ts";
 
+const PAGE_TITLE = "How We Write — Civic Mirror";
+const PAGE_DESCRIPTION =
+	"The writing standard behind Civic Mirror's meeting reports: eight principles, and three real meetings written the old way and the new.";
+/** Rendered from `docs/brand/og/how-we-write.html`; see `docs/brand/README.md`. */
+export const OG_IMAGE_PATH = "/og/how-we-write.png";
+const OG_IMAGE_ALT =
+	"Civic Mirror: a meeting report should read like a good local reporter wrote it, not like the minutes.";
+
 export const Route = createFileRoute("/how-we-write")({
 	head: () => ({
-		meta: [{ title: "How We Write — Civic Mirror" }],
+		meta: [
+			{ title: PAGE_TITLE },
+			{ name: "description", content: PAGE_DESCRIPTION },
+			{ property: "og:type", content: "article" },
+			{ property: "og:site_name", content: "Civic Mirror" },
+			{ property: "og:title", content: PAGE_TITLE },
+			{ property: "og:description", content: PAGE_DESCRIPTION },
+			{ property: "og:url", content: `${SITE_URL}/how-we-write` },
+			{ property: "og:image", content: `${SITE_URL}${OG_IMAGE_PATH}` },
+			{ property: "og:image:width", content: "1200" },
+			{ property: "og:image:height", content: "630" },
+			{ property: "og:image:alt", content: OG_IMAGE_ALT },
+			{ name: "twitter:card", content: "summary_large_image" },
+			{ name: "twitter:image", content: `${SITE_URL}${OG_IMAGE_PATH}` },
+		],
 	}),
 	component: HowWeWritePage,
 });

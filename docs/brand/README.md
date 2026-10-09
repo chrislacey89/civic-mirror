@@ -49,3 +49,18 @@ magick /tmp/ico16.png /tmp/ico32.png /tmp/ico48.png -colors 256 public/favicon.i
 Requires `librsvg` and `imagemagick` (`brew install librsvg imagemagick`). The
 glyph outline is already baked into `mark.svg` as a path, so Bodoni 72 is not
 needed to regenerate — only to redraw from a different character.
+
+## Social cards
+
+`og/` holds the source for each page's link-preview image, as a 1200×630 HTML
+page drawn with the site's palette, typefaces and `mark.svg`. The rendered PNG
+ships from `public/og/` and is referenced by the page's `og:image` tag.
+
+| Page | Source | Ships as |
+|---|---|---|
+| `/how-we-write` | `og/how-we-write.html` | `public/og/how-we-write.png` |
+
+To regenerate, serve this folder (`python3 -m http.server` from `docs/brand/`),
+open the source at a 1200×630 viewport, wait for the web fonts, and save a
+viewport screenshot over the PNG. The card's headline repeats the page's `h1`;
+change them together.

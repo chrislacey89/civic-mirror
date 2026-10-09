@@ -1,5 +1,7 @@
 // @vitest-environment jsdom
 
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import {
 	createMemoryHistory,
 	createRootRoute,
@@ -14,7 +16,11 @@ import {
 	WRITING_PRINCIPLES,
 } from "#/lib/writing-standard.ts";
 import { Route as AboutRoute } from "./about.tsx";
-import { HowWeWritePage } from "./how-we-write.tsx";
+import {
+	HowWeWritePage,
+	Route as HowWeWriteRoute,
+	OG_IMAGE_PATH,
+} from "./how-we-write.tsx";
 
 afterEach(cleanup);
 
@@ -85,6 +91,27 @@ describe("HowWeWritePage", () => {
 		expect(
 			screen.getByRole("link", { name: "report it" }).getAttribute("href"),
 		).toMatch(/^https:\/\/github\.com\/chrislacey89\/civic-mirror\/issues/);
+	});
+});
+
+describe("/how-we-write link preview", () => {
+	it("points og:image and twitter:image at an absolute URL for a file that ships in public/", async () => {
+		// biome-ignore lint/suspicious/noExplicitAny: head() ignores its context here
+		const head = await HowWeWriteRoute.options.head?.({} as any);
+		const content = (key: string) =>
+			head?.meta?.find(
+				(tag) =>
+					tag &&
+					(("property" in tag && tag.property === key) ||
+						("name" in tag && tag.name === key)),
+			) as { content: string } | undefined;
+
+		const image = content("og:image")?.content;
+		expect(image).toMatch(/^https:\/\//);
+		expect(image?.endsWith(OG_IMAGE_PATH)).toBe(true);
+		expect(content("twitter:image")?.content).toBe(image);
+		expect(content("twitter:card")?.content).toBe("summary_large_image");
+		expect(existsSync(resolve("public", `.${OG_IMAGE_PATH}`))).toBe(true);
 	});
 });
 
