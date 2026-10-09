@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Social card: How we write</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@800;900&family=Source+Serif+4:ital,opsz,wght@1,8..60,400&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+:root { --paper:#f7f3ea; --paper-alt:#f1ecdf; --ink:#1a1a1a; --ink-mid:#2e2a24; --ink-soft:#5a5248; --accent:#b73e2c; --highlight:#f2b94b; }
+* { box-sizing:border-box; margin:0; }
+html, body { width:1200px; height:630px; }
+body { background:var(--paper); color:var(--ink); display:flex; flex-direction:column; padding:44px 64px 0; }
+.mono { font-family:'JetBrains Mono', monospace; text-transform:uppercase; }
+.mast { display:flex; align-items:baseline; justify-content:space-between; padding-bottom:16px; border-bottom:6px double var(--ink); }
+.mast .name { font:900 38px/1 'Playfair Display', serif; letter-spacing:-0.02em; }
+.mast .place { font-size:14px; font-weight:500; letter-spacing:0.2em; color:var(--ink-soft); }
+.kicker { margin-top:44px; font-size:17px; font-weight:700; letter-spacing:0.22em; color:var(--accent); }
+h1 { margin-top:18px; max-width:1000px; font:900 62px/1.04 'Playfair Display', serif; letter-spacing:-0.025em; }
+.lede { margin-top:26px; padding-left:20px; border-left:4px solid var(--accent); font:italic 400 27px/1.35 'Source Serif 4', serif; color:var(--ink-mid); }
+.foot { margin:auto -64px 0; padding:0 64px; height:84px; display:flex; align-items:center; gap:22px; background:var(--ink); border-top:8px solid var(--highlight); color:var(--paper); }
+.foot img { width:52px; height:52px; }
+.foot .mono { font-size:15px; font-weight:700; letter-spacing:0.2em; }
+</style>
+</head>
+<body>
+<div class="mast">
+  <span class="name">Civic Mirror</span>
+  <span class="place mono">Ellettsville · Monroe County, Ind.</span>
+</div>
+<p class="kicker mono">How we write</p>
+<h1>A meeting report should read like a good local reporter wrote it, not like the minutes.</h1>
+<p class="lede">Eight principles, and three real meetings written the old way and the new.</p>
+<div class="foot">
+  <img src="../mark.svg" alt="">
+  <span class="mono">Our writing standard · Before and after</span>
+</div>
+</body>
+</html>
