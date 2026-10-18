@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
+import { summarized } from "#/pipeline/checks/test-outcomes.ts";
 import { detachDocumentAndRegenerate } from "#/pipeline/detach.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 import {
@@ -34,7 +35,7 @@ const JULY_MINUTES: MeetingInput["documents"][number] = {
 	extractionMethod: "text-layer",
 };
 
-const REGENERATED: SummarizationResult = {
+const REGENERATED: SummarizationResult = summarized({
 	highlights: ["Adopted the wheel tax"],
 	prose: "The council adopted the wheel tax ordinance.",
 	fiscalDecisions: [
@@ -51,7 +52,7 @@ const REGENERATED: SummarizationResult = {
 	budgetDiscussions: [],
 	sourceDisagreements: [],
 	model: "regenerating-model",
-};
+});
 
 /**
  * A database holding one meeting whose summary was built from every source

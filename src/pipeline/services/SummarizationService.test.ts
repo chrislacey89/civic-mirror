@@ -15,7 +15,12 @@ import {
 function writes(
 	text: { highlights: string[]; prose: string } = { highlights: [], prose: "" },
 ): SummarizationWriteFn {
-	return async () => ({ highlights: text.highlights, prose: text.prose });
+	return async () => ({
+		highlights: text.highlights,
+		prose: text.prose,
+		finishReason: "stop",
+		usage: null,
+	});
 }
 
 /** One call of the writer, and how many ledger calls preceded it. */
@@ -302,6 +307,67 @@ describe("SummarizationService", () => {
 		});
 	});
 
+	describe("the pre-publish check", () => {
+		function summarizeWith(writeFn: SummarizationWriteFn) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const service = yield* SummarizationService;
+					return yield* service.summarize({
+						sources: [{ kind: "documents", text: SOURCE_TEXT }],
+						meetingContext: "Town Council, May 27, 2025",
+					});
+				}).pipe(
+					Effect.provide(
+						SummarizationServiceLive({
+							model: "gemini-2.5-flash",
+							writeFn,
+							generateFn: async () => ({
+								highlights: [],
+								prose: "",
+								fiscalDecisions: [],
+								budgetDiscussions: [],
+								sourceDisagreements: [],
+							}),
+						}),
+					),
+				),
+			);
+		}
+
+		it("holds prose that stops mid-sentence, recording what the writing call reported", async () => {
+			const usage = { inputTokens: 900, outputTokens: 210, reasoningTokens: 0 };
+			const result = await summarizeWith(async () => ({
+				highlights: ["Council approves paving bid"],
+				prose: "The council approved the paving bid for",
+				finishReason: "stop",
+				usage,
+			}));
+
+			expect(result.prePublish).toMatchObject({
+				kind: "held",
+				reason: "gate-failed",
+				gateFails: ["TRUNC"],
+			});
+			expect(result.prePublish.rounds[0].draft).toMatchObject({
+				finishReason: "stop",
+				usage,
+			});
+		});
+
+		it("publishes prose that ends at a sentence end, and returns its text", async () => {
+			const result = await summarizeWith(
+				writes({
+					highlights: ["Council approves paving bid"],
+					prose: "The council approved the paving bid.",
+				}),
+			);
+
+			expect(result.prePublish.kind).toBe("publish");
+			expect(result.highlights).toEqual(["Council approves paving bid"]);
+			expect(result.prose).toBe("The council approved the paving bid.");
+		});
+	});
+
 	describe("labelled sources", () => {
 		const PAVING_DISAGREEMENT = {
 			topic: "Paving bid",
@@ -537,6 +603,8 @@ describe("SummarizationService", () => {
 								return {
 									highlights: answers.fromEverySource.highlights,
 									prose: answers.fromEverySource.prose,
+									finishReason: "stop",
+									usage: null,
 								};
 							},
 						}),
@@ -772,7 +840,12 @@ describe("SummarizationService", () => {
 									ledger,
 									ledgerCallsBefore: calls.length,
 								});
-								return { highlights: [], prose: "Summary." };
+								return {
+									highlights: [],
+									prose: "Summary.",
+									finishReason: "stop",
+									usage: null,
+								};
 							},
 						}),
 					),

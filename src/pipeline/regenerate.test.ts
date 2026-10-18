@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
+import { summarized } from "#/pipeline/checks/test-outcomes.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 import {
 	incompleteRegeneration,
@@ -38,7 +39,7 @@ const MINUTES: MeetingInput["documents"][number] = {
 	extractionMethod: "text-layer",
 };
 
-const REGENERATED: SummarizationResult = {
+const REGENERATED: SummarizationResult = summarized({
 	highlights: ["Accepted the paving bid"],
 	prose: "The council accepted the paving bid.",
 	fiscalDecisions: [
@@ -55,7 +56,7 @@ const REGENERATED: SummarizationResult = {
 	budgetDiscussions: [{ topic: "Next year's paving" }],
 	sourceDisagreements: [],
 	model: "regenerating-model",
-};
+});
 
 /** A database holding one meeting, and the layers `regenerateMeetingSummary` runs on. */
 async function setup(options: {

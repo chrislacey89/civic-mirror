@@ -6,6 +6,7 @@ import {
 } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
 import type { ScoredDramaCategory } from "#/lib/drama-levels.ts";
+import { summarized } from "#/pipeline/checks/test-outcomes.ts";
 import {
 	DatabaseError,
 	LlmError,
@@ -159,14 +160,14 @@ type StubConfig = {
 };
 
 function buildStubLayers(config: StubConfig) {
-	const defaultSummary: SummarizationResult = {
+	const defaultSummary: SummarizationResult = summarized({
 		highlights: ["A highlight"],
-		prose: "A prose summary",
+		prose: "A prose summary.",
 		fiscalDecisions: [],
 		budgetDiscussions: [],
 		sourceDisagreements: [],
 		model: "stub-model",
-	};
+	});
 	const defaultMeeting: Meeting = { id: 1, date: "2026-01-01", bodyId: 1 };
 
 	const egov = Layer.succeed(EgovScraper, {
@@ -2067,7 +2068,7 @@ describe("runPipeline video path", () => {
 		expect(log.match[0].documentsSummary).toEqual(documentsSummary);
 		expect(log.match[0].transcriptSummary).toMatchObject({
 			highlights: ["A highlight"],
-			prose: "A prose summary",
+			prose: "A prose summary.",
 		});
 	});
 
@@ -3048,14 +3049,14 @@ describe("runPipeline video path", () => {
 			const meetingId = await seedMinutesMeeting(db, "2025-08-25");
 
 			const { log, result } = await runAgainst(db, {
-				summarizationResult: {
+				summarizationResult: summarized({
 					highlights: ["Combined highlight"],
-					prose: "Combined prose",
+					prose: "Combined prose.",
 					fiscalDecisions: [],
 					budgetDiscussions: [],
 					sourceDisagreements: [],
 					model: "stub-model",
-				},
+				}),
 			});
 
 			expect(result).toEqual({ processed: 1, errors: 0 });
@@ -3082,7 +3083,7 @@ describe("runPipeline video path", () => {
 			]);
 			const [summary] = await db.select().from(schema.summaries).all();
 			expect(summary.meetingId).toBe(meetingId);
-			expect(summary.prose).toBe("Combined prose");
+			expect(summary.prose).toBe("Combined prose.");
 			expect(summary.sourceKinds).toEqual(["documents", "transcript"]);
 			expect(summary.sourceFingerprint).toBe(
 				computeSourceFingerprint([MINUTES_URL, url("regular")]),
@@ -3739,9 +3740,9 @@ describe("runPipeline document regeneration", () => {
 	const AGENDA = egovListing(1, "agenda");
 	const MINUTES = egovListing(2, "minutes");
 
-	const REGENERATED: SummarizationResult = {
+	const REGENERATED: SummarizationResult = summarized({
 		highlights: ["Regenerated highlight"],
-		prose: "Regenerated prose",
+		prose: "Regenerated prose.",
 		fiscalDecisions: [
 			{
 				title: "Regenerated decision",
@@ -3756,7 +3757,7 @@ describe("runPipeline document regeneration", () => {
 		budgetDiscussions: [{ topic: "Regenerated discussion" }],
 		sourceDisagreements: [],
 		model: "stub-model",
-	};
+	});
 
 	async function setup() {
 		const db = await createMigratedTestDb();
