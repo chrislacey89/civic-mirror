@@ -77,6 +77,11 @@ their text for scoring.
   is expected, not a defect (writing prompt rule 10). *Test: every proper
   name belongs to someone with a role in the item, and is spelled as DOCUMENTS
   spells it.* (Process Watch prompt, "Naming people"; decided 2026-10-09)
+- **TRUNC. The prose ends at a sentence end.** Its last character is `.`,
+  `!` or `?`, or a closing quotation mark after one. A write-up cut off
+  mid-sentence is held, even when the model reported a normal finish. *Test:
+  read the last line.* (house; two published summaries, 2025-05-27 and
+  2025-08-11, stopped mid-sentence)
 
 ## B. Headline: `highlights[0]` (4 points)
 
@@ -344,7 +349,7 @@ co-owner disputing a fine.
 ```
 Meeting: ______________________   Scorer: ______   Date: ______
 
-A  gates     A1 A2 A3 A4 A5          any fail → not publishable
+A  gates     A1 A2 A3 A4 A5 TRUNC    any fail → not publishable
 B  headline  B1 B2 B3 B4             __ /4
 C  lede      C1 C2 C3 C4             __ /4
 D  selection D1 D2 D3 D4 D5 D6       __ /6
