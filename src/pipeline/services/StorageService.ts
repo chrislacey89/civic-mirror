@@ -10,10 +10,11 @@ import {
 	mapSumToLevel,
 	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
-import type { SummaryPublication } from "#/pipeline/checks/types.ts";
+import type { SummaryPublication, WriteUp } from "#/pipeline/checks/types.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
 import type { MatchableSummary } from "#/pipeline/services/MeetingMatchService.ts";
+import type { SummarizationOutput } from "#/pipeline/services/SummarizationService.ts";
 import type {
 	TranscriptResult,
 	TranscriptSegment,
@@ -254,6 +255,17 @@ interface StorageServiceInterface {
 		session: string;
 		windowDays: number;
 	}): Effect.Effect<MeetingSourceState[], DatabaseError>;
+	/**
+	 * A meeting's stored summary text, held or not, and its fiscal ledger, in
+	 * the shapes the pre-publish checks read. Null when it has no summary.
+	 */
+	getStoredWriteUp(meetingId: number): Effect.Effect<
+		{
+			writeUp: WriteUp;
+			ledger: SummarizationOutput["fiscalDecisions"];
+		} | null,
+		DatabaseError
+	>;
 	/** The stored summary of a meeting in the shape the same-meeting check takes, or null when it has none. */
 	getMatchableSummary(
 		meetingId: number,
@@ -482,6 +494,15 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				catch: (error) =>
 					new DatabaseError({
 						operation: "findNearbyDocumentOnlyMeetings",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		getStoredWriteUp: (meetingId) =>
+			Effect.tryPromise({
+				try: () => getStoredWriteUpQuery(db, meetingId),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "getStoredWriteUp",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
@@ -874,6 +895,57 @@ async function findNearbyDocumentOnlyMeetingsQuery(
 		(a, b) =>
 			distance(a.date) - distance(b.date) || a.date.localeCompare(b.date),
 	);
+}
+
+async function getStoredWriteUpQuery(
+	db: LibSQLDatabase<typeof schema>,
+	meetingId: number,
+): Promise<{
+	writeUp: WriteUp;
+	ledger: SummarizationOutput["fiscalDecisions"];
+} | null> {
+	const summary = await db
+		.select({
+			highlights: schema.summaries.highlights,
+			prose: schema.summaries.prose,
+		})
+		.from(schema.summaries)
+		.where(eq(schema.summaries.meetingId, meetingId))
+		.get();
+	if (!summary) return null;
+
+	const decisions = await db
+		.select()
+		.from(schema.fiscalDecisions)
+		.where(eq(schema.fiscalDecisions.meetingId, meetingId))
+		.orderBy(schema.fiscalDecisions.id)
+		.all();
+
+	return {
+		writeUp: {
+			highlights: summary.highlights as string[],
+			prose: summary.prose,
+		},
+		ledger: decisions.map((decision) => ({
+			title: decision.title,
+			description: decision.description,
+			amount: decision.amount,
+			originalAmount: decision.originalAmount,
+			budgetCategory: decision.budgetCategory ?? undefined,
+			status: decision.status as "approved" | "denied" | "tabled",
+			voteRecord:
+				(decision.voteRecord as {
+					yea: number;
+					nay: number;
+					abstain: number;
+				} | null) ?? undefined,
+			vendor: decision.vendor ?? undefined,
+			fundingSource: decision.fundingSource ?? undefined,
+			ordinanceNumber: decision.ordinanceNumber ?? undefined,
+			confidence: decision.confidence,
+			isRecurring: decision.isRecurring,
+		})),
+	};
 }
 
 async function getMatchableSummaryQuery(

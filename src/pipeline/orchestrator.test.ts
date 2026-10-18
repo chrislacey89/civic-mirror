@@ -276,6 +276,7 @@ function buildStubLayers(config: StubConfig) {
 			Effect.sync(() => config.meetingSourceState?.(key) ?? null),
 		findNearbyDocumentOnlyMeetings: () =>
 			Effect.sync(() => config.nearbyMeetings ?? []),
+		getStoredWriteUp: () => Effect.succeed(null),
 		getMatchableSummary: () =>
 			Effect.sync(() =>
 				config.matchableSummary === undefined
