@@ -49,6 +49,7 @@ async function seedMeetingWithSummary(
 	opts: {
 		highlights?: string[];
 		prose?: string;
+		status?: "published" | "held";
 		fiscalDecisions?: Array<{
 			title: string;
 			amount: number;
@@ -85,6 +86,8 @@ async function seedMeetingWithSummary(
 			highlights: opts.highlights ?? ["Highlight one"],
 			prose: opts.prose ?? "Summary prose.",
 			model: "gemini-2.5-flash",
+			status: opts.status ?? "published",
+			heldReason: opts.status === "held" ? "gate-failed" : null,
 		})
 		.run();
 
@@ -1350,5 +1353,89 @@ describe("getMeetingByBodyAndDateQuery — summary sources", () => {
 			origin: "video",
 			videoUrl: "https://www.youtube.com/watch?v=worksession",
 		});
+	});
+});
+
+describe("a meeting whose summary is held", () => {
+	const DRAFT = {
+		highlights: ["Council approves $682,824 for equipment"],
+		prose: "The council approved three purchases for the",
+	};
+
+	async function seedHeld(db: TestDb) {
+		const body = await seedBody(db);
+		await seedMeetingWithSummary(db, body.id, "2025-05-27", {
+			...DRAFT,
+			status: "held",
+			fiscalDecisions: [
+				{ title: "Dump truck", amount: 210000, originalAmount: "$210,000" },
+			],
+		});
+		await seedMeetingWithSummary(db, body.id, "2025-06-09");
+		return body;
+	}
+
+	it("is left out of the home page list and the body's list", async () => {
+		const db = await createTestDb();
+		const body = await seedHeld(db);
+
+		const home = await listRecentMeetingsQuery(db);
+		const bodyList = await listRecentMeetingsQuery(db, body.slug);
+
+		expect(home.map((m) => m.date)).toEqual(["2025-06-09"]);
+		expect(bodyList.map((m) => m.date)).toEqual(["2025-06-09"]);
+	});
+
+	it("still has a page, with its ledger and sources and no summary", async () => {
+		const db = await createTestDb();
+		const body = await seedHeld(db);
+
+		const meeting = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2025-05-27",
+		);
+
+		expect(meeting).toMatchObject({
+			summaryState: "held",
+			summary: null,
+			documents: [{ sourceUrl: "https://example.gov/2025-05-27.pdf" }],
+			fiscalDecisions: [{ title: "Dump truck", amount: 210000 }],
+		});
+	});
+
+	it("sends no draft text to the page", async () => {
+		const db = await createTestDb();
+		const body = await seedHeld(db);
+
+		const payload = JSON.stringify(
+			await getMeetingByBodyAndDateQuery(db, body.slug, "2025-05-27"),
+		);
+
+		expect(payload).not.toContain(DRAFT.prose);
+		expect(payload).not.toContain(DRAFT.highlights[0]);
+	});
+
+	it("says a published summary is published, and a meeting with none has none", async () => {
+		const db = await createTestDb();
+		const body = await seedHeld(db);
+		await db
+			.insert(schema.meetings)
+			.values({ bodyId: body.id, date: "2025-07-14", meetingType: "regular" })
+			.run();
+
+		const published = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2025-06-09",
+		);
+		const none = await getMeetingByBodyAndDateQuery(
+			db,
+			body.slug,
+			"2025-07-14",
+		);
+
+		expect(published?.summaryState).toBe("published");
+		expect(none?.summaryState).toBe("none");
 	});
 });

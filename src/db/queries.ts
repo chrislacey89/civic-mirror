@@ -172,6 +172,8 @@ export async function listRecentMeetingsQuery(
 		// skip them. Unreadable meetings legitimately have no summary and must
 		// surface so citizens can reach the detail page + source PDF link.
 		if (!summary && extractionMethod !== "unreadable") continue;
+		// A held summary is not shown to readers, and a list item is its text.
+		if (summary?.status === "held") continue;
 
 		const fiscals = await db
 			.select()
@@ -596,7 +598,13 @@ export type MeetingDetail = {
 		documentType: "agenda" | "minutes" | "ordinance";
 		extractionMethod: ExtractionMethod;
 	}>;
+	/** Null when the meeting has no summary, and when its summary is held. */
 	summary: { highlights: string[]; prose: string; model: string } | null;
+	/**
+	 * `held`: the summary failed the pre-publish check, so the page shows the
+	 * ledger and sources without it.
+	 */
+	summaryState: "published" | "held" | "none";
 	/** What the summary was built from. */
 	summarySources: SummarySources;
 	/** Points where the documents and the video state different things. */
@@ -647,7 +655,8 @@ function summarySourcesOf(
  * SQLite's query planner handles simple primary-key lookups efficiently.
  *
  * Returns `null` at the first missing piece (no body, no meeting, no summary)
- * rather than returning partial data.
+ * rather than returning partial data. A held summary counts as present, but
+ * its text is never read into the result.
  */
 export async function getMeetingByBodyAndDateQuery(
 	db: LibSQLDatabase<typeof schema>,
@@ -749,13 +758,19 @@ export async function getMeetingByBodyAndDateQuery(
 				d.documentType as MeetingDetail["documents"][number]["documentType"],
 			extractionMethod: docMethods[i],
 		})),
-		summary: summary
-			? {
-					highlights: summary.highlights as string[],
-					prose: summary.prose,
-					model: summary.model,
-				}
-			: null,
+		summary:
+			summary && summary.status !== "held"
+				? {
+						highlights: summary.highlights as string[],
+						prose: summary.prose,
+						model: summary.model,
+					}
+				: null,
+		summaryState: summary
+			? summary.status === "held"
+				? "held"
+				: "published"
+			: "none",
 		summarySources,
 		sourceDisagreements: summary?.sourceDisagreements ?? [],
 		fiscalDecisions: fiscals.map((f) => ({
