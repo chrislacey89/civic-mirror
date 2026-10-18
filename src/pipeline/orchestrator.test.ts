@@ -6,7 +6,7 @@ import {
 } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
 import type { ScoredDramaCategory } from "#/lib/drama-levels.ts";
-import { summarized } from "#/pipeline/checks/test-outcomes.ts";
+import { PUBLISHED, summarized } from "#/pipeline/checks/test-outcomes.ts";
 import {
 	DatabaseError,
 	LlmError,
@@ -252,7 +252,10 @@ function buildStubLayers(config: StubConfig) {
 			Effect.sync(() => {
 				config.log.store.push({ bodySlug: input.bodySlug, date: input.date });
 				config.log.storeInputs.push(input);
-				return config.storedMeeting ?? defaultMeeting;
+				return {
+					...(config.storedMeeting ?? defaultMeeting),
+					newlyHeld: false,
+				};
 			}),
 		getMeetingByBodyAndDate: () =>
 			Effect.sync(() => config.lastMeetingLookup ?? null),
@@ -310,6 +313,7 @@ function buildStubLayers(config: StubConfig) {
 					meetingId: input.meetingId,
 					sourceKinds: input.sourceKinds,
 				});
+				return { newlyHeld: false };
 			}),
 		stampSummarySources: (input) =>
 			Effect.sync(() => {
@@ -3020,7 +3024,12 @@ describe("runPipeline video path", () => {
 								extractionMethod: "text-layer",
 							},
 						],
-						summary: { highlights: ["h"], prose: "p", model: "m" },
+						summary: {
+							highlights: ["h"],
+							prose: "p",
+							model: "m",
+							publication: PUBLISHED,
+						},
 					});
 				}).pipe(Effect.provide(StorageServiceLive(db))),
 			);
@@ -3919,7 +3928,12 @@ describe("runPipeline document regeneration", () => {
 							extractionMethod: "text-layer",
 						},
 					],
-					summary: { highlights: ["h"], prose: "p", model: "m" },
+					summary: {
+						highlights: ["h"],
+						prose: "p",
+						model: "m",
+						publication: PUBLISHED,
+					},
 				});
 			}).pipe(Effect.provide(StorageServiceLive(db))),
 		);
@@ -3949,7 +3963,12 @@ describe("runPipeline document regeneration", () => {
 							extractionMethod: "text-layer",
 						},
 					],
-					summary: { highlights: ["h"], prose: "p", model: "m" },
+					summary: {
+						highlights: ["h"],
+						prose: "p",
+						model: "m",
+						publication: PUBLISHED,
+					},
 				});
 			}).pipe(Effect.provide(StorageServiceLive(db))),
 		);
@@ -3982,7 +4001,12 @@ describe("runPipeline document regeneration", () => {
 							extractionMethod: "text-layer",
 						},
 					],
-					summary: { highlights: ["h"], prose: "p", model: "m" },
+					summary: {
+						highlights: ["h"],
+						prose: "p",
+						model: "m",
+						publication: PUBLISHED,
+					},
 				});
 				yield* storage.storeTranscript({
 					meetingId: stored.id,
@@ -4054,7 +4078,12 @@ describe("runPipeline document regeneration", () => {
 							extractionMethod: "text-layer",
 						},
 					],
-					summary: { highlights: ["h"], prose: "p", model: "m" },
+					summary: {
+						highlights: ["h"],
+						prose: "p",
+						model: "m",
+						publication: PUBLISHED,
+					},
 				});
 			}).pipe(Effect.provide(StorageServiceLive(db))),
 		);
@@ -4363,6 +4392,7 @@ describe("runPipeline document regeneration", () => {
 							highlights: FROM_VIDEO.highlights,
 							prose: FROM_VIDEO.prose,
 							model: "m",
+							publication: PUBLISHED,
 							sourceKinds: ["transcript"],
 							sourceFingerprint,
 						},
@@ -4937,5 +4967,81 @@ describe("videoIdFromUrl", () => {
 
 	it("returns undefined when the URL carries no video id", () => {
 		expect(videoIdFromUrl("https://example.com/minutes.pdf")).toBeUndefined();
+	});
+});
+
+describe("a summary held by the pre-publish check", () => {
+	const BODY = {
+		slug: "town-council",
+		name: "Town Council",
+		egovSearchType: "12",
+	};
+	const LISTING: EgovDocumentListing = {
+		id: 7,
+		title: "Town Council Meeting Minutes May 27, 2025",
+		date: "06/01/2025",
+		downloadUrl: "https://example.com/doc/7",
+		meetingDate: "2025-05-27",
+		documentType: "minutes",
+	};
+	const TRUNCATED = summarized({
+		highlights: ["Council approves three equipment purchases"],
+		prose: "The council approved three purchases for the",
+		fiscalDecisions: [],
+		budgetDiscussions: [],
+		sourceDisagreements: [],
+		model: "stub-model",
+	});
+
+	async function runOnce(
+		db: Awaited<ReturnType<typeof createMigratedTestDb>>,
+		log: CallLog,
+	) {
+		await Effect.runPromise(
+			runPipeline({
+				bodies: [BODY],
+				crawlDelayMs: 0,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({
+					text: "May 27, 2025. Minutes of the Town Council.",
+					method: "text-layer",
+				}),
+				dryRun: false,
+			}).pipe(
+				Effect.provide(
+					buildStubLayers({
+						log,
+						egovListings: [LISTING],
+						summarizationResult: TRUNCATED,
+						storage: StorageServiceLive(db),
+					}),
+				),
+			),
+		);
+	}
+
+	it("alerts the operator once when a meeting first becomes held, and not on a later run", async () => {
+		const db = await createMigratedTestDb();
+		await db
+			.insert(schema.governingBodies)
+			.values({ name: BODY.name, slug: BODY.slug, type: "town" })
+			.run();
+		const log = emptyCallLog();
+
+		await runOnce(db, log);
+		await runOnce(db, log);
+
+		const heldAlerts = log.alert.filter((a) =>
+			a.subject.includes("Summary held"),
+		);
+		expect(heldAlerts).toHaveLength(1);
+		expect(heldAlerts[0].subject).toContain("2025-05-27");
+		expect(heldAlerts[0].body).toContain(
+			"TRUNC: The council approved three purchases for the",
+		);
+		const summaries = await db.select().from(schema.summaries).all();
+		expect(summaries.map((s) => s.status)).toEqual(["held"]);
 	});
 });

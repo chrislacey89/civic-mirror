@@ -4,10 +4,35 @@ import {
 	AlertService,
 	AlertServiceLive,
 	formatPipelineErrorAlert,
+	formatSummaryHeldAlert,
 	formatZeroResultsAlert,
 } from "./AlertService.ts";
 
 describe("AlertService", () => {
+	describe("formatSummaryHeldAlert", () => {
+		const alert = formatSummaryHeldAlert({
+			bodyName: "Ellettsville Town Council",
+			meetingDate: "2025-05-27",
+			reason: "gate-failed",
+			gateFails: ["TRUNC"],
+			evidence: ["TRUNC: approved three purchases for the"],
+		});
+
+		it("names the body and meeting date in the subject", () => {
+			expect(alert.subject).toContain("Ellettsville Town Council");
+			expect(alert.subject).toContain("2025-05-27");
+		});
+
+		it("lists each failed gate with its quoted evidence", () => {
+			expect(alert.body).toContain("TRUNC");
+			expect(alert.body).toContain("approved three purchases for the");
+		});
+
+		it("says what readers see while the summary is held", () => {
+			expect(alert.body).toContain("being checked against the record");
+		});
+	});
+
 	describe("formatZeroResultsAlert", () => {
 		it("builds a subject and body naming the body and days", () => {
 			const alert = formatZeroResultsAlert({

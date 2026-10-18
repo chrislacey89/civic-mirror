@@ -487,7 +487,7 @@ const summariesRegenerateCommand = Command.make(
 
 			for (const outcome of outcomes) {
 				yield* Console.log(
-					`${outcome.date}  ${outcome.outcome}${outcome.message ? `: ${outcome.message}` : ""}`,
+					`${outcome.date}  ${outcome.outcome}${outcome.message ? `: ${outcome.message}` : ""}${outcome.heldGates ? ` (held: ${outcome.heldGates.join(", ")})` : ""}`,
 				);
 			}
 			const failed = outcomes.filter((o) => o.outcome === "failed").length;

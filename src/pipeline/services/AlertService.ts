@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect";
+import type { GateId, SummaryHeldReason } from "#/pipeline/checks/types.ts";
 import { NetworkError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
 
@@ -168,11 +169,44 @@ function formatHeldVideoAlert(input: {
 	};
 }
 
+/** What each summary hold reason means, in the words the alert uses. */
+const SUMMARY_HELD_REASON_TEXT: Record<SummaryHeldReason, string> = {
+	"gate-failed": "its best draft failed a fidelity gate",
+	"critic-unavailable": "the judge was unavailable, so its draft is unchecked",
+};
+
+/**
+ * Builds a subject + body pair for a meeting whose summary was just held. A
+ * later run that holds it again sends nothing, so this is the only alert per
+ * hold.
+ */
+function formatSummaryHeldAlert(input: {
+	bodyName: string;
+	meetingDate: string;
+	reason: SummaryHeldReason;
+	gateFails: readonly GateId[];
+	/** One line per failed gate: its id and the quoted text. */
+	evidence: readonly string[];
+}): AlertInput {
+	return {
+		subject: `[Civic Mirror] Summary held for ${input.bodyName} ${input.meetingDate}: ${input.gateFails.join(", ") || input.reason}`,
+		body: [
+			`The summary of the ${input.meetingDate} ${input.bodyName} meeting was held: ${SUMMARY_HELD_REASON_TEXT[input.reason]}.`,
+			"",
+			`Failed gates: ${input.gateFails.join(", ") || "none"}`,
+			...input.evidence.map((line) => `- ${line}`),
+			"",
+			'The meeting is hidden from the home page and lists. Its page shows the fiscal ledger, the source links and "The summary for this meeting is being checked against the record". Run `pnpm pipeline summaries:audit` to see every failing check.',
+		].join("\n"),
+	};
+}
+
 export {
 	AlertService,
 	AlertServiceLive,
 	formatHeldVideoAlert,
 	formatZeroResultsAlert,
 	formatPipelineErrorAlert,
+	formatSummaryHeldAlert,
 };
 export type { AlertInput, AlertScope, AlertSendFn, AlertServiceConfig };

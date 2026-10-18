@@ -10,6 +10,7 @@ import {
 	mapSumToLevel,
 	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
+import type { SummaryPublication } from "#/pipeline/checks/types.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
 import type { MatchableSummary } from "#/pipeline/services/MeetingMatchService.ts";
@@ -69,6 +70,8 @@ type MeetingInput = {
 		sourceKinds?: SourceKind[];
 		/** `computeSourceFingerprint` of the source URLs the summary was built from. */
 		sourceFingerprint?: string;
+		/** The pre-publish check the text went through; its rounds are stored with it. */
+		publication: SummaryPublication;
 	};
 	fiscalDecisions?: Array<{
 		title: string;
@@ -161,6 +164,13 @@ type Tx = Parameters<
 /** Minimal handle returned after a successful store — just enough to reference the meeting. */
 type Meeting = { id: number; date: string; bodyId: number };
 
+/**
+ * A stored meeting, and whether this store held its summary when it was not
+ * held before. A meeting that already existed stores no summary, so is never
+ * newly held.
+ */
+type StoredMeeting = Meeting & { newlyHeld: boolean };
+
 type DramaCategoryScoreInput = {
 	score: number;
 	evidenceQuotes: string[];
@@ -188,7 +198,9 @@ type StoreDramaAssessmentInput = {
  */
 interface StorageServiceInterface {
 	/** Persist a full meeting and all child records in a single transaction. */
-	storeMeeting(input: MeetingInput): Effect.Effect<Meeting, DatabaseError>;
+	storeMeeting(
+		input: MeetingInput,
+	): Effect.Effect<StoredMeeting, DatabaseError>;
 	/** Look up a meeting by governing body slug + ISO date. Returns null if not found. */
 	getMeetingByBodyAndDate(
 		slug: string,
@@ -293,17 +305,23 @@ interface StorageServiceInterface {
 	 * Swap a meeting's summary, fiscal decisions and budget discussions for a
 	 * new set in one transaction, so a failed insert leaves the old set intact.
 	 * Works when the meeting has no summary yet. Documents, transcripts, drama
-	 * rows and the meeting itself are not touched.
+	 * rows and the meeting itself are not touched. `newlyHeld` is whether the
+	 * new summary is held and the one it replaced, if any, was not.
 	 */
 	replaceMeetingSummary(input: {
 		meetingId: number;
-		summary: { highlights: string[]; prose: string; model: string };
+		summary: {
+			highlights: string[];
+			prose: string;
+			model: string;
+			publication: SummaryPublication;
+		};
 		fiscalDecisions: MeetingInput["fiscalDecisions"];
 		budgetDiscussions: MeetingInput["budgetDiscussions"];
 		sourceKinds: SourceKind[];
 		sourceFingerprint: string;
 		sourceDisagreements: SourceDisagreement[];
-	}): Effect.Effect<void, DatabaseError>;
+	}): Effect.Effect<{ newlyHeld: boolean }, DatabaseError>;
 	/**
 	 * Delete a meeting's transcript rows and its drama assessments, with their
 	 * category scores, in one transaction. Returns the detached video URL, or
@@ -947,8 +965,8 @@ async function getMeetingSourcesQuery(
 async function replaceMeetingSummaryTransaction(
 	db: LibSQLDatabase<typeof schema>,
 	input: Parameters<StorageServiceInterface["replaceMeetingSummary"]>[0],
-): Promise<void> {
-	await db.transaction(async (tx) => {
+): Promise<{ newlyHeld: boolean }> {
+	return await db.transaction(async (tx) => {
 		const ocrDocument = await tx
 			.select({ id: schema.documents.id })
 			.from(schema.documents)
@@ -969,11 +987,17 @@ async function replaceMeetingSummaryTransaction(
 			.delete(schema.fiscalDecisions)
 			.where(eq(schema.fiscalDecisions.meetingId, input.meetingId))
 			.run();
+		const previous = await tx
+			.select({ status: schema.summaries.status })
+			.from(schema.summaries)
+			.where(eq(schema.summaries.meetingId, input.meetingId))
+			.get();
 		await tx
 			.delete(schema.summaries)
 			.where(eq(schema.summaries.meetingId, input.meetingId))
 			.run();
 
+		const { publication } = input.summary;
 		await tx
 			.insert(schema.summaries)
 			.values({
@@ -984,8 +1008,11 @@ async function replaceMeetingSummaryTransaction(
 				sourceKinds: input.sourceKinds,
 				sourceFingerprint: input.sourceFingerprint,
 				sourceDisagreements: input.sourceDisagreements,
+				status: publication.status,
+				heldReason: publication.heldReason,
 			})
 			.run();
+		await insertSummaryRounds(tx, input.meetingId, publication);
 		await insertFiscalDecisions(
 			tx,
 			input.meetingId,
@@ -993,6 +1020,9 @@ async function replaceMeetingSummaryTransaction(
 			ocrDocument !== undefined,
 		);
 		await insertBudgetDiscussions(tx, input.meetingId, input.budgetDiscussions);
+		return {
+			newlyHeld: publication.status === "held" && previous?.status !== "held",
+		};
 	});
 }
 
@@ -1072,6 +1102,34 @@ async function insertFiscalDecisions(
 				ordinanceNumber: fd.ordinanceNumber,
 				confidence,
 				isRecurring: fd.isRecurring,
+			})
+			.run();
+	}
+}
+
+/** One row per round of the check run, whatever it decided. */
+async function insertSummaryRounds(
+	tx: Tx,
+	meetingId: number,
+	publication: SummaryPublication,
+): Promise<void> {
+	for (const round of publication.rounds) {
+		await tx
+			.insert(schema.summaryRounds)
+			.values({
+				meetingId,
+				runId: publication.runId,
+				round: round.round,
+				highlights: [...round.draft.highlights],
+				prose: round.draft.prose,
+				verdicts: { code: round.code, judge: round.judge },
+				gateFailures: round.gateFailures,
+				styleScore: round.styleScore,
+				groundedFigures: round.groundedFigures,
+				finishReason: round.draft.finishReason,
+				inputTokens: round.draft.usage?.inputTokens ?? null,
+				outputTokens: round.draft.usage?.outputTokens ?? null,
+				reasoningTokens: round.draft.usage?.reasoningTokens ?? null,
 			})
 			.run();
 	}
@@ -1176,7 +1234,7 @@ async function storeDramaAssessmentTransaction(
 async function storeMeetingTransaction(
 	db: LibSQLDatabase<typeof schema>,
 	input: MeetingInput,
-): Promise<Meeting> {
+): Promise<StoredMeeting> {
 	// Silent-degradation guard, enforced at the storage boundary. The composite
 	// extractor returns `method: 'unreadable'` for empty outcomes; anything
 	// claiming `text-layer` or `ocr` must carry non-empty text. This assertion
@@ -1282,7 +1340,12 @@ async function storeMeetingTransaction(
 					})
 					.run();
 			}
-			return { id: existing.id, date: existing.date, bodyId: existing.bodyId };
+			return {
+				id: existing.id,
+				date: existing.date,
+				bodyId: existing.bodyId,
+				newlyHeld: false,
+			};
 		}
 
 		// Insert meeting
@@ -1322,8 +1385,11 @@ async function storeMeetingTransaction(
 					model: input.summary.model,
 					sourceKinds: input.summary.sourceKinds ?? [],
 					sourceFingerprint: input.summary.sourceFingerprint ?? "",
+					status: input.summary.publication.status,
+					heldReason: input.summary.publication.heldReason,
 				})
 				.run();
+			await insertSummaryRounds(tx, meeting.id, input.summary.publication);
 		}
 
 		await insertFiscalDecisions(
@@ -1334,7 +1400,12 @@ async function storeMeetingTransaction(
 		);
 		await insertBudgetDiscussions(tx, meeting.id, input.budgetDiscussions);
 
-		return { id: meeting.id, date: meeting.date, bodyId: meeting.bodyId };
+		return {
+			id: meeting.id,
+			date: meeting.date,
+			bodyId: meeting.bodyId,
+			newlyHeld: input.summary?.publication.status === "held",
+		};
 	});
 }
 
@@ -1349,5 +1420,6 @@ export type {
 	MeetingSources,
 	MeetingSourceState,
 	StoreDramaAssessmentInput,
+	StoredMeeting,
 	SummaryScope,
 };

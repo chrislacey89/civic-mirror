@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
-import { summarized } from "#/pipeline/checks/test-outcomes.ts";
+import { PUBLISHED, summarized } from "#/pipeline/checks/test-outcomes.ts";
 import { detachDocumentAndRegenerate } from "#/pipeline/detach.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 import {
@@ -103,6 +103,7 @@ async function setup(options: {
 					prose:
 						"From the July 28 records, the council awarded the bridge bid.",
 					model: "original-model",
+					publication: PUBLISHED,
 					...(options.fingerprinted === false
 						? {}
 						: {

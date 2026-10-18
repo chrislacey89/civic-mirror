@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { Effect, Layer } from "effect";
 import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
-import { summarized } from "#/pipeline/checks/test-outcomes.ts";
+import { publicationOf, summarized } from "#/pipeline/checks/test-outcomes.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 import {
 	incompleteRegeneration,
@@ -107,6 +107,10 @@ async function setup(options: {
 								highlights: ["Original highlight"],
 								prose: "Original prose.",
 								model: "original-model",
+								publication: publicationOf({
+									highlights: ["Original highlight"],
+									prose: "Original prose.",
+								}),
 							},
 							fiscalDecisions: [
 								{
@@ -168,6 +172,30 @@ async function setup(options: {
 }
 
 describe("regenerateMeetingSummary", () => {
+	it("stores a rebuilt summary that fails a gate as held, and says it is newly held", async () => {
+		const { regenerate, rows } = await setup({
+			documents: [AGENDA, MINUTES],
+			result: summarized({
+				...REGENERATED,
+				prose: "The council accepted the paving bid for",
+			}),
+		});
+
+		const result = await regenerate();
+
+		expect(result).toMatchObject({
+			regenerated: true,
+			newlyHeld: true,
+			prePublish: { kind: "held", gateFails: ["TRUNC"] },
+		});
+		const after = await rows();
+		expect(after.summaries[0]).toMatchObject({
+			status: "held",
+			heldReason: "gate-failed",
+		});
+		expect(after.fiscalDecisions.map((d) => d.title)).toEqual(["Paving bid"]);
+	});
+
 	it("replaces the summary with one built from every document when the sources differ from the stored fingerprint", async () => {
 		const { calls, regenerate, rows } = await setup({
 			documents: [AGENDA, MINUTES],
@@ -175,7 +203,7 @@ describe("regenerateMeetingSummary", () => {
 
 		const result = await regenerate();
 
-		expect(result).toEqual({ regenerated: true });
+		expect(result).toMatchObject({ regenerated: true, newlyHeld: false });
 		expect(calls).toEqual([
 			{
 				sources: [
@@ -224,7 +252,7 @@ describe("regenerateMeetingSummary", () => {
 
 		const result = await regenerate({ force: true });
 
-		expect(result).toEqual({ regenerated: true });
+		expect(result).toMatchObject({ regenerated: true });
 		expect(calls).toHaveLength(2);
 	});
 
@@ -279,7 +307,7 @@ describe("regenerateMeetingSummary", () => {
 
 		const result = await regenerate();
 
-		expect(result).toEqual({ regenerated: true });
+		expect(result).toMatchObject({ regenerated: true });
 		expect(calls[0].sources).toEqual([
 			{ kind: "documents", text: MINUTES.rawText },
 			{ kind: "transcript", text: "the paving bid came in at $244,215.10" },
@@ -353,7 +381,7 @@ describe("regenerateMeetingSummary", () => {
 
 		const stamped = await regenerate();
 
-		expect(stamped).toEqual({ regenerated: true });
+		expect(stamped).toMatchObject({ regenerated: true });
 		expect(calls).toHaveLength(1);
 	});
 });
@@ -521,6 +549,10 @@ describe("regenerateBodySummaries", () => {
 						highlights: ["Original highlight"],
 						prose: "Original prose.",
 						model: "original-model",
+						publication: publicationOf({
+							highlights: ["Original highlight"],
+							prose: "Original prose.",
+						}),
 					},
 					fiscalDecisions: [],
 					budgetDiscussions: [],

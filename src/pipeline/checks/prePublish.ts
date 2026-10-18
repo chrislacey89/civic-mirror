@@ -78,3 +78,25 @@ export function toPublication(
 		rounds: outcome.rounds,
 	};
 }
+
+/** A publication for a new check run. */
+export function newPublication(outcome: PrePublishOutcome): SummaryPublication {
+	return toPublication(outcome, crypto.randomUUID());
+}
+
+/**
+ * One line per gate a held outcome failed, from the round its best draft came
+ * from: the gate id and the quoted text, or why it went unchecked.
+ */
+export function gateEvidence(outcome: PrePublishOutcome): string[] {
+	if (outcome.kind !== "held") return [];
+	const round = outcome.rounds.find((r) => r.draft === outcome.best);
+	return outcome.gateFails.map((id) => {
+		const verdict = round?.code.verdicts[id];
+		if (verdict?.outcome === "fail") return `${id}: ${verdict.evidence}`;
+		if (verdict?.outcome === "unchecked") {
+			return `${id}: unchecked (${verdict.reason})`;
+		}
+		return `${id}: no verdict`;
+	});
+}

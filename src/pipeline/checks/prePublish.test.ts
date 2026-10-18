@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { prePublish, toPublication } from "./prePublish.ts";
+import { gateEvidence, prePublish, toPublication } from "./prePublish.ts";
 import type {
 	CheckContext,
 	CodeCheck,
@@ -129,5 +129,27 @@ describe("toPublication", () => {
 			runId: "run-1",
 			rounds,
 		});
+	});
+});
+
+describe("gateEvidence", () => {
+	it("quotes each failed gate of the best round, by id", () => {
+		const outcome = prePublish({ draft: truncated, context });
+		expect(gateEvidence(outcome)).toEqual([
+			"TRUNC: The council approved the paving bid for",
+		]);
+	});
+
+	it("gives the reason for an unchecked gate", () => {
+		const outcome = prePublish({
+			draft: complete,
+			context,
+			checks: [undecidedA1],
+		});
+		expect(gateEvidence(outcome)).toEqual(["A1: unchecked (no names list)"]);
+	});
+
+	it("is empty for a published outcome", () => {
+		expect(gateEvidence(prePublish({ draft: complete, context }))).toEqual([]);
 	});
 });

@@ -1,4 +1,6 @@
 import { Effect } from "effect";
+import { newPublication } from "#/pipeline/checks/prePublish.ts";
+import type { GateId, PrePublishOutcome } from "#/pipeline/checks/types.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import {
 	StorageService,
@@ -29,6 +31,9 @@ import {
  * summarizer changed and the sources did not. It does not reach a summary
  * stored without a fingerprint; `evenUnfingerprinted` does, for a run meant
  * to rebuild every summary from the sources its meeting holds now.
+ *
+ * A rebuilt summary goes through the pre-publish check and may be stored
+ * held; `newlyHeld` says the replace held a summary that was not held before.
  */
 function regenerateMeetingSummary(input: {
 	meetingId: number;
@@ -37,7 +42,7 @@ function regenerateMeetingSummary(input: {
 	force?: boolean;
 	evenUnfingerprinted?: boolean;
 }): Effect.Effect<
-	{ regenerated: boolean },
+	Regeneration,
 	DatabaseError | LlmError,
 	StorageService | SummarizationService
 > {
@@ -67,12 +72,13 @@ function regenerateMeetingSummary(input: {
 			glossary: input.glossary,
 		});
 
-		yield* storage.replaceMeetingSummary({
+		const { newlyHeld } = yield* storage.replaceMeetingSummary({
 			meetingId: input.meetingId,
 			summary: {
 				highlights: summary.highlights,
 				prose: summary.prose,
 				model: summary.model,
+				publication: newPublication(summary.prePublish),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
@@ -81,9 +87,14 @@ function regenerateMeetingSummary(input: {
 			sourceDisagreements: summary.sourceDisagreements,
 		});
 
-		return { regenerated: true };
+		return { regenerated: true, newlyHeld, prePublish: summary.prePublish };
 	});
 }
+
+/** Whether a meeting's summary was rebuilt, and what the check made of it. */
+type Regeneration =
+	| { regenerated: false }
+	| { regenerated: true; newlyHeld: boolean; prePublish: PrePublishOutcome };
 
 /** What became of one meeting in a `regenerateBodySummaries` run. */
 type RegenerationOutcome = {
@@ -92,6 +103,8 @@ type RegenerationOutcome = {
 	outcome: "regenerated" | "skipped" | "failed";
 	/** Why the summarizer failed, when it did. */
 	message?: string;
+	/** The gates a rebuilt summary failed, when it was stored held. */
+	heldGates?: readonly GateId[];
 };
 
 /**
@@ -129,11 +142,16 @@ function regenerateBodySummaries(input: {
 				force: true,
 				evenUnfingerprinted: input.scope === "all",
 			}).pipe(
-				Effect.map(({ regenerated }) => ({
-					outcome: regenerated
-						? ("regenerated" as const)
-						: ("skipped" as const),
-				})),
+				Effect.map((regeneration) =>
+					regeneration.regenerated
+						? {
+								outcome: "regenerated" as const,
+								...(regeneration.prePublish.kind === "held"
+									? { heldGates: regeneration.prePublish.gateFails }
+									: {}),
+							}
+						: { outcome: "skipped" as const },
+				),
 				Effect.catchTag("LlmError", (error) =>
 					Effect.succeed({
 						outcome: "failed" as const,
@@ -170,4 +188,4 @@ export {
 	regenerateBodySummaries,
 	regenerateMeetingSummary,
 };
-export type { RegenerationOutcome };
+export type { Regeneration, RegenerationOutcome };

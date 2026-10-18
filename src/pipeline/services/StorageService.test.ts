@@ -9,6 +9,8 @@ import { Effect } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import type { ScoredDramaCategory } from "#/lib/drama-levels.ts";
+import { prePublish, toPublication } from "#/pipeline/checks/prePublish.ts";
+import { PUBLISHED, publicationOf } from "#/pipeline/checks/test-outcomes.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import { computeSourceFingerprint } from "#/pipeline/sources.ts";
 import {
@@ -84,6 +86,10 @@ const testMeetingInput = {
 		prose:
 			"The Town Council met on March 23, 2026. The primary action was approval of $50,000 for road repairs on Sale Street.",
 		model: "gemini-2.5-flash",
+		publication: publicationOf({
+			highlights: ["Approved $50,000 for Sale Street road repairs"],
+			prose: "The primary action was approval of $50,000 for road repairs.",
+		}),
 	},
 	fiscalDecisions: [
 		{
@@ -440,6 +446,7 @@ describe("StorageService", () => {
 					highlights: [`${name} highlight`],
 					prose: `${name} prose`,
 					model: "gemini-2.5-flash",
+					publication: PUBLISHED,
 				},
 			});
 
@@ -900,6 +907,7 @@ describe("StorageService", () => {
 				model: "gemini-2.5-flash",
 				sourceKinds: ["transcript" as const],
 				sourceFingerprint: computeSourceFingerprint([VIDEO_URL]),
+				publication: PUBLISHED,
 			},
 		};
 
@@ -1576,6 +1584,10 @@ describe("StorageService", () => {
 				highlights: ["New highlight"],
 				prose: "A rewritten summary.",
 				model: "gemini-new",
+				publication: publicationOf({
+					highlights: ["New highlight"],
+					prose: "A rewritten summary.",
+				}),
 			},
 			fiscalDecisions: [
 				{
@@ -2084,6 +2096,183 @@ describe("StorageService", () => {
 			const [row] = await run(db, (s) => s.listHeldVideos());
 
 			expect(row.createdAt).toBeNull();
+		});
+	});
+	describe("a summary that fails the pre-publish check", () => {
+		const usage = { inputTokens: 1800, outputTokens: 240, reasoningTokens: 12 };
+		const truncatedDraft = {
+			highlights: ["Council approves three equipment purchases"],
+			prose: "The council approved three purchases for the",
+			finishReason: "stop",
+			usage,
+		};
+
+		function held(runId: string) {
+			return toPublication(
+				prePublish({
+					draft: truncatedDraft,
+					context: {
+						input: { sources: [], meetingContext: "" },
+						ledger: [],
+					},
+				}),
+				runId,
+			);
+		}
+
+		async function summaryRow(db: TestDb, meetingId: number) {
+			return await db
+				.select()
+				.from(schema.summaries)
+				.where(eq(schema.summaries.meetingId, meetingId))
+				.get();
+		}
+
+		it("is stored held through storeMeeting, with the meeting, its documents and its ledger", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: {
+						...testMeetingInput.summary,
+						...truncatedDraft,
+						publication: held("run-a"),
+					},
+				}),
+			);
+
+			expect(meeting.newlyHeld).toBe(true);
+			expect(await summaryRow(db, meeting.id)).toMatchObject({
+				status: "held",
+				heldReason: "gate-failed",
+				prose: truncatedDraft.prose,
+			});
+			expect(await db.select().from(schema.documents).all()).toHaveLength(1);
+			expect(
+				(await db.select().from(schema.fiscalDecisions).all()).map(
+					(f) => f.title,
+				),
+			).toEqual(["Sale Street Road Repairs"]);
+		});
+
+		it("is stored held through replaceMeetingSummary, with its ledger", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));
+			expect(meeting.newlyHeld).toBe(false);
+
+			const replaced = await run(db, (s) =>
+				s.replaceMeetingSummary({
+					meetingId: meeting.id,
+					summary: {
+						...truncatedDraft,
+						highlights: [...truncatedDraft.highlights],
+						model: "gemini-new",
+						publication: held("run-b"),
+					},
+					fiscalDecisions: testMeetingInput.fiscalDecisions,
+					budgetDiscussions: [],
+					sourceKinds: ["documents"],
+					sourceFingerprint: "fp",
+					sourceDisagreements: [],
+				}),
+			);
+
+			expect(replaced.newlyHeld).toBe(true);
+			expect(await summaryRow(db, meeting.id)).toMatchObject({
+				status: "held",
+				heldReason: "gate-failed",
+			});
+			expect(
+				(await db.select().from(schema.fiscalDecisions).all()).map(
+					(f) => f.title,
+				),
+			).toEqual(["Sale Street Road Repairs"]);
+		});
+
+		it("is not newly held when the summary it replaces was already held", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: { ...testMeetingInput.summary, publication: held("run-a") },
+				}),
+			);
+
+			const replaced = await run(db, (s) =>
+				s.replaceMeetingSummary({
+					meetingId: meeting.id,
+					summary: { ...testMeetingInput.summary, publication: held("run-b") },
+					fiscalDecisions: [],
+					budgetDiscussions: [],
+					sourceKinds: ["documents"],
+					sourceFingerprint: "fp",
+					sourceDisagreements: [],
+				}),
+			);
+
+			expect(replaced.newlyHeld).toBe(false);
+		});
+
+		it("stores every round with its verdicts, finish reason and token usage, keeping earlier runs", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: { ...testMeetingInput.summary, publication: held("run-a") },
+				}),
+			);
+			await run(db, (s) =>
+				s.replaceMeetingSummary({
+					meetingId: meeting.id,
+					summary: { ...testMeetingInput.summary, publication: held("run-b") },
+					fiscalDecisions: [],
+					budgetDiscussions: [],
+					sourceKinds: ["documents"],
+					sourceFingerprint: "fp",
+					sourceDisagreements: [],
+				}),
+			);
+
+			const rounds = await db
+				.select()
+				.from(schema.summaryRounds)
+				.orderBy(schema.summaryRounds.id)
+				.all();
+			expect(rounds.map((r) => r.runId)).toEqual(["run-a", "run-b"]);
+			expect(rounds[1]).toMatchObject({
+				meetingId: meeting.id,
+				round: 1,
+				highlights: truncatedDraft.highlights,
+				prose: truncatedDraft.prose,
+				gateFailures: 1,
+				styleScore: 0,
+				groundedFigures: 0,
+				judgeFingerprint: null,
+				finishReason: "stop",
+				inputTokens: 1800,
+				outputTokens: 240,
+				reasoningTokens: 12,
+			});
+			expect(rounds[1].verdicts).toEqual({
+				code: {
+					verdicts: {
+						TRUNC: {
+							outcome: "fail",
+							evidence: truncatedDraft.prose,
+						},
+					},
+				},
+				judge: "skipped",
+			});
+		});
+
+		it("stores a published summary as published", async () => {
+			const db = await createTestDb();
+			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));
+			expect(await summaryRow(db, meeting.id)).toMatchObject({
+				status: "published",
+				heldReason: null,
+			});
 		});
 	});
 });

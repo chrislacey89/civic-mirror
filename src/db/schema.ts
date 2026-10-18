@@ -7,6 +7,7 @@ import {
 	uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type { DramaCategory, DramaLevel } from "../lib/drama-levels";
+import type { CheckReport, SummaryHeldReason } from "../pipeline/checks/types";
 import type { HeldReason } from "../pipeline/held";
 import type { SourceDisagreement, SourceKind } from "../pipeline/sources";
 
@@ -16,6 +17,7 @@ import type { SourceDisagreement, SourceKind } from "../pipeline/sources";
  * governingBodies ──< meetings ──< documents
  *                          ├──< transcripts
  *                          ├──< summaries
+ *                          ├──< summaryRounds
  *                          ├──< fiscalDecisions
  *                          └──< budgetDiscussions
  *
@@ -160,6 +162,9 @@ export const transcripts = sqliteTable(
  * A meeting has at most one summary. `sourceKinds` and `sourceFingerprint`
  * record what it was built from; a summary with no recorded sources carries
  * `[]` and `""`, and `""` never equals a computed fingerprint.
+ *
+ * A `held` summary failed the pre-publish check: its text is kept for the
+ * operator and never shown to a reader.
  */
 export const summaries = sqliteTable(
 	"summaries",
@@ -180,12 +185,48 @@ export const summaries = sqliteTable(
 			.notNull()
 			.default(sql`'[]'`)
 			.$type<SourceDisagreement[]>(),
+		status: text().notNull().default("published").$type<"published" | "held">(),
+		heldReason: text("held_reason").$type<SummaryHeldReason>(),
+		releasedAt: integer("released_at", { mode: "timestamp" }),
+		releaseNote: text("release_note"),
 		createdAt: integer("created_at", { mode: "timestamp" }).default(
 			sql`(unixepoch())`,
 		),
 	},
 	(table) => [uniqueIndex("summaries_meeting_id_unique").on(table.meetingId)],
 );
+
+/**
+ * Every draft the pre-publish check read, one row per round. A check run is
+ * one `runId` and one or more rounds. Rows outlive the summary they led to,
+ * so a replaced summary's history stays.
+ */
+export const summaryRounds = sqliteTable("summary_rounds", {
+	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+	meetingId: integer("meeting_id")
+		.notNull()
+		.references(() => meetings.id, { onDelete: "cascade" }),
+	runId: text("run_id").notNull(),
+	round: integer().notNull(),
+	highlights: text({ mode: "json" }).notNull().$type<string[]>(),
+	prose: text().notNull(),
+	verdicts: text({ mode: "json" }).notNull().$type<{
+		code: CheckReport;
+		judge: CheckReport | "unavailable" | "skipped";
+	}>(),
+	gateFailures: integer("gate_failures").notNull(),
+	styleScore: integer("style_score").notNull(),
+	groundedFigures: integer("grounded_figures").notNull(),
+	/** Model, prompt hash and settings; null when no judge ran. */
+	judgeFingerprint: text("judge_fingerprint"),
+	finishReason: text("finish_reason"),
+	inputTokens: integer("input_tokens"),
+	outputTokens: integer("output_tokens"),
+	reasoningTokens: integer("reasoning_tokens"),
+	createdAt: integer("created_at", { mode: "timestamp" }).default(
+		sql`(unixepoch())`,
+	),
+});
 
 /**
  * Structured spending data extracted from meeting minutes — the core value prop.

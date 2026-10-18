@@ -13,6 +13,7 @@ const tables = [
 	"budget_discussions",
 	"fiscal_decisions",
 	"summaries",
+	"summary_rounds",
 	"transcripts",
 	"documents",
 	"meetings",
