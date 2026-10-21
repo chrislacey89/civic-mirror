@@ -139,3 +139,21 @@ export function sessionSlug(label: string): string {
 		.replace(/[^a-z0-9]+/g, "-")
 		.replace(/^-+|-+$/g, "");
 }
+
+/** The texts of the sources of one kind, joined. Empty when there is none. */
+export function sourceTextOfKind(
+	sources: readonly LabelledSource[],
+	kind: SourceKind,
+): string {
+	return sources
+		.filter((source) => source.kind === kind)
+		.map((source) => source.text)
+		.join("\n\n");
+}
+
+export function hasSourceKind(
+	sources: readonly LabelledSource[],
+	kind: SourceKind,
+): boolean {
+	return sources.some((source) => source.kind === kind);
+}
