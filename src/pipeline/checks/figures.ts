@@ -419,6 +419,19 @@ function failOrPass(
 }
 
 /**
+ * How many distinct figures the draft states that a source writes. A writer
+ * can pass A1 by dropping figures, so this is kept per round to show it.
+ */
+export function groundedFigureCount(draft: WriteUp, ctx: CheckContext): number {
+	const grounded = sourceValues(ctx);
+	return new Set(
+		statedFigures(draft)
+			.map(({ figure }) => figure.value)
+			.filter((value) => grounded.has(value)),
+	).size;
+}
+
+/**
  * A1 for figures and votes, G1 and G4. Every figure in the headline,
  * highlights and prose must be written as a whole token in the documents or
  * the transcript; the ledger is not a source.

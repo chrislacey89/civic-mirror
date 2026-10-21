@@ -1,4 +1,5 @@
 import type { SummarizationResult } from "#/pipeline/services/SummarizationService.ts";
+import type { LabelledSource } from "#/pipeline/sources.ts";
 import { prePublish, toPublication } from "./prePublish.ts";
 import type { SummaryPublication, WriteUp } from "./types.ts";
 
@@ -26,15 +27,19 @@ export function summarized(
 	};
 }
 
-/** What storage records of `text` put through the pre-publish check. */
+/**
+ * What storage records of `text` put through the pre-publish check, against
+ * `sources`.
+ */
 export function publicationOf(
 	text: WriteUp,
 	runId = "test-run",
+	sources: LabelledSource[] = [],
 ): SummaryPublication {
 	return toPublication(
 		prePublish({
 			draft: { ...text, finishReason: "stop", usage: null },
-			context: { input: { sources: [], meetingContext: "" }, ledger: [] },
+			context: { input: { sources, meetingContext: "" }, ledger: [] },
 		}),
 		runId,
 	);

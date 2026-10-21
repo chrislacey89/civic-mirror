@@ -1,3 +1,4 @@
+import { figuresCheck } from "./figures.ts";
 import { truncationCheck } from "./truncation.ts";
 import type {
 	CheckContext,
@@ -9,7 +10,10 @@ import type {
 } from "./types.ts";
 
 /** Every code check a draft goes through. */
-export const CODE_CHECKS: readonly CodeCheck[] = [truncationCheck];
+export const CODE_CHECKS: readonly CodeCheck[] = [
+	truncationCheck,
+	figuresCheck,
+];
 
 /**
  * One verdict from several checks that own the same id: fail if any fails,

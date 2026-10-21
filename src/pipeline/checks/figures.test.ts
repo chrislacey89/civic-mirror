@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LabelledSource } from "#/pipeline/sources.ts";
-import { figuresCheck, rollCallTally } from "./figures.ts";
+import { figuresCheck, groundedFigureCount, rollCallTally } from "./figures.ts";
 import type { CheckContext, WriteUp } from "./types.ts";
 
 function contextOf(
@@ -408,5 +408,20 @@ describe("figuresCheck", () => {
 			);
 			expect(verdicts.G4).toEqual({ outcome: "pass" });
 		});
+	});
+});
+
+describe("groundedFigureCount", () => {
+	it("counts the distinct figures the draft states that a source writes", () => {
+		const draft = draftOf(
+			"The council paid $45,000 for paving and $9,999 for salt. The $45,000 contract runs a year.",
+			["Council approves $45,000 paving contract"],
+		);
+		expect(
+			groundedFigureCount(
+				draft,
+				contextOf([documents("Paving contract $45,000.00. Three bids.")]),
+			),
+		).toBe(1);
 	});
 });

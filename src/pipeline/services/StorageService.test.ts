@@ -86,10 +86,19 @@ const testMeetingInput = {
 		prose:
 			"The Town Council met on March 23, 2026. The primary action was approval of $50,000 for road repairs on Sale Street.",
 		model: "gemini-2.5-flash",
-		publication: publicationOf({
-			highlights: ["Approved $50,000 for Sale Street road repairs"],
-			prose: "The primary action was approval of $50,000 for road repairs.",
-		}),
+		publication: publicationOf(
+			{
+				highlights: ["Approved $50,000 for Sale Street road repairs"],
+				prose: "The primary action was approval of $50,000 for road repairs.",
+			},
+			"test-run",
+			[
+				{
+					kind: "documents",
+					text: "Motion to approve $50,000 for road repairs.",
+				},
+			],
+		),
 	},
 	fiscalDecisions: [
 		{
@@ -2260,6 +2269,9 @@ describe("StorageService", () => {
 							outcome: "fail",
 							evidence: truncatedDraft.prose,
 						},
+						A1: { outcome: "pass" },
+						G1: { outcome: "pass" },
+						G4: { outcome: "pass" },
 					},
 				},
 				judge: "skipped",

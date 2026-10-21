@@ -22,6 +22,12 @@ describe("runCodeChecks", () => {
 		expect(CODE_CHECKS.flatMap((check) => check.owns)).toContain("TRUNC");
 	});
 
+	it("registers the figures check", () => {
+		expect(CODE_CHECKS.flatMap((check) => check.owns)).toEqual(
+			expect.arrayContaining(["A1", "G1", "G4"]),
+		);
+	});
+
 	it("reports an owned id that got no verdict as unchecked", () => {
 		expect(runCodeChecks(draft, context, [a1(undefined)]).verdicts).toEqual({
 			A1: { outcome: "unchecked", reason: "no verdict" },
