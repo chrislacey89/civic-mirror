@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	buildSummarizationPrompt,
 	buildWritingPrompt,
+	draftOfWritingCall,
 	LEDGER_INSTRUCTIONS,
 	WRITING_INSTRUCTIONS,
 } from "./GeminiSummarizer.ts";
@@ -244,5 +245,47 @@ describe("buildWritingPrompt", () => {
 		expect(buildWritingPrompt({ ...input, glossary: [] }, [])).not.toContain(
 			"GLOSSARY:",
 		);
+	});
+});
+
+describe("draftOfWritingCall", () => {
+	const text = {
+		highlights: ["Council approves paving bid"],
+		prose: "It did.",
+	};
+
+	it("keeps the finish reason and token usage the call reported", () => {
+		expect(
+			draftOfWritingCall({
+				experimental_output: text,
+				finishReason: "stop",
+				usage: {
+					inputTokens: 1500,
+					outputTokens: 320,
+					outputTokenDetails: { textTokens: 280, reasoningTokens: 40 },
+				},
+			}),
+		).toEqual({
+			...text,
+			finishReason: "stop",
+			usage: { inputTokens: 1500, outputTokens: 320, reasoningTokens: 40 },
+		});
+	});
+
+	it("records a count the provider did not report as null", () => {
+		expect(
+			draftOfWritingCall({
+				experimental_output: text,
+				finishReason: "length",
+				usage: {
+					inputTokens: undefined,
+					outputTokens: 320,
+					outputTokenDetails: {
+						textTokens: undefined,
+						reasoningTokens: undefined,
+					},
+				},
+			}).usage,
+		).toEqual({ inputTokens: null, outputTokens: 320, reasoningTokens: null });
 	});
 });

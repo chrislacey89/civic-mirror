@@ -87,6 +87,7 @@ const childTables = [
 	{ table: "budget_discussions", where: "meeting_id = ?" },
 	{ table: "fiscal_decisions", where: "meeting_id = ?" },
 	{ table: "summaries", where: "meeting_id = ?" },
+	{ table: "summary_rounds", where: "meeting_id = ?" },
 	{ table: "transcripts", where: "meeting_id = ?" },
 	{ table: "documents", where: "meeting_id = ?" },
 ];

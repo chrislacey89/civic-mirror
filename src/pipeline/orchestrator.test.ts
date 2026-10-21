@@ -6,6 +6,7 @@ import {
 } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
 import type { ScoredDramaCategory } from "#/lib/drama-levels.ts";
+import { PUBLISHED, summarized } from "#/pipeline/checks/test-outcomes.ts";
 import {
 	DatabaseError,
 	LlmError,
@@ -159,14 +160,14 @@ type StubConfig = {
 };
 
 function buildStubLayers(config: StubConfig) {
-	const defaultSummary: SummarizationResult = {
+	const defaultSummary: SummarizationResult = summarized({
 		highlights: ["A highlight"],
-		prose: "A prose summary",
+		prose: "A prose summary.",
 		fiscalDecisions: [],
 		budgetDiscussions: [],
 		sourceDisagreements: [],
 		model: "stub-model",
-	};
+	});
 	const defaultMeeting: Meeting = { id: 1, date: "2026-01-01", bodyId: 1 };
 
 	const egov = Layer.succeed(EgovScraper, {
@@ -251,7 +252,10 @@ function buildStubLayers(config: StubConfig) {
 			Effect.sync(() => {
 				config.log.store.push({ bodySlug: input.bodySlug, date: input.date });
 				config.log.storeInputs.push(input);
-				return config.storedMeeting ?? defaultMeeting;
+				return {
+					...(config.storedMeeting ?? defaultMeeting),
+					newlyHeld: false,
+				};
 			}),
 		getMeetingByBodyAndDate: () =>
 			Effect.sync(() => config.lastMeetingLookup ?? null),
@@ -272,6 +276,7 @@ function buildStubLayers(config: StubConfig) {
 			Effect.sync(() => config.meetingSourceState?.(key) ?? null),
 		findNearbyDocumentOnlyMeetings: () =>
 			Effect.sync(() => config.nearbyMeetings ?? []),
+		getStoredWriteUp: () => Effect.succeed(null),
 		getMatchableSummary: () =>
 			Effect.sync(() =>
 				config.matchableSummary === undefined
@@ -309,6 +314,7 @@ function buildStubLayers(config: StubConfig) {
 					meetingId: input.meetingId,
 					sourceKinds: input.sourceKinds,
 				});
+				return { newlyHeld: false };
 			}),
 		stampSummarySources: (input) =>
 			Effect.sync(() => {
@@ -2067,7 +2073,7 @@ describe("runPipeline video path", () => {
 		expect(log.match[0].documentsSummary).toEqual(documentsSummary);
 		expect(log.match[0].transcriptSummary).toMatchObject({
 			highlights: ["A highlight"],
-			prose: "A prose summary",
+			prose: "A prose summary.",
 		});
 	});
 
@@ -3019,7 +3025,12 @@ describe("runPipeline video path", () => {
 								extractionMethod: "text-layer",
 							},
 						],
-						summary: { highlights: ["h"], prose: "p", model: "m" },
+						summary: {
+							highlights: ["h"],
+							prose: "p",
+							model: "m",
+							publication: PUBLISHED,
+						},
 					});
 				}).pipe(Effect.provide(StorageServiceLive(db))),
 			);
@@ -3048,14 +3059,14 @@ describe("runPipeline video path", () => {
 			const meetingId = await seedMinutesMeeting(db, "2025-08-25");
 
 			const { log, result } = await runAgainst(db, {
-				summarizationResult: {
+				summarizationResult: summarized({
 					highlights: ["Combined highlight"],
-					prose: "Combined prose",
+					prose: "Combined prose.",
 					fiscalDecisions: [],
 					budgetDiscussions: [],
 					sourceDisagreements: [],
 					model: "stub-model",
-				},
+				}),
 			});
 
 			expect(result).toEqual({ processed: 1, errors: 0 });
@@ -3082,7 +3093,7 @@ describe("runPipeline video path", () => {
 			]);
 			const [summary] = await db.select().from(schema.summaries).all();
 			expect(summary.meetingId).toBe(meetingId);
-			expect(summary.prose).toBe("Combined prose");
+			expect(summary.prose).toBe("Combined prose.");
 			expect(summary.sourceKinds).toEqual(["documents", "transcript"]);
 			expect(summary.sourceFingerprint).toBe(
 				computeSourceFingerprint([MINUTES_URL, url("regular")]),
@@ -3739,9 +3750,9 @@ describe("runPipeline document regeneration", () => {
 	const AGENDA = egovListing(1, "agenda");
 	const MINUTES = egovListing(2, "minutes");
 
-	const REGENERATED: SummarizationResult = {
+	const REGENERATED: SummarizationResult = summarized({
 		highlights: ["Regenerated highlight"],
-		prose: "Regenerated prose",
+		prose: "Regenerated prose.",
 		fiscalDecisions: [
 			{
 				title: "Regenerated decision",
@@ -3756,7 +3767,7 @@ describe("runPipeline document regeneration", () => {
 		budgetDiscussions: [{ topic: "Regenerated discussion" }],
 		sourceDisagreements: [],
 		model: "stub-model",
-	};
+	});
 
 	async function setup() {
 		const db = await createMigratedTestDb();
@@ -3918,7 +3929,12 @@ describe("runPipeline document regeneration", () => {
 							extractionMethod: "text-layer",
 						},
 					],
-					summary: { highlights: ["h"], prose: "p", model: "m" },
+					summary: {
+						highlights: ["h"],
+						prose: "p",
+						model: "m",
+						publication: PUBLISHED,
+					},
 				});
 			}).pipe(Effect.provide(StorageServiceLive(db))),
 		);
@@ -3948,7 +3964,12 @@ describe("runPipeline document regeneration", () => {
 							extractionMethod: "text-layer",
 						},
 					],
-					summary: { highlights: ["h"], prose: "p", model: "m" },
+					summary: {
+						highlights: ["h"],
+						prose: "p",
+						model: "m",
+						publication: PUBLISHED,
+					},
 				});
 			}).pipe(Effect.provide(StorageServiceLive(db))),
 		);
@@ -3981,7 +4002,12 @@ describe("runPipeline document regeneration", () => {
 							extractionMethod: "text-layer",
 						},
 					],
-					summary: { highlights: ["h"], prose: "p", model: "m" },
+					summary: {
+						highlights: ["h"],
+						prose: "p",
+						model: "m",
+						publication: PUBLISHED,
+					},
 				});
 				yield* storage.storeTranscript({
 					meetingId: stored.id,
@@ -4053,7 +4079,12 @@ describe("runPipeline document regeneration", () => {
 							extractionMethod: "text-layer",
 						},
 					],
-					summary: { highlights: ["h"], prose: "p", model: "m" },
+					summary: {
+						highlights: ["h"],
+						prose: "p",
+						model: "m",
+						publication: PUBLISHED,
+					},
 				});
 			}).pipe(Effect.provide(StorageServiceLive(db))),
 		);
@@ -4362,6 +4393,7 @@ describe("runPipeline document regeneration", () => {
 							highlights: FROM_VIDEO.highlights,
 							prose: FROM_VIDEO.prose,
 							model: "m",
+							publication: PUBLISHED,
 							sourceKinds: ["transcript"],
 							sourceFingerprint,
 						},
@@ -4936,5 +4968,81 @@ describe("videoIdFromUrl", () => {
 
 	it("returns undefined when the URL carries no video id", () => {
 		expect(videoIdFromUrl("https://example.com/minutes.pdf")).toBeUndefined();
+	});
+});
+
+describe("a summary held by the pre-publish check", () => {
+	const BODY = {
+		slug: "town-council",
+		name: "Town Council",
+		egovSearchType: "12",
+	};
+	const LISTING: EgovDocumentListing = {
+		id: 7,
+		title: "Town Council Meeting Minutes May 27, 2025",
+		date: "06/01/2025",
+		downloadUrl: "https://example.com/doc/7",
+		meetingDate: "2025-05-27",
+		documentType: "minutes",
+	};
+	const TRUNCATED = summarized({
+		highlights: ["Council approves three equipment purchases"],
+		prose: "The council approved three purchases for the",
+		fiscalDecisions: [],
+		budgetDiscussions: [],
+		sourceDisagreements: [],
+		model: "stub-model",
+	});
+
+	async function runOnce(
+		db: Awaited<ReturnType<typeof createMigratedTestDb>>,
+		log: CallLog,
+	) {
+		await Effect.runPromise(
+			runPipeline({
+				bodies: [BODY],
+				crawlDelayMs: 0,
+				youtubeDelayMs: 0,
+				networkRetry: { attempts: 0, baseDelayMs: 0 },
+				llmRetry: { attempts: 0, baseDelayMs: 0 },
+				extractPdfText: async () => ({
+					text: "May 27, 2025. Minutes of the Town Council.",
+					method: "text-layer",
+				}),
+				dryRun: false,
+			}).pipe(
+				Effect.provide(
+					buildStubLayers({
+						log,
+						egovListings: [LISTING],
+						summarizationResult: TRUNCATED,
+						storage: StorageServiceLive(db),
+					}),
+				),
+			),
+		);
+	}
+
+	it("alerts the operator once when a meeting first becomes held, and not on a later run", async () => {
+		const db = await createMigratedTestDb();
+		await db
+			.insert(schema.governingBodies)
+			.values({ name: BODY.name, slug: BODY.slug, type: "town" })
+			.run();
+		const log = emptyCallLog();
+
+		await runOnce(db, log);
+		await runOnce(db, log);
+
+		const heldAlerts = log.alert.filter((a) =>
+			a.subject.includes("Summary held"),
+		);
+		expect(heldAlerts).toHaveLength(1);
+		expect(heldAlerts[0].subject).toContain("2025-05-27");
+		expect(heldAlerts[0].body).toContain(
+			"TRUNC: The council approved three purchases for the",
+		);
+		const summaries = await db.select().from(schema.summaries).all();
+		expect(summaries.map((s) => s.status)).toEqual(["held"]);
 	});
 });

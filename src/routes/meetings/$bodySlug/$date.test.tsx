@@ -28,6 +28,7 @@ function makeMeeting(overrides: Partial<MeetingDetail> = {}): MeetingDetail {
 			prose: "Council discussed infrastructure.",
 			model: "gemini-2.5-flash",
 		},
+		summaryState: "published",
 		summarySources: { origin: "documents" },
 		sourceDisagreements: [],
 		fiscalDecisions: [
@@ -359,6 +360,46 @@ describe("MeetingDetailView — unreadable branch", () => {
 
 		// Source PDF link still present
 		expect(screen.getByText(/View minutes PDF/)).toBeDefined();
+	});
+});
+
+describe("MeetingDetailView — held summary", () => {
+	const held = () =>
+		makeMeeting({
+			summary: null,
+			summaryState: "held",
+			summarySources: { origin: "both", videoUrl: "https://youtu.be/x" },
+		});
+
+	it("says the summary is being checked, with no headline, lede or highlights", () => {
+		render(<MeetingDetailView meeting={held()} />);
+
+		expect(
+			screen.getByText(
+				"The summary for this meeting is being checked against the record.",
+			),
+		).toBeDefined();
+		expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+			"Ellettsville Town Council — March 23, 2026",
+		);
+		expect(document.querySelector(".lede")).toBeNull();
+		expect(screen.queryByText("Key Highlights")).toBeNull();
+		expect(screen.queryByText("Summary")).toBeNull();
+	});
+
+	it("still shows the fiscal ledger and links to every source", () => {
+		render(<MeetingDetailView meeting={held()} />);
+
+		expect(screen.getByText("Fiscal Decisions")).toBeDefined();
+		expect(screen.getByText("Sale Street Road Repairs")).toBeDefined();
+		expect(screen.getByText(/View minutes PDF/)).toBeDefined();
+		expect(screen.getByText("Watch the meeting video")).toBeDefined();
+	});
+
+	it("does not say what a summary it does not show was built from", () => {
+		render(<MeetingDetailView meeting={held()} />);
+
+		expect(screen.queryByText(/This summary was built from/)).toBeNull();
 	});
 });
 

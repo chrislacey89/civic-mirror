@@ -7,6 +7,8 @@ import { Command, Flag } from "effect/cli";
 loadDotenv({ path: [".env.local", ".env"] });
 
 import { resolveDatabaseUrl } from "#/db/database-url.ts";
+import { auditSummaries, formatAuditLine } from "#/pipeline/audit.ts";
+import { CHECK_IDS, type CheckId } from "#/pipeline/checks/types.ts";
 import {
 	buildProductionLayers,
 	DEFAULT_BODIES,
@@ -487,7 +489,7 @@ const summariesRegenerateCommand = Command.make(
 
 			for (const outcome of outcomes) {
 				yield* Console.log(
-					`${outcome.date}  ${outcome.outcome}${outcome.message ? `: ${outcome.message}` : ""}`,
+					`${outcome.date}  ${outcome.outcome}${outcome.message ? `: ${outcome.message}` : ""}${outcome.heldGates ? ` (held: ${outcome.heldGates.join(", ")})` : ""}`,
 				);
 			}
 			const failed = outcomes.filter((o) => o.outcome === "failed").length;
@@ -500,6 +502,78 @@ const summariesRegenerateCommand = Command.make(
 			if (incomplete) {
 				return yield* Effect.fail(new Error(incomplete));
 			}
+		}),
+);
+
+// ---------------------------------------------------------------------------
+// `summaries:audit` subcommand — runs the registered code checks over every
+// stored summary and prints each verdict that is not a pass. Read-only, so a
+// check can be measured against the published summaries before it enforces.
+// ---------------------------------------------------------------------------
+
+const auditBodySlug = Flag.String("body").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"Only audit the body with this slug (defaults to all bodies).",
+	),
+);
+
+const auditCheckId = Flag.String("check").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		`Only report this check (one of ${CHECK_IDS.join(", ")}).`,
+	),
+);
+
+const summariesAuditCommand = Command.make(
+	"summaries:audit",
+	{ bodySlug: auditBodySlug, checkId: auditCheckId },
+	({ bodySlug, checkId }) =>
+		Effect.gen(function* () {
+			const check = Option.getOrUndefined(checkId);
+			if (check !== undefined && !CHECK_IDS.includes(check as CheckId)) {
+				return yield* Effect.fail(
+					new Error(
+						`Unknown check: ${check}. Known checks: ${CHECK_IDS.join(", ")}`,
+					),
+				);
+			}
+			const bodies = Option.match(bodySlug, {
+				onNone: () => DEFAULT_BODIES,
+				onSome: (slug) => DEFAULT_BODIES.filter((b) => b.slug === slug),
+			});
+			if (bodies.length === 0) {
+				return yield* Effect.fail(
+					new Error(
+						`No body matched the provided --body slug. Known slugs: ${DEFAULT_BODIES.map((b) => b.slug).join(", ")}`,
+					),
+				);
+			}
+
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			let total = 0;
+			for (const body of bodies) {
+				const findings = yield* auditSummaries({
+					bodySlug: body.slug,
+					checkId: check as CheckId | undefined,
+				}).pipe(Effect.provide(layers));
+				if (findings.length === 0) continue;
+				yield* Console.log(`== ${body.slug}`);
+				for (const finding of findings) {
+					yield* Console.log(formatAuditLine(finding));
+				}
+				total += findings.length;
+			}
+			yield* Console.log(
+				`[summaries:audit] done: bodies=${bodies.length} findings=${total}`,
+			);
 		}),
 );
 
@@ -518,6 +592,7 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		dramaDetectCommand,
 		heldListCommand,
 		summariesRegenerateCommand,
+		summariesAuditCommand,
 		documentDetachCommand,
 	]),
 );

@@ -1,5 +1,10 @@
 import { Context, Effect, Layer } from "effect";
 import { z } from "zod";
+import { prePublish } from "#/pipeline/checks/prePublish.ts";
+import type {
+	PrePublishOutcome,
+	WrittenDraft,
+} from "#/pipeline/checks/types.ts";
 import { LlmError } from "#/pipeline/errors.ts";
 import type {
 	LabelledSource,
@@ -426,11 +431,13 @@ function proseWarnings(prose: string, highlights: readonly string[]): string[] {
  * The full result returned by the service — schema output plus the model
  * identifier, which gets persisted alongside the summary for auditing.
  * `sourceDisagreements` is empty unless both kinds of source were passed, and
- * never holds a disagreement over how a name is spelled.
+ * never holds a disagreement over how a name is spelled. `highlights` and
+ * `prose` are the pre-publish check's best draft, which may be held.
  */
 type SummarizationResult = Omit<SummarizationOutput, "sourceDisagreements"> & {
 	sourceDisagreements: SourceDisagreement[];
 	model: string;
+	prePublish: PrePublishOutcome;
 };
 
 interface SummarizationServiceInterface {
@@ -457,13 +464,14 @@ type SummarizationGenerateFn = (
 
 /**
  * Injectable writer: the highlights and prose for a meeting, given its
- * sources and the ledger the service will return. In production,
- * `createGeminiWriter` returns one of these.
+ * sources and the ledger the service will return, with the call's finish
+ * reason and token usage. In production, `createGeminiWriter` returns one of
+ * these.
  */
 type SummarizationWriteFn = (
 	input: SummarizationInput,
 	ledger: SummarizationOutput["fiscalDecisions"],
-) => Promise<{ highlights: string[]; prose: string }>;
+) => Promise<WrittenDraft>;
 
 type SummarizationServiceConfig = {
 	/** Model identifier recorded alongside each summary (e.g. "gemini-2.5-flash"). */
@@ -574,10 +582,16 @@ function SummarizationServiceLive(
 					);
 					// The text is written from the ledger this summary returns, so
 					// the prose cannot carry a figure or an entry the ledger dropped.
-					const { highlights, prose } = await config.writeFn(input, verified);
-					// Warn-only: the writing rules are the model's to keep, and a
-					// breach is a signal for prompt iteration, never a reason to
-					// change or reject the text.
+					const draft = await config.writeFn(input, verified);
+					const checked = prePublish({
+						draft,
+						context: { input, ledger: verified },
+					});
+					const highlights = [...checked.best.highlights];
+					const prose = checked.best.prose;
+					// Warn-only: these rules are not yet checks, and a breach is a
+					// signal for prompt iteration, never a reason to change or
+					// reject the text.
 					for (const warning of proseWarnings(prose, highlights)) {
 						console.warn(
 							`[summarize] writing rule breach in "${input.meetingContext}": ${warning}`,
@@ -605,6 +619,7 @@ function SummarizationServiceLive(
 								]
 							: [],
 						model: config.model,
+						prePublish: checked,
 					};
 				},
 				catch: (error) =>

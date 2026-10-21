@@ -1,6 +1,7 @@
 import { google } from "@ai-sdk/google";
-import { generateText, Output } from "ai";
+import { generateText, type LanguageModelUsage, Output } from "ai";
 import { z } from "zod";
+import type { WrittenDraft } from "#/pipeline/checks/types.ts";
 import type {
 	SummarizationGenerateFn,
 	SummarizationInput,
@@ -214,6 +215,35 @@ function createGeminiSummarizer(
 	};
 }
 
+/** The parts of a writing call's result a draft records. */
+type WritingCallResult = {
+	experimental_output: { highlights: string[]; prose: string };
+	finishReason: string;
+	usage: Pick<
+		LanguageModelUsage,
+		"inputTokens" | "outputTokens" | "outputTokenDetails"
+	> & {
+		outputTokenDetails: Pick<
+			LanguageModelUsage["outputTokenDetails"],
+			"reasoningTokens"
+		>;
+	};
+};
+
+/** A writing call's text, with the finish reason and token counts it reported. */
+function draftOfWritingCall(call: WritingCallResult): WrittenDraft {
+	return {
+		highlights: call.experimental_output.highlights,
+		prose: call.experimental_output.prose,
+		finishReason: call.finishReason,
+		usage: {
+			inputTokens: call.usage.inputTokens ?? null,
+			outputTokens: call.usage.outputTokens ?? null,
+			reasoningTokens: call.usage.outputTokenDetails.reasoningTokens ?? null,
+		},
+	};
+}
+
 /**
  * Builds a SummarizationWriteFn backed by Gemini: the writing call, given the
  * ledger the service settled. Configured and keyed like the ledger call.
@@ -229,7 +259,7 @@ function createGeminiWriter(
 			prompt: buildWritingPrompt(input, ledger),
 			experimental_output: Output.object({ schema: writingOutputSchema }),
 		});
-		return writingCall.experimental_output;
+		return draftOfWritingCall(writingCall);
 	};
 }
 
@@ -238,5 +268,6 @@ export {
 	buildWritingPrompt,
 	createGeminiSummarizer,
 	createGeminiWriter,
+	draftOfWritingCall,
 };
 export type { GeminiSummarizerConfig };

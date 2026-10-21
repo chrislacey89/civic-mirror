@@ -20,6 +20,9 @@ import { getMeetingByBodyAndDate } from "#/server/meetings.ts";
  *   - `unreadable`: status card + source PDF links only (no generated content).
  *                   The query never reports a meeting that has a summary as
  *                   unreadable.
+ *
+ * A meeting whose summary is held shows a notice in place of the summary, and
+ * keeps its ledger and source links.
  */
 export const Route = createFileRoute("/meetings/$bodySlug/$date")({
 	validateSearch: (search: Record<string, unknown>): { session?: string } =>
@@ -77,7 +80,8 @@ function MeetingDetailPage() {
 export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 	const isOcr = meeting.extractionMethod === "ocr";
 	const isUnreadable = meeting.extractionMethod === "unreadable";
-	const isVideoOnly = meeting.summarySources.origin === "video";
+	const isHeld = meeting.summaryState === "held";
+	const isVideoOnly = !isHeld && meeting.summarySources.origin === "video";
 
 	return (
 		<main className="page-wrap px-4 pb-8 pt-6">
@@ -89,6 +93,7 @@ export function MeetingDetailView({ meeting }: { meeting: MeetingDetail }) {
 			) : (
 				<>
 					{isOcr && <OcrBanner />}
+					{isHeld && <HeldNotice />}
 					{isVideoOnly && (
 						<VideoOnlyNotice
 							minutesPosted={meeting.documents.some(
@@ -272,10 +277,12 @@ function MeetingHero({ meeting }: { meeting: MeetingDetail }) {
 function PrimarySources({
 	meeting,
 }: {
-	meeting: Pick<MeetingDetail, "documents" | "summarySources">;
+	meeting: Pick<MeetingDetail, "documents" | "summarySources" | "summaryState">;
 }) {
 	const sources = meeting.summarySources;
-	const builtFrom = builtFromLine(sources);
+	// A held summary is not shown, so the page says nothing about its making.
+	const builtFrom =
+		meeting.summaryState === "held" ? null : builtFromLine(sources);
 	const videoUrl =
 		sources.origin === "video" || sources.origin === "both"
 			? sources.videoUrl
@@ -565,6 +572,14 @@ function VideoOnlyNotice({ minutesPosted }: { minutesPosted: boolean }) {
 					{minutesPosted ? "" : " Official minutes are not yet posted."}
 				</span>
 			</div>
+		</output>
+	);
+}
+
+function HeldNotice() {
+	return (
+		<output className="rise-in mt-6 block border border-[var(--rule)] bg-[var(--paper-alt)] px-6 py-5 text-[14px] text-[var(--ink-mid)]">
+			The summary for this meeting is being checked against the record.
 		</output>
 	);
 }

@@ -3,6 +3,8 @@ import {
 	DRAMA_CATEGORIES,
 	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
+import { gateEvidence, newPublication } from "#/pipeline/checks/prePublish.ts";
+import type { PrePublishOutcome } from "#/pipeline/checks/types.ts";
 import {
 	extractLongFormDate,
 	extractOpeningDate,
@@ -22,6 +24,7 @@ import {
 	AlertService,
 	formatHeldVideoAlert,
 	formatPipelineErrorAlert,
+	formatSummaryHeldAlert,
 	formatZeroResultsAlert,
 } from "#/pipeline/services/AlertService.ts";
 import { DramaDetectionService } from "#/pipeline/services/DramaDetectionService.ts";
@@ -92,6 +95,41 @@ function detectZeroResultsAnomaly(input: {
 	return Effect.gen(function* () {
 		const alert = yield* AlertService;
 		yield* alert.sendAlert(formatted).pipe(Effect.catch(() => Effect.void));
+	});
+}
+
+/**
+ * Alerts the operator that a meeting's summary was held. `newlyHeld` comes
+ * from the store that wrote the summary, so a summary a later run holds
+ * again sends nothing.
+ */
+function alertIfNewlyHeld(input: {
+	bodyName: string;
+	meetingDate: string;
+	newlyHeld: boolean;
+	prePublish: PrePublishOutcome;
+}): Effect.Effect<void, never, AlertService> {
+	const { prePublish } = input;
+	if (!input.newlyHeld || prePublish.kind !== "held") return Effect.void;
+	return Effect.gen(function* () {
+		yield* Effect.log("summary.held").pipe(
+			Effect.annotateLogs({
+				meetingDate: input.meetingDate,
+				gateFails: prePublish.gateFails.join(","),
+			}),
+		);
+		const alert = yield* AlertService;
+		yield* alert
+			.sendAlert(
+				formatSummaryHeldAlert({
+					bodyName: input.bodyName,
+					meetingDate: input.meetingDate,
+					reason: prePublish.reason,
+					gateFails: prePublish.gateFails,
+					evidence: gateEvidence(prePublish),
+				}),
+			)
+			.pipe(Effect.catch(() => Effect.void));
 	});
 }
 
@@ -492,6 +530,7 @@ function runSameMeetingCheck(
  */
 function attachDocumentsAndRegenerate(input: {
 	meetingId: number;
+	bodyName: string;
 	meeting: Omit<
 		MeetingInput,
 		"summary" | "fiscalDecisions" | "budgetDiscussions"
@@ -502,7 +541,7 @@ function attachDocumentsAndRegenerate(input: {
 }): Effect.Effect<
 	void,
 	DatabaseError | LlmError,
-	StorageService | SummarizationService
+	StorageService | SummarizationService | AlertService
 > {
 	return Effect.gen(function* () {
 		const storage = yield* StorageService;
@@ -529,6 +568,8 @@ function attachDocumentsAndRegenerate(input: {
 
 		yield* regenerateWithRetry({
 			meetingId: input.meetingId,
+			bodyName: input.bodyName,
+			meetingDate: input.meeting.date,
 			meetingContext: input.meetingContext,
 			glossary: input.glossary,
 			config: input.config,
@@ -536,22 +577,27 @@ function attachDocumentsAndRegenerate(input: {
 	});
 }
 
-/** Rebuilds a meeting's summary if its sources changed, retrying a failed model call. */
+/**
+ * Rebuilds a meeting's summary if its sources changed, retrying a failed
+ * model call, and alerts when the rebuilt summary is newly held.
+ */
 function regenerateWithRetry(input: {
 	meetingId: number;
+	bodyName: string;
+	meetingDate: string;
 	meetingContext: string;
 	glossary: readonly string[] | undefined;
 	config: ResolvedConfig;
 }): Effect.Effect<
 	void,
 	DatabaseError | LlmError,
-	StorageService | SummarizationService
+	StorageService | SummarizationService | AlertService
 > {
 	return Effect.gen(function* () {
 		yield* Effect.log("regenerate.start").pipe(
 			Effect.annotateLogs({ meetingId: input.meetingId }),
 		);
-		const { regenerated } = yield* regenerateMeetingSummary({
+		const regeneration = yield* regenerateMeetingSummary({
 			meetingId: input.meetingId,
 			meetingContext: input.meetingContext,
 			glossary: input.glossary,
@@ -562,8 +608,19 @@ function regenerateWithRetry(input: {
 			}),
 		);
 		yield* Effect.log("regenerate.finish").pipe(
-			Effect.annotateLogs({ meetingId: input.meetingId, regenerated }),
+			Effect.annotateLogs({
+				meetingId: input.meetingId,
+				regenerated: regeneration.regenerated,
+			}),
 		);
+		if (regeneration.regenerated) {
+			yield* alertIfNewlyHeld({
+				bodyName: input.bodyName,
+				meetingDate: input.meetingDate,
+				newlyHeld: regeneration.newlyHeld,
+				prePublish: regeneration.prePublish,
+			});
+		}
 	});
 }
 
@@ -616,6 +673,7 @@ function matchDocumentsToMeeting(input: {
 		if (match.outcome === "match") {
 			yield* attachDocumentsAndRegenerate({
 				meetingId: meeting.meetingId,
+				bodyName: body.name,
 				meeting: input.documents,
 				meetingContext: input.meetingContext,
 				glossary: body.glossary,
@@ -659,12 +717,13 @@ function matchDocumentsToMeeting(input: {
 		);
 
 		yield* storage.storeMeeting(input.documents);
-		yield* storage.replaceMeetingSummary({
+		const { newlyHeld } = yield* storage.replaceMeetingSummary({
 			meetingId: meeting.meetingId,
 			summary: {
 				highlights: summary.highlights,
 				prose: summary.prose,
 				model: summary.model,
+				publication: newPublication(summary.prePublish),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
@@ -673,6 +732,12 @@ function matchDocumentsToMeeting(input: {
 				documents: input.documents.documents,
 			}),
 			sourceDisagreements: summary.sourceDisagreements,
+		});
+		yield* alertIfNewlyHeld({
+			bodyName: body.name,
+			meetingDate: meeting.date,
+			newlyHeld,
+			prePublish: summary.prePublish,
 		});
 		return { settled: true };
 	});
@@ -784,6 +849,8 @@ function processEgovListing(
 				);
 				yield* regenerateWithRetry({
 					meetingId: existing.meetingId,
+					bodyName: body.name,
+					meetingDate,
 					meetingContext: `${body.name}, ${meetingDate}`,
 					glossary: body.glossary,
 					config,
@@ -833,6 +900,7 @@ function processEgovListing(
 		if (existing?.hasDocuments) {
 			yield* attachDocumentsAndRegenerate({
 				meetingId: existing.meetingId,
+				bodyName: body.name,
 				meeting: {
 					bodySlug: body.slug,
 					date: meetingDate,
@@ -943,12 +1011,19 @@ function processEgovListing(
 				sourceFingerprint: fingerprintOfSources({
 					documents: [{ sourceUrl: listing.downloadUrl }],
 				}),
+				publication: newPublication(summary.prePublish),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
 		};
 
-		yield* storage.storeMeeting(meetingInput);
+		const stored = yield* storage.storeMeeting(meetingInput);
+		yield* alertIfNewlyHeld({
+			bodyName: body.name,
+			meetingDate,
+			newlyHeld: stored.newlyHeld,
+			prePublish: summary.prePublish,
+		});
 
 		return { processed: 1, errors: 0 };
 	}).pipe(
@@ -1104,6 +1179,7 @@ function processFinalsiteListing(
 		if (existing?.hasDocuments) {
 			yield* attachDocumentsAndRegenerate({
 				meetingId: existing.meetingId,
+				bodyName: body.name,
 				meeting: {
 					bodySlug: body.slug,
 					date: meetingDate,
@@ -1190,7 +1266,7 @@ function processFinalsiteListing(
 			if (settled) return { processed: 1, errors: 0 };
 		}
 
-		yield* storage.storeMeeting({
+		const stored = yield* storage.storeMeeting({
 			...meeting,
 			summary: {
 				highlights: summary.highlights,
@@ -1198,9 +1274,16 @@ function processFinalsiteListing(
 				model: summary.model,
 				sourceKinds: ["documents"],
 				sourceFingerprint: fingerprintOfSources({ documents }),
+				publication: newPublication(summary.prePublish),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
+		});
+		yield* alertIfNewlyHeld({
+			bodyName: body.name,
+			meetingDate,
+			newlyHeld: stored.newlyHeld,
+			prePublish: summary.prePublish,
 		});
 
 		return { processed: 1, errors: 0 };
@@ -1345,6 +1428,8 @@ function processPlaylistVideo(
 			if (!config.dryRun) {
 				yield* regenerateWithRetry({
 					meetingId: existing.meetingId,
+					bodyName: body.name,
+					meetingDate: existing.date,
 					meetingContext: `${body.name}, ${video.title}`,
 					glossary: body.glossary,
 					config,
@@ -1565,9 +1650,16 @@ function processYouTubeVideo(
 					documents: [],
 					transcriptUrl: sourceUrl,
 				}),
+				publication: newPublication(summary.prePublish),
 			},
 			fiscalDecisions: summary.fiscalDecisions,
 			budgetDiscussions: summary.budgetDiscussions,
+		});
+		yield* alertIfNewlyHeld({
+			bodyName: body.name,
+			meetingDate: videoMeeting.date,
+			newlyHeld: meeting.newlyHeld,
+			prePublish: summary.prePublish,
 		});
 
 		yield* storage.storeTranscript({
@@ -1722,6 +1814,8 @@ function matchVideoToMeeting(input: {
 
 		yield* regenerateWithRetry({
 			meetingId: meeting.meetingId,
+			bodyName: body.name,
+			meetingDate: meeting.date,
 			meetingContext: `${body.name}, ${video.title}`,
 			glossary: body.glossary,
 			config,
