@@ -60,7 +60,7 @@ A second, plainer cause sat under the first. The original fixtures for the vote-
 
 ## Prevention
 
-**Code-level:** `src/pipeline/checks/figures.test.ts` holds both sides for the date rule (the must-pass date cases, and the must-fail table "does not read %s after a month as a date") and for the garbled-token rule (the "fpaa-215.10" case in "fails A1 on %s"). Open at merge, and listed in PR #210: the vote-word window's width, five of the six stop words, and irregular plurals after a month name have only a must-pass side or none.
+**Code-level:** `src/pipeline/checks/figures.test.ts` holds both sides for the date rule (the must-pass date cases, and the must-fail table "does not read %s after a month as a date") and for the garbled-token rule (the "fpaa-215.10" case in "fails A1 on %s").
 
 **Process-level:** when an audit drives fixes to a gate, count the fixes that remove numbers from checking separately, and give each a must-fail fixture in the same commit. Run `/execute`'s point-of-consumption mutation on each new rule before claiming it is covered.
 
