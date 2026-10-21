@@ -1,5 +1,10 @@
 import { figuresIn, type WrittenFigure } from "#/pipeline/figureMatch.ts";
+import { sourceTextOfKind } from "#/pipeline/sources.ts";
 import type { CheckContext, CodeCheck, Verdict, WriteUp } from "./types.ts";
+
+/** A stated vote count: "4-1", "5–0", or "unanimously". */
+const TALLY =
+	/(?<![\d–-])(?<yes>\d{1,2})\s?[–-]\s?(?<no>\d{1,2})(?![\d–-]|,\d)|\bunanimous(?:ly)?\b/gi;
 
 /**
  * Numbers that are not figures: phone numbers, ordinance and resolution
@@ -13,6 +18,7 @@ const NOT_FIGURES: readonly RegExp[] = [
 	/\b\d{1,2}:\d{2}\b/g,
 	/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
 	/(?<![\d$,.])(?:19|20)\d{2}(?![\d,%]|\.\d|\s?(?:million|thousand|billion|percent))/g,
+	TALLY,
 ];
 
 function blanked(text: string, patterns: readonly RegExp[]): string {
@@ -54,17 +60,84 @@ function passagesOf(draft: WriteUp): string[] {
 		.filter((passage) => passage !== "");
 }
 
+type Sentence = { sentence: string; passage: string };
+
+function sentencesOfDraft(draft: WriteUp): Sentence[] {
+	return passagesOf(draft).flatMap((passage) =>
+		sentencesOf(passage).map((sentence) => ({ sentence, passage })),
+	);
+}
+
 type StatedFigure = { figure: WrittenFigure; sentence: string };
 
 function statedFigures(draft: WriteUp): StatedFigure[] {
-	return passagesOf(draft).flatMap((passage) =>
-		sentencesOf(passage).flatMap((sentence) =>
-			wholeFigures(blanked(sentence, NOT_FIGURES)).map((figure) => ({
-				figure,
-				sentence,
-			})),
-		),
+	return sentencesOfDraft(draft).flatMap(({ sentence }) =>
+		wholeFigures(blanked(sentence, NOT_FIGURES)).map((figure) => ({
+			figure,
+			sentence,
+		})),
 	);
+}
+
+/** A tally the prose states; `no` is 0 and `yes` null for "unanimously". */
+type StatedTally = {
+	text: string;
+	yes: number | null;
+	no: number;
+	sentence: string;
+	passage: string;
+};
+
+function statedTallies(draft: WriteUp): StatedTally[] {
+	return sentencesOfDraft(draft).flatMap(({ sentence, passage }) =>
+		[...sentence.matchAll(TALLY)].map((match) => ({
+			text: match[0],
+			yes: match.groups?.yes === undefined ? null : Number(match.groups.yes),
+			no: match.groups?.no === undefined ? 0 : Number(match.groups.no),
+			sentence,
+			passage,
+		})),
+	);
+}
+
+/** Whether a source states the tally itself: "4-1", "4 to 1", "unanimous". */
+function statesTally(text: string, tally: StatedTally): boolean {
+	if (tally.yes === null) return /\bunanimous/i.test(text);
+	return new RegExp(
+		`(?<![\\d–-])${tally.yes}\\s?(?:[–-]|to)\\s?${tally.no}(?![\\d–-]|,\\d)`,
+	).test(text);
+}
+
+/**
+ * A failure line, or why the tally could not be checked, or null when it
+ * agrees with the record. The roll call on the tally's motion is found by
+ * its sentence, then by its paragraph. Without one, a tally a source states
+ * passes, and any other cannot be checked.
+ */
+function tallyFinding(
+	tally: StatedTally,
+	ctx: CheckContext,
+): { fail: string } | { unchecked: string } | null {
+	const minutes = sourceTextOfKind(ctx.input.sources, "documents");
+	const counted =
+		rollCallTally(minutes, tally.sentence) ??
+		rollCallTally(minutes, tally.passage);
+	if (counted !== null) {
+		const agrees =
+			counted.no === tally.no &&
+			(tally.yes === null || counted.yes === tally.yes);
+		return agrees
+			? null
+			: {
+					fail: `"${tally.text}" disagrees with the roll call, ${counted.yes} yes and ${counted.no} no: "${tally.sentence}"`,
+				};
+	}
+	if (ctx.input.sources.some((source) => statesTally(source.text, tally))) {
+		return null;
+	}
+	return {
+		unchecked: `"${tally.text}" cannot be counted from the record: "${tally.sentence}"`,
+	};
 }
 
 const SPELLED_NUMBERS: Readonly<Record<string, bigint>> = {
@@ -161,11 +234,151 @@ function writtenTwoWays(stated: readonly StatedFigure[]): string[] {
 	);
 }
 
-function failOrPass(failures: readonly string[]): Verdict {
+/** How far before a roll call its motion is looked for. */
+const MOTION_CONTEXT_LENGTH = 600;
+
+/** How far after "Roll call vote" its votes are counted, at most. */
+const ROLL_CALL_LENGTH = 600;
+
+const ROLL_CALL_START = /roll\s+call\s+vote/gi;
+
+const ROLL_CALL_END =
+	/motion\s+(?:carries|carried|passes|passed|fails|failed|dies|died)|roll\s+call\s+vote/i;
+
+/** Words in most motions and votes, which name no motion in particular. */
+const VOTE_WORDS: ReadonlySet<string> = new Set([
+	"about",
+	"after",
+	"also",
+	"approval",
+	"approve",
+	"approved",
+	"been",
+	"call",
+	"carries",
+	"council",
+	"from",
+	"have",
+	"made",
+	"member",
+	"members",
+	"motion",
+	"moved",
+	"roll",
+	"second",
+	"seconded",
+	"that",
+	"their",
+	"there",
+	"they",
+	"this",
+	"town",
+	"vote",
+	"voted",
+	"votes",
+	"were",
+	"which",
+	"will",
+	"with",
+	"would",
+]);
+
+/**
+ * The words of `text` that can name a motion, each cut to its first five
+ * letters so "creating" and "created" agree.
+ */
+function namingWords(text: string): Set<string> {
+	return new Set(
+		(text.toLowerCase().match(/[a-z]{4,}/g) ?? [])
+			.filter((word) => !VOTE_WORDS.has(word))
+			.map((word) => word.slice(0, 5)),
+	);
+}
+
+type RollCall = {
+	yes: number;
+	no: number;
+	/** The text before the roll call, where its motion is stated. */
+	motion: string;
+};
+
+/**
+ * Each "Roll call vote" in the minutes, counted up to "Motion carries" (or
+ * the next roll call): "Name — yes" and "Name — aye" are yes votes, "Name —
+ * no" and "Name — nay" no votes; an abstention is neither.
+ */
+function rollCallsIn(documentsText: string): RollCall[] {
+	let previousEnd = 0;
+	return [...documentsText.matchAll(ROLL_CALL_START)].map((match) => {
+		const start = match.index;
+		const rest = documentsText.slice(
+			start + match[0].length,
+			start + match[0].length + ROLL_CALL_LENGTH,
+		);
+		const end = rest.search(ROLL_CALL_END);
+		const votes = end === -1 ? rest : rest.slice(0, end);
+		const motion = documentsText.slice(
+			Math.max(previousEnd, start - MOTION_CONTEXT_LENGTH),
+			start,
+		);
+		previousEnd = start + match[0].length + (end === -1 ? 0 : end);
+		return {
+			yes: (votes.match(/[—–-]\s*(?:yes|aye)\b/gi) ?? []).length,
+			no: (votes.match(/[—–-]\s*(?:no|nay)\b/gi) ?? []).length,
+			motion,
+		};
+	});
+}
+
+/**
+ * The yes and no count of the roll call on `motion`: the roll call whose
+ * preceding text shares the most naming words with it, at least two. Words
+ * before most of the roll calls (members' names, "seconded") name none of
+ * them and are not counted. Null when no roll call shares two words, or when
+ * roll calls with different counts share the most.
+ */
+export function rollCallTally(
+	documentsText: string,
+	motion: string,
+): { yes: number; no: number } | null {
+	const rollCalls = rollCallsIn(documentsText);
+	const motionWords = rollCalls.map((rollCall) => namingWords(rollCall.motion));
+	const common = new Set(
+		[...new Set(motionWords.flatMap((words) => [...words]))].filter(
+			(word) =>
+				rollCalls.length > 1 &&
+				motionWords.filter((words) => words.has(word)).length >
+					rollCalls.length / 2,
+		),
+	);
+	const wanted = namingWords(motion);
+	const scores = motionWords.map(
+		(words) =>
+			[...words].filter((word) => wanted.has(word) && !common.has(word)).length,
+	);
+	const best = Math.max(0, ...scores);
+	if (best < 2) return null;
+	const tallies = new Set(
+		rollCalls
+			.filter((_, index) => scores[index] === best)
+			.map((rollCall) => `${rollCall.yes}-${rollCall.no}`),
+	);
+	if (tallies.size !== 1) return null;
+	const chosen = rollCalls[scores.indexOf(best)];
+	return { yes: chosen.yes, no: chosen.no };
+}
+
+function failOrPass(
+	failures: readonly string[],
+	unchecked: readonly string[] = [],
+): Verdict {
 	const unique = [...new Set(failures)];
-	return unique.length === 0
+	if (unique.length > 0) {
+		return { outcome: "fail", evidence: unique.join("\n") };
+	}
+	return unchecked.length === 0
 		? { outcome: "pass" }
-		: { outcome: "fail", evidence: unique.join("\n") };
+		: { outcome: "unchecked", reason: [...new Set(unchecked)].join("\n") };
 }
 
 /**
@@ -182,11 +395,22 @@ export const figuresCheck: CodeCheck = {
 		const ungrounded = stated.filter(
 			({ figure }) => !grounded.has(figure.value),
 		);
+		const tallies = statedTallies(draft).map((tally) =>
+			tallyFinding(tally, ctx),
+		);
 		return {
 			A1: failOrPass(
-				ungrounded.map(
-					({ figure, sentence }) =>
-						`"${figure.text}" is in no source: "${sentence}"`,
+				[
+					...ungrounded.map(
+						({ figure, sentence }) =>
+							`"${figure.text}" is in no source: "${sentence}"`,
+					),
+					...tallies.flatMap((finding) =>
+						finding !== null && "fail" in finding ? [finding.fail] : [],
+					),
+				],
+				tallies.flatMap((finding) =>
+					finding !== null && "unchecked" in finding ? [finding.unchecked] : [],
 				),
 			),
 			G1: failOrPass([

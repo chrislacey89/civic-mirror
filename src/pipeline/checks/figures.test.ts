@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LabelledSource } from "#/pipeline/sources.ts";
-import { figuresCheck } from "./figures.ts";
+import { figuresCheck, rollCallTally } from "./figures.ts";
 import type { CheckContext, WriteUp } from "./types.ts";
 
 function contextOf(
@@ -24,6 +24,52 @@ function transcript(text: string): LabelledSource {
 function draftOf(prose: string, highlights: string[] = []): WriteUp {
 	return { highlights, prose };
 }
+
+const MINUTES = `
+Michael Farmer, Town Manager discussed consolidation with Richland Township.
+Pamela Samples made a motion to enter into an agreement to explore
+reorganization with the Township of Richland. William Ellis seconded. Roll call
+vote: Scott Oldham — no; Dan Swafford — yes; William Ellis —
+yes; Trevor Sager — yes; Pamela Samples — yes. Motion carries.
+
+Kevin Tolloty presented Ordinance 2025-25 creating a vehicle replacement fund
+for the Stormwater Utility. Dan Swafford seconded. Roll call vote: Scott Oldham
+— yes; Dan Swafford — yes; William Ellis — yes; Trevor Sager — yes; Pamela
+Samples — yes. Motion Carries
+Old Business - None
+`;
+
+describe("rollCallTally", () => {
+	it("counts the yes and no votes of the roll call on the named motion, up to Motion carries", () => {
+		expect(
+			rollCallTally(
+				MINUTES,
+				"The council voted 4-1 to explore reorganization with Richland Township.",
+			),
+		).toEqual({ yes: 4, no: 1 });
+		expect(
+			rollCallTally(
+				MINUTES,
+				"The council created a vehicle replacement fund for the Stormwater Utility.",
+			),
+		).toEqual({ yes: 5, no: 0 });
+	});
+
+	it("is null when no roll call is on the motion", () => {
+		expect(
+			rollCallTally(
+				MINUTES,
+				"The council approved the Santa on Sale Street parade.",
+			),
+		).toBeNull();
+		expect(
+			rollCallTally(
+				"Motion to approve the claims. All in favor, motion carries.",
+				"The council approved the claims.",
+			),
+		).toBeNull();
+	});
+});
 
 describe("figuresCheck", () => {
 	it("owns A1, G1 and G4", () => {
@@ -216,6 +262,87 @@ describe("figuresCheck", () => {
 				contextOf([documents("Bond of $2,200,000.")]),
 			);
 			expect(verdicts.G1?.outcome).toBe("fail");
+		});
+	});
+	describe("A1, votes", () => {
+		it("If minutes carry a roll call, then a stated tally that disagrees with its count fails A1", () => {
+			const verdicts = figuresCheck.run(
+				draftOf(
+					"The council voted 5-0 to explore reorganization with Richland Township.",
+				),
+				contextOf([documents(MINUTES)]),
+			);
+			expect(verdicts.A1).toEqual({
+				outcome: "fail",
+				evidence:
+					'"5-0" disagrees with the roll call, 4 yes and 1 no: "The council voted 5-0 to explore reorganization with Richland Township."',
+			});
+		});
+
+		it("passes a tally that agrees with the roll call, found through its paragraph", () => {
+			const verdicts = figuresCheck.run(
+				draftOf(
+					"The council created a vehicle replacement fund for the Stormwater Utility. The council voted 5–0 to approve.\n\nThe council voted 4-1 to explore reorganization with Richland Township.",
+				),
+				contextOf([documents(MINUTES)]),
+			);
+			expect(verdicts.A1).toEqual({ outcome: "pass" });
+		});
+
+		it('fails "unanimously" when the roll call has a no', () => {
+			const verdicts = figuresCheck.run(
+				draftOf(
+					"The council unanimously agreed to explore reorganization with Richland Township.",
+				),
+				contextOf([documents(MINUTES)]),
+			);
+			expect(verdicts.A1?.outcome).toBe("fail");
+		});
+
+		it('passes "unanimously" when the roll call has no no', () => {
+			const verdicts = figuresCheck.run(
+				draftOf(
+					"The council unanimously created a vehicle replacement fund for the Stormwater Utility.",
+				),
+				contextOf([documents(MINUTES)]),
+			);
+			expect(verdicts.A1).toEqual({ outcome: "pass" });
+		});
+
+		it("If a transcript-only meeting's prose states a tally the transcript does not, then A1 is unchecked", () => {
+			const verdicts = figuresCheck.run(
+				draftOf("The council voted 4-1 to buy a $30,000 truck."),
+				contextOf([transcript("all in favor of the 30,000 truck say aye")]),
+			);
+			expect(verdicts.A1?.outcome).toBe("unchecked");
+		});
+
+		it.each([
+			["4-1", "the motion passes 4-1"],
+			["4-1", "the motion passes 4 to 1"],
+			["unanimously", "it passes unanimously"],
+		])("passes %s on a transcript that states it", (tally, said) => {
+			const verdicts = figuresCheck.run(
+				draftOf(`The council voted ${tally} to buy a truck.`),
+				contextOf([transcript(said)]),
+			);
+			expect(verdicts.A1).toEqual({ outcome: "pass" });
+		});
+
+		it("passes A1 on figures when the prose states no tally", () => {
+			const verdicts = figuresCheck.run(
+				draftOf("The council approved a $30,000 truck."),
+				contextOf([transcript("the 30,000 truck, all in favor")]),
+			);
+			expect(verdicts.A1).toEqual({ outcome: "pass" });
+		});
+
+		it("fails rather than leaves unchecked when a figure fails and a tally cannot be counted", () => {
+			const verdicts = figuresCheck.run(
+				draftOf("The council voted 4-1 to buy a $31,000 truck."),
+				contextOf([transcript("the 30,000 truck")]),
+			);
+			expect(verdicts.A1?.outcome).toBe("fail");
 		});
 	});
 });
