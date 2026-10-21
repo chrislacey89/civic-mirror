@@ -1,4 +1,8 @@
-import { figuresIn, type WrittenFigure } from "#/pipeline/figureMatch.ts";
+import {
+	figuresIn,
+	statesFigure,
+	type WrittenFigure,
+} from "#/pipeline/figureMatch.ts";
 import { sourceTextOfKind } from "#/pipeline/sources.ts";
 import type { CheckContext, CodeCheck, Verdict, WriteUp } from "./types.ts";
 
@@ -368,6 +372,39 @@ export function rollCallTally(
 	return { yes: chosen.yes, no: chosen.no };
 }
 
+/** Wording that says a sum is not in the record. */
+const SAYS_UNSTATED =
+	/\b(?:no total|not (?:stated|read|given|announced)|unstated|did not (?:state|give|read|announce))\b/i;
+
+/**
+ * G4: a sentence that names a ledger decision whose amount is "not stated"
+ * (two naming words of its title) and gives a dollar figure no source
+ * writes, without saying the sum is unstated.
+ */
+function unstatedSums(
+	ungrounded: readonly StatedFigure[],
+	ctx: CheckContext,
+): string[] {
+	const unstated = ctx.ledger.filter(
+		(decision) => !statesFigure(decision.originalAmount),
+	);
+	return ungrounded.flatMap(({ figure, sentence }) => {
+		if (!(figure.hasDollarSign || figure.hasScale)) return [];
+		if (SAYS_UNSTATED.test(sentence)) return [];
+		const words = namingWords(sentence);
+		const decision = unstated.find(
+			(candidate) =>
+				[...namingWords(candidate.title)].filter((word) => words.has(word))
+					.length >= 2,
+		);
+		return decision === undefined
+			? []
+			: [
+					`"${figure.text}" is given for "${decision.title}", whose amount the record does not state: "${sentence}"`,
+				];
+	});
+}
+
 function failOrPass(
 	failures: readonly string[],
 	unchecked: readonly string[] = [],
@@ -422,7 +459,7 @@ export const figuresCheck: CodeCheck = {
 				}),
 				...writtenTwoWays(stated),
 			]),
-			G4: { outcome: "pass" },
+			G4: failOrPass(unstatedSums(ungrounded, ctx)),
 		};
 	},
 };

@@ -345,4 +345,68 @@ describe("figuresCheck", () => {
 			expect(verdicts.A1?.outcome).toBe("fail");
 		});
 	});
+	describe("G4, an unstated sum says so", () => {
+		const claims = (
+			originalAmount: string,
+		): CheckContext["ledger"][number] => ({
+			title: "Accounts Payable Vouchers and Payroll",
+			description: "",
+			amount: 0,
+			originalAmount,
+			status: "approved",
+			confidence: 1,
+			isRecurring: false,
+		});
+		const minutes = documents(
+			"Motion to approve the accounts payable vouchers and payroll. All in favor.",
+		);
+
+		it("If the prose names a total the record does not state and does not say it is unstated, then it fails G4", () => {
+			const verdicts = figuresCheck.run(
+				draftOf("The council paid $412,880 in payroll and vouchers."),
+				contextOf([minutes], [claims("not stated")]),
+			);
+			expect(verdicts.G4).toEqual({
+				outcome: "fail",
+				evidence:
+					'"$412,880" is given for "Accounts Payable Vouchers and Payroll", whose amount the record does not state: "The council paid $412,880 in payroll and vouchers."',
+			});
+		});
+
+		it.each([
+			[
+				"says no total was read",
+				"The council paid its payroll and vouchers; no total was read into the record.",
+			],
+			[
+				"says the total was not stated",
+				"The council paid $412,880 in payroll and vouchers, a total not stated in the record.",
+			],
+		])("passes G4 on prose that %s", (_label, prose) => {
+			const verdicts = figuresCheck.run(
+				draftOf(prose),
+				contextOf([minutes], [claims("not stated")]),
+			);
+			expect(verdicts.G4).toEqual({ outcome: "pass" });
+		});
+
+		it("passes G4 when the record states the figure", () => {
+			const verdicts = figuresCheck.run(
+				draftOf("The council paid $412,880 in payroll and vouchers."),
+				contextOf(
+					[documents("Payroll and vouchers of $412,880.00 approved.")],
+					[claims("not stated")],
+				),
+			);
+			expect(verdicts.G4).toEqual({ outcome: "pass" });
+		});
+
+		it("passes G4 when the ledger states an amount", () => {
+			const verdicts = figuresCheck.run(
+				draftOf("The council paid $412,880 in payroll and vouchers."),
+				contextOf([minutes], [claims("$412,880.00")]),
+			);
+			expect(verdicts.G4).toEqual({ outcome: "pass" });
+		});
+	});
 });
