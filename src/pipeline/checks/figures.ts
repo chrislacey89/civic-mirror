@@ -131,6 +131,36 @@ function sourceValues(ctx: CheckContext): Set<bigint> {
 	);
 }
 
+/** Every figure the sources write as a whole token. */
+function sourceFigures(ctx: CheckContext): WrittenFigure[] {
+	return ctx.input.sources.flatMap((source) => wholeFigures(source.text));
+}
+
+/**
+ * Whether `stated` is `source` written less precisely: a different value
+ * within one step of how `stated` is written, as "$139,775" is of
+ * "$139,775.03" and "$2.2 million" of "$2,213,400".
+ */
+function rounds(stated: WrittenFigure, source: WrittenFigure): boolean {
+	const gap =
+		stated.value > source.value
+			? stated.value - source.value
+			: source.value - stated.value;
+	return gap !== 0n && gap < stated.precision;
+}
+
+/** One sum written both with a scale word and in full ("$2.2 million", "$2,200,000"). */
+function writtenTwoWays(stated: readonly StatedFigure[]): string[] {
+	return stated.flatMap(({ figure, sentence }) =>
+		figure.hasScale &&
+		stated.some(
+			(other) => !other.figure.hasScale && other.figure.value === figure.value,
+		)
+			? [`"${figure.text}" is also written in full: "${sentence}"`]
+			: [],
+	);
+}
+
 function failOrPass(failures: readonly string[]): Verdict {
 	const unique = [...new Set(failures)];
 	return unique.length === 0
@@ -147,7 +177,9 @@ export const figuresCheck: CodeCheck = {
 	owns: ["A1", "G1", "G4"],
 	run: (draft, ctx) => {
 		const grounded = sourceValues(ctx);
-		const ungrounded = statedFigures(draft).filter(
+		const written = sourceFigures(ctx);
+		const stated = statedFigures(draft);
+		const ungrounded = stated.filter(
 			({ figure }) => !grounded.has(figure.value),
 		);
 		return {
@@ -157,7 +189,15 @@ export const figuresCheck: CodeCheck = {
 						`"${figure.text}" is in no source: "${sentence}"`,
 				),
 			),
-			G1: { outcome: "pass" },
+			G1: failOrPass([
+				...ungrounded.flatMap(({ figure, sentence }) => {
+					const rounded = written.find((source) => rounds(figure, source));
+					return rounded === undefined
+						? []
+						: [`"${figure.text}" rounds "${rounded.text}": "${sentence}"`];
+				}),
+				...writtenTwoWays(stated),
+			]),
 			G4: { outcome: "pass" },
 		};
 	},

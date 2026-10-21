@@ -171,12 +171,51 @@ describe("figuresCheck", () => {
 			});
 		});
 
-		it("checks the highlights as well as the prose", () => {
+		it("checks the highlights as well as the prose (A1)", () => {
 			const verdicts = figuresCheck.run(
 				draftOf("The council met.", ["Council approves $9,999 purchase."]),
 				contextOf([documents("Purchase approved.")]),
 			);
 			expect(verdicts.A1?.outcome).toBe("fail");
+		});
+	});
+	describe("G1, figures as the record writes them", () => {
+		it("If a prose figure rounds a figure the record writes, then it fails G1 and names the record's figure", () => {
+			const verdicts = figuresCheck.run(
+				draftOf("The council paid $139,775 for the truck."),
+				contextOf([documents("Purchase of a truck for $139,775.03.")]),
+			);
+			expect(verdicts.G1).toEqual({
+				outcome: "fail",
+				evidence:
+					'"$139,775" rounds "$139,775.03": "The council paid $139,775 for the truck."',
+			});
+		});
+
+		it("fails G1 on a figure rounded to millions", () => {
+			const verdicts = figuresCheck.run(
+				draftOf("The budget is $2.2 million."),
+				contextOf([documents("Total budget $2,213,400.")]),
+			);
+			expect(verdicts.G1?.outcome).toBe("fail");
+		});
+
+		it("passes G1 on a figure that drops only a trailing .00", () => {
+			const verdicts = figuresCheck.run(
+				draftOf("The council paid $29,425 for the truck."),
+				contextOf([documents("Purchase of a truck for $29,425.00.")]),
+			);
+			expect(verdicts.G1).toEqual({ outcome: "pass" });
+		});
+
+		it("If the prose writes one sum both as millions and in full, then it fails G1", () => {
+			const verdicts = figuresCheck.run(
+				draftOf(
+					"The bond is $2.2 million. The council approved the $2,200,000 bond.",
+				),
+				contextOf([documents("Bond of $2,200,000.")]),
+			);
+			expect(verdicts.G1?.outcome).toBe("fail");
 		});
 	});
 });
