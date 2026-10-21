@@ -134,6 +134,11 @@ describe("figuresCheck", () => {
 				"Bid from Smith Septic for $57830,000 was accepted.",
 			],
 			[
+				"a figure that is only the tail of a garbled token",
+				"E & B Paving won the bid for $215.10.",
+				"two bids from E & B Paving for fpaa-215.10 and Milestone Paving for $277,571.80.",
+			],
+			[
 				"a figure found only after letters",
 				"The grant is $460.",
 				"Grant 1 million JD460 awarded.",
