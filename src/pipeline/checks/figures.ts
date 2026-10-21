@@ -16,12 +16,13 @@ const COUNT_PAIR =
  * vote"). A pair without one is a range ("5-6 buildings", "January 19-25").
  */
 const TALLY =
-	/\bunanimous(?:ly)?\b|(?<=\b(?:vot(?:e|ed|es|ing)|pass(?:ed|es)?|carri(?:ed|es)|fail(?:ed|s)?|approv(?:ed|es)|adopt(?:ed|s)|defeat(?:ed|s)?|by)\s+(?:\w+\s+){0,2})(?<yes>\d{1,2})\s?[–-]\s?(?<no>\d{1,2})(?![\d–-]|,\d)|(?<![\d–-])(?<yesBefore>\d{1,2})\s?[–-]\s?(?<noBefore>\d{1,2})(?=\s+vote)/gi;
+	/\bunanimous(?:ly)?\b|(?<=\b(?:vot(?:e|ed|es|ing)|pass(?:ed|es)?|carri(?:ed|es)|fail(?:ed|s)?|approv(?:ed|es)|adopt(?:ed|s)|defeat(?:ed|s)?|by)\s+(?:(?!(?:for|from|between|about|than|at)\b)\w+\s+){0,2})(?<yes>\d{1,2})\s?[–-]\s?(?<no>\d{1,2})(?![\d–-]|,\d)|(?<![\d–-])(?<yesBefore>\d{1,2})\s?[–-]\s?(?<noBefore>\d{1,2})(?=\s+vote)/gi;
 
 /**
  * Numbers that are neither figures nor tallies: phone numbers, ordinance and
  * resolution numbers, tax-code sections ("501(c)(3)"), street addresses,
- * clock times, numeric dates and bare years.
+ * clock times, dates and bare years. A day after a month name ("March 23",
+ * "January 19-25") is a date whether or not the record writes it that way.
  */
 const NOT_COUNTS: readonly RegExp[] = [
 	/\b\d+\([a-z]\)(?:\(\d+\))?/gi,
@@ -30,6 +31,7 @@ const NOT_COUNTS: readonly RegExp[] = [
 	/\b\d+\s+(?:[A-Z][a-z]+\s+){1,3}(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Boulevard|Blvd|Way|Court|Ct|Pike|Highway|Hwy|Place|Pl)\b/g,
 	/\b\d{1,2}:\d{2}\b/g,
 	/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
+	/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:\s?[–-]\s?\d{1,2})?(?:st|nd|rd|th)?\b(?!,\d|\.\d|\s?(?:million|thousand|billion|percent|%))/g,
 	/(?<![\d$,.])(?:19|20)\d{2}(?![\d,%]|\.\d|\s?(?:million|thousand|billion|percent))/g,
 ];
 

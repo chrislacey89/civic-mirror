@@ -12,7 +12,10 @@ const SCALE_CENTS: Readonly<Record<string, bigint>> = {
  * more digits ends where the cents or the group would stop. A dollar sign
  * directly before the number, with at most one space between, is noted. A
  * scale word after the number multiplies it ("$1.2 million"), and a single
- * decimal digit is read only before a scale word or a percent.
+ * decimal digit is read only before a scale word or a percent. Before a scale
+ * word, exactly three digits after a period are decimals too ("$1.375
+ * million"), since a million written with a period for a comma is not
+ * written.
  */
 const FIGURE_PATTERN =
 	/(?<dollarSign>\$ ?)?(?<dollars>\d+(?:[.,]\d{3})*)(?:[.,](?<cents>\d{2})|(?<=,\d{3})(?<runOn>\d{2})|\.(?<tenths>\d)(?=\s?(?:million|thousand|billion|percent|%)))?(?!\d)(?:\s?(?<scale>million|thousand|billion)\b)?/g;
@@ -51,10 +54,16 @@ export function figuresIn(text: string): WrittenFigure[] {
 		const fraction =
 			writtenCents ??
 			(groups.tenths === undefined ? "00" : `${groups.tenths}0`);
+		const thousandths =
+			groups.scale !== undefined && /^\d+\.\d{3}$/.test(groups.dollars ?? "");
 		const units =
 			BigInt((groups.dollars ?? "").replace(/\D/g, "") || "0") * 100n +
 			BigInt(fraction);
-		const value = groups.scale === undefined ? units : (units * scale) / 100n;
+		const value = thousandths
+			? (units * scale) / 1000n / 100n
+			: groups.scale === undefined
+				? units
+				: (units * scale) / 100n;
 		const step =
 			writtenCents !== undefined
 				? 1n
@@ -65,7 +74,11 @@ export function figuresIn(text: string): WrittenFigure[] {
 			dollars: (value / 100n).toString(),
 			cents: (value % 100n).toString().padStart(2, "0"),
 			value,
-			precision: groups.scale === undefined ? step : (step * scale) / 100n,
+			precision: thousandths
+				? scale / 1000n
+				: groups.scale === undefined
+					? step
+					: (step * scale) / 100n,
 			hasDollarSign: groups.dollarSign !== undefined,
 			hasScale: groups.scale !== undefined,
 			text: match[0],

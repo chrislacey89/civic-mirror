@@ -259,6 +259,51 @@ describe("figuresCheck", () => {
 			expect(verdicts.A1?.outcome).toBe("fail");
 		});
 	});
+	describe("A1, prose the gate must not hold", () => {
+		const a1 = (prose: string, ...sources: LabelledSource[]) =>
+			figuresCheck.run(draftOf(prose), contextOf(sources)).A1;
+
+		it("reads three decimals before a scale word as a decimal", () => {
+			expect(
+				a1("The bond is $1.375 million.", documents("The bond is $1,375,000.")),
+			).toEqual({ outcome: "pass" });
+			expect(
+				a1("The bond is $1.375 million.", documents("The bond is $1,376,000.")),
+			).toMatchObject({ outcome: "fail" });
+		});
+
+		it("does not read a range as a tally because a word like approved is near it", () => {
+			expect(
+				a1(
+					"The council approved plans for 5-6 buildings.",
+					documents("Plans for buildings."),
+				),
+			).toEqual({ outcome: "pass" });
+		});
+
+		it("does not look for a date in words in the record", () => {
+			expect(
+				a1(
+					"The hearing is set for March 23.",
+					documents("Hearing on 3/23/2026."),
+				),
+			).toEqual({ outcome: "pass" });
+			expect(
+				a1("On May 27 the board met.", transcript("The board met today.")),
+			).toEqual({ outcome: "pass" });
+			expect(
+				a1("Comments are due January 19-25.", transcript("Comments are due.")),
+			).toEqual({ outcome: "pass" });
+		});
+
+		// The roll call is chosen by two shared naming words, so a paragraph on a
+		// second motion that mentions the first one's topic is counted against
+		// it. Closing this needs a stricter match that the whole-paragraph
+		// matching of tallyFinding would pay for with unchecked verdicts.
+		it.todo(
+			"does not check a paragraph on one motion against another motion's roll call that shares two words",
+		);
+	});
 	describe("G1, figures as the record writes them", () => {
 		it("If a prose figure rounds a figure the record writes, then it fails G1 and names the record's figure", () => {
 			const verdicts = figuresCheck.run(
