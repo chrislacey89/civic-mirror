@@ -18,6 +18,20 @@ const COUNT_PAIR =
 const TALLY =
 	/\bunanimous(?:ly)?\b|(?<=\b(?:vot(?:e|ed|es|ing)|pass(?:ed|es)?|carri(?:ed|es)|fail(?:ed|s)?|approv(?:ed|es)|adopt(?:ed|s)|defeat(?:ed|s)?|by)\s+(?:(?!(?:for|from|between|about|than|at)\b)\w+\s+){0,2})(?<yes>\d{1,2})\s?[–-]\s?(?<no>\d{1,2})(?![\d–-]|,\d)|(?<![\d–-])(?<yesBefore>\d{1,2})\s?[–-]\s?(?<noBefore>\d{1,2})(?=\s+vote)/gi;
 
+const DAY = String.raw`(?:[12]\d|3[01]|0?[1-9])`;
+
+/**
+ * A day after a month name: "March 23", "January 19-25". It is a date only
+ * where the day is 1-31, is not followed by a plural noun ("In May 25
+ * employees were laid off" counts people), and a range runs forward ("May 3-2"
+ * is a tally; see blanked). A word the day can precede ("May 27 the board
+ * met", "May 27 was") is not a plural noun. Anything else is left to be read.
+ */
+const MONTH_DAY = new RegExp(
+	String.raw`\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+(?<from>${DAY})(?:\s?[–-]\s?(?<to>${DAY}))?(?:st|nd|rd|th)?\b(?!,\d|\.\d|\s?(?:million|thousand|billion|percent|%)|\s+(?!(?:was|is|has|as|this|his|us|plus)\b)[a-z]+s\b)`,
+	"g",
+);
+
 /**
  * Numbers that are neither figures nor tallies: phone numbers, ordinance and
  * resolution numbers, tax-code sections ("501(c)(3)"), street addresses,
@@ -31,7 +45,7 @@ const NOT_COUNTS: readonly RegExp[] = [
 	/\b\d+\s+(?:[A-Z][a-z]+\s+){1,3}(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Boulevard|Blvd|Way|Court|Ct|Pike|Highway|Hwy|Place|Pl)\b/g,
 	/\b\d{1,2}:\d{2}\b/g,
 	/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
-	/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+\d{1,2}(?:\s?[–-]\s?\d{1,2})?(?:st|nd|rd|th)?\b(?!,\d|\.\d|\s?(?:million|thousand|billion|percent|%))/g,
+	MONTH_DAY,
 	/(?<![\d$,.])(?:19|20)\d{2}(?![\d,%]|\.\d|\s?(?:million|thousand|billion|percent))/g,
 ];
 
@@ -41,7 +55,15 @@ const NOT_FIGURES: readonly RegExp[] = [...NOT_COUNTS, COUNT_PAIR];
 function blanked(text: string, patterns: readonly RegExp[]): string {
 	return patterns.reduce(
 		(current, pattern) =>
-			current.replace(pattern, (match) => " ".repeat(match.length)),
+			current.replace(pattern, (match, ...rest) => {
+				const groups = rest.at(-1);
+				// A month-day range that runs backward ("May 3-2") is a tally.
+				const backward =
+					pattern === MONTH_DAY &&
+					groups?.to !== undefined &&
+					Number(groups.to) <= Number(groups.from);
+				return backward ? match : " ".repeat(match.length);
+			}),
 		text,
 	);
 }

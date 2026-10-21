@@ -301,6 +301,29 @@ describe("figuresCheck", () => {
 			).toEqual({ outcome: "pass" });
 		});
 
+		it.each([
+			["a day past 31", "Later in May 40 came to the hearing."],
+			["a day past 31 and a plural noun", "Later in May 40 residents spoke."],
+			[
+				"a day followed by a plural noun",
+				"In March 25 employees were laid off.",
+			],
+		])("does not read %s after a month as a date", (_label, prose) => {
+			expect(
+				a1(prose, documents("The board met and residents spoke."))?.outcome,
+			).toBe("fail");
+		});
+
+		it("does not read a backward pair after a month as a date range", () => {
+			const verdict = figuresCheck.run(
+				draftOf(
+					"The motion to explore reorganization with Richland Township was voted on May 3-2.",
+				),
+				contextOf([documents(MINUTES)]),
+			).A1;
+			expect(verdict?.outcome).toBe("fail");
+		});
+
 		// The roll call is chosen by two shared naming words, so a paragraph on a
 		// second motion that mentions the first one's topic is counted against
 		// it. Closing this needs a stricter match that the whole-paragraph
