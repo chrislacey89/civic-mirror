@@ -371,6 +371,53 @@ describe("figuresCheck", () => {
 			expect(verdicts.A1).toEqual({ outcome: "pass" });
 		});
 
+		it.each([
+			[
+				"a range of counts",
+				"The district plans 5-6 buildings with 10-20 employees per building.",
+			],
+			["a date range", "The road closes January 19-25, 2026 for paving."],
+			["an ordinance number", "The council approved Ordinance 26-10."],
+		])("does not read %s as a vote count", (_label, prose) => {
+			const verdicts = figuresCheck.run(
+				draftOf(prose),
+				contextOf([documents(MINUTES)]),
+			);
+			expect(verdicts.A1).toEqual({ outcome: "pass" });
+		});
+
+		it("does not match a roll call on the members' names that most roll calls share", () => {
+			const roll = (motion: string, votes: string) =>
+				`${motion} Roll call vote: ${votes} Motion carries.`;
+			const unanimous =
+				"Scott Oldham — yes; Dan Swafford — yes; William Ellis — yes.";
+			const minutes = [
+				roll(
+					"Council President Scott Oldham made a motion to pay the claims. Dan Swafford seconded.",
+					unanimous,
+				),
+				roll(
+					"Council President Scott Oldham called for a motion to approve the minutes. William Ellis seconded.",
+					unanimous,
+				),
+				roll(
+					"Dan Swafford made a motion to adopt Resolution 23-2025, opening a new checking account. William Ellis seconded.",
+					"Scott Oldham — no; Dan Swafford — yes; William Ellis — yes.",
+				),
+				roll(
+					"Council President Scott Oldham called for a motion to adjourn. William Ellis seconded.",
+					unanimous,
+				),
+			].join("\n\n");
+			const verdicts = figuresCheck.run(
+				draftOf(
+					"The council took up Resolution 23-2025 for the account. Council President Scott Oldham voted no, but the motion passed 2-1.",
+				),
+				contextOf([documents(minutes)]),
+			);
+			expect(verdicts.A1).toEqual({ outcome: "pass" });
+		});
+
 		it("fails rather than leaves unchecked when a figure fails and a tally cannot be counted", () => {
 			const verdicts = figuresCheck.run(
 				draftOf("The council voted 4-1 to buy a $31,000 truck."),
