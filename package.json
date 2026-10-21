@@ -9,7 +9,7 @@
   "scripts": {
     "preinstall": "npx only-allow pnpm",
     "dev": "vite dev --port 3000",
-    "build": "vite build",
+    "build": "tsx src/db/check-migrations.ts && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "format": "biome format",
