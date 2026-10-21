@@ -55,6 +55,35 @@ describe("rollCallTally", () => {
 		).toEqual({ yes: 5, no: 0 });
 	});
 
+	it('reads a roll call headed "Roll call for the original motion"', () => {
+		const minutes = `William Ellis made a motion to explore reorganization with the
+Township of Richland. Dan Swafford made an amendment that all meetings be
+public. Roll call vote for the amendment: Scott Oldham — yes; Dan Swafford —
+yes; William Ellis — yes. Motion carries. Roll call for the original motion:
+Scott Oldham — no; Dan Swafford — yes; William Ellis — yes. Motion carries.`;
+		expect(
+			figuresCheck.run(
+				draftOf(
+					"The council voted 2-1 to explore reorganization with Richland Township.",
+				),
+				contextOf([documents(minutes)]),
+			).A1,
+		).toEqual({ outcome: "pass" });
+	});
+
+	it("does not let the attendance roll hide the motion of the roll call after it", () => {
+		const minutes = `Roll Call: Members present were Scott Oldham — President, William
+Ellis and Trevor Sager. Award Bid for Septic Receiving Station: the bid went to
+the lowest bidder at $57,830.00. Roll call vote: Scott Oldham — yes; William
+Ellis — yes; Trevor Sager — yes. Motion carries.`;
+		expect(
+			rollCallTally(
+				minutes,
+				"The council awarded the septic receiving station bid.",
+			),
+		).toEqual({ yes: 3, no: 0 });
+	});
+
 	it("is null when no roll call is on the motion", () => {
 		expect(
 			rollCallTally(
@@ -190,6 +219,11 @@ describe("figuresCheck", () => {
 				"a year after a month",
 				"The referendum is set for November 2026.",
 				[documents("A referendum next fall.")],
+			],
+			[
+				"a tax-code section",
+				"As a 501(c)(3) non-profit, it pays no property tax.",
+				[documents("a non-profit")],
 			],
 			[
 				"a clock time",

@@ -6,24 +6,35 @@ import {
 import { sourceTextOfKind } from "#/pipeline/sources.ts";
 import type { CheckContext, CodeCheck, Verdict, WriteUp } from "./types.ts";
 
-/** A stated vote count: "4-1", "5–0", or "unanimously". */
-const TALLY =
-	/(?<![\d–-])(?<yes>\d{1,2})\s?[–-]\s?(?<no>\d{1,2})(?![\d–-]|,\d)|\bunanimous(?:ly)?\b/gi;
+/** A pair of counts: "4-1", "5–0". */
+const COUNT_PAIR =
+	/(?<![\d–-])(?<yes>\d{1,2})\s?[–-]\s?(?<no>\d{1,2})(?![\d–-]|,\d)/g;
 
 /**
- * Numbers that are not figures: phone numbers, ordinance and resolution
- * numbers, street addresses, clock times, numeric dates and bare years.
- * Each is blanked before figures are read.
+ * A stated vote count: "unanimously", or a pair of counts with a vote word
+ * just before it ("voted 4-1", "passed 2-1") or "vote" just after ("a 3-2
+ * vote"). A pair without one is a range ("5-6 buildings", "January 19-25").
  */
-const NOT_FIGURES: readonly RegExp[] = [
+const TALLY =
+	/\bunanimous(?:ly)?\b|(?<=\b(?:vot(?:e|ed|es|ing)|pass(?:ed|es)?|carri(?:ed|es)|fail(?:ed|s)?|approv(?:ed|es)|adopt(?:ed|s)|defeat(?:ed|s)?|by)\s+(?:\w+\s+){0,2})(?<yes>\d{1,2})\s?[–-]\s?(?<no>\d{1,2})(?![\d–-]|,\d)|(?<![\d–-])(?<yesBefore>\d{1,2})\s?[–-]\s?(?<noBefore>\d{1,2})(?=\s+vote)/gi;
+
+/**
+ * Numbers that are neither figures nor tallies: phone numbers, ordinance and
+ * resolution numbers, tax-code sections ("501(c)(3)"), street addresses,
+ * clock times, numeric dates and bare years.
+ */
+const NOT_COUNTS: readonly RegExp[] = [
+	/\b\d+\([a-z]\)(?:\(\d+\))?/gi,
 	/\(?\b\d{3}\)?[\s.-]\d{3}[.-]\d{4}\b/g,
 	/\b(?:ordinances?|resolutions?|ord\.|res\.)\s*(?:no\.?\s*)?#?\s*\d[\d-]*/gi,
 	/\b\d+\s+(?:[A-Z][a-z]+\s+){1,3}(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Lane|Ln|Boulevard|Blvd|Way|Court|Ct|Pike|Highway|Hwy|Place|Pl)\b/g,
 	/\b\d{1,2}:\d{2}\b/g,
 	/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g,
 	/(?<![\d$,.])(?:19|20)\d{2}(?![\d,%]|\.\d|\s?(?:million|thousand|billion|percent))/g,
-	TALLY,
 ];
+
+/** What is blanked before figures are read: the above, and pairs of counts. */
+const NOT_FIGURES: readonly RegExp[] = [...NOT_COUNTS, COUNT_PAIR];
 
 function blanked(text: string, patterns: readonly RegExp[]): string {
 	return patterns.reduce(
@@ -94,13 +105,17 @@ type StatedTally = {
 
 function statedTallies(draft: WriteUp): StatedTally[] {
 	return sentencesOfDraft(draft).flatMap(({ sentence, passage }) =>
-		[...sentence.matchAll(TALLY)].map((match) => ({
-			text: match[0],
-			yes: match.groups?.yes === undefined ? null : Number(match.groups.yes),
-			no: match.groups?.no === undefined ? 0 : Number(match.groups.no),
-			sentence,
-			passage,
-		})),
+		[...blanked(sentence, NOT_COUNTS).matchAll(TALLY)].map((match) => {
+			const yes = match.groups?.yes ?? match.groups?.yesBefore;
+			const no = match.groups?.no ?? match.groups?.noBefore;
+			return {
+				text: match[0],
+				yes: yes === undefined ? null : Number(yes),
+				no: no === undefined ? 0 : Number(no),
+				sentence,
+				passage,
+			};
+		}),
 	);
 }
 
@@ -114,27 +129,35 @@ function statesTally(text: string, tally: StatedTally): boolean {
 
 /**
  * A failure line, or why the tally could not be checked, or null when it
- * agrees with the record. The roll call on the tally's motion is found by
- * its sentence, then by its paragraph. Without one, a tally a source states
- * passes, and any other cannot be checked.
+ * agrees with the record. The roll calls on the tally's motion are found by
+ * its paragraph, since a short sentence ("The council voted 5-0.") names no
+ * motion; the tally agrees if any of them counts to it. Without one, a tally
+ * a source states passes, and any other cannot be checked.
  */
 function tallyFinding(
 	tally: StatedTally,
 	ctx: CheckContext,
 ): { fail: string } | { unchecked: string } | null {
 	const minutes = sourceTextOfKind(ctx.input.sources, "documents");
-	const counted =
-		rollCallTally(minutes, tally.sentence) ??
-		rollCallTally(minutes, tally.passage);
-	if (counted !== null) {
-		const agrees =
-			counted.no === tally.no &&
-			(tally.yes === null || counted.yes === tally.yes);
-		return agrees
-			? null
-			: {
-					fail: `"${tally.text}" disagrees with the roll call, ${counted.yes} yes and ${counted.no} no: "${tally.sentence}"`,
-				};
+	const counted = rollCallsOn(minutes, tally.passage);
+	if (counted.length > 0) {
+		if (
+			counted.some(
+				(rollCall) =>
+					rollCall.no === tally.no &&
+					(tally.yes === null || rollCall.yes === tally.yes),
+			)
+		) {
+			return null;
+		}
+		const counts = [
+			...new Set(
+				counted.map((rollCall) => `${rollCall.yes} yes and ${rollCall.no} no`),
+			),
+		].join(", or ");
+		return {
+			fail: `"${tally.text}" disagrees with the roll call, ${counts}: "${tally.sentence}"`,
+		};
 	}
 	if (ctx.input.sources.some((source) => statesTally(source.text, tally))) {
 		return null;
@@ -244,10 +267,16 @@ const MOTION_CONTEXT_LENGTH = 600;
 /** How far after "Roll call vote" its votes are counted, at most. */
 const ROLL_CALL_LENGTH = 600;
 
-const ROLL_CALL_START = /roll\s+call\s+vote/gi;
+/**
+ * The head of a roll call: "Roll call vote:", "Roll call for the original
+ * motion:". The attendance roll ("Roll Call: Members present") matches too
+ * and counts no votes.
+ */
+const ROLL_CALL_START =
+	/roll\s+call(?:\s+vote)?(?:\s+(?:for|on)\b[^:;.]{0,60})?\s*:/gi;
 
 const ROLL_CALL_END =
-	/motion\s+(?:carries|carried|passes|passed|fails|failed|dies|died)|roll\s+call\s+vote/i;
+	/motion\s+(?:carries|carried|passes|passed|fails|failed|dies|died)|roll\s+call/i;
 
 /** Words in most motions and votes, which name no motion in particular. */
 const VOTE_WORDS: ReadonlySet<string> = new Set([
@@ -304,54 +333,59 @@ type RollCall = {
 	no: number;
 	/** The text before the roll call, where its motion is stated. */
 	motion: string;
+	/** The text since the previous roll call, before any shared motion. */
+	own: string;
 };
 
 /**
- * Each "Roll call vote" in the minutes, counted up to "Motion carries" (or
- * the next roll call): "Name — yes" and "Name — aye" are yes votes, "Name —
- * no" and "Name — nay" no votes; an abstention is neither.
+ * Each roll call in the minutes that records a vote, counted up to "Motion
+ * carries" (or the next roll call): "Name — yes" and "Name — aye" are yes
+ * votes, "Name — no" and "Name — nay" no votes; an abstention is neither.
+ * Its motion is the text since the previous roll call ended. A roll call
+ * that follows another with almost nothing between, as the vote on a motion
+ * follows the vote on its amendment, shares the previous one's motion.
  */
 function rollCallsIn(documentsText: string): RollCall[] {
+	const rollCalls: RollCall[] = [];
 	let previousEnd = 0;
-	return [...documentsText.matchAll(ROLL_CALL_START)].map((match) => {
-		const start = match.index;
-		const rest = documentsText.slice(
-			start + match[0].length,
-			start + match[0].length + ROLL_CALL_LENGTH,
-		);
+	for (const match of documentsText.matchAll(ROLL_CALL_START)) {
+		const after = match.index + match[0].length;
+		const rest = documentsText.slice(after, after + ROLL_CALL_LENGTH);
 		const end = rest.search(ROLL_CALL_END);
 		const votes = end === -1 ? rest : rest.slice(0, end);
-		const motion = documentsText.slice(
-			Math.max(previousEnd, start - MOTION_CONTEXT_LENGTH),
-			start,
+		const between = documentsText.slice(
+			Math.max(previousEnd, match.index - MOTION_CONTEXT_LENGTH),
+			match.index,
 		);
-		previousEnd = start + match[0].length + (end === -1 ? 0 : end);
-		return {
-			yes: (votes.match(/[—–-]\s*(?:yes|aye)\b/gi) ?? []).length,
-			no: (votes.match(/[—–-]\s*(?:no|nay)\b/gi) ?? []).length,
-			motion,
-		};
-	});
+		const yes = (votes.match(/[—–-]\s*(?:yes|aye)\b/gi) ?? []).length;
+		const no = (votes.match(/[—–-]\s*(?:no|nay)\b/gi) ?? []).length;
+		if (yes + no === 0) continue;
+		previousEnd = after + votes.length;
+		const previous = rollCalls.at(-1);
+		const motion =
+			namingWords(between).size < 2 && previous !== undefined
+				? `${previous.motion} ${between}`
+				: between;
+		rollCalls.push({ yes, no, motion, own: between });
+	}
+	return rollCalls;
 }
 
 /**
- * The yes and no count of the roll call on `motion`: the roll call whose
- * preceding text shares the most naming words with it, at least two. Words
- * before most of the roll calls (members' names, "seconded") name none of
- * them and are not counted. Null when no roll call shares two words, or when
- * roll calls with different counts share the most.
+ * The roll calls on `motion`: those whose preceding text shares the most
+ * naming words with it, at least two. Where there are three or more roll
+ * calls, words in the text of most of them (members' names, "seconded") name
+ * none of them and are not counted; a shared motion is counted once.
  */
-export function rollCallTally(
-	documentsText: string,
-	motion: string,
-): { yes: number; no: number } | null {
+function rollCallsOn(documentsText: string, motion: string): RollCall[] {
 	const rollCalls = rollCallsIn(documentsText);
 	const motionWords = rollCalls.map((rollCall) => namingWords(rollCall.motion));
+	const ownWords = rollCalls.map((rollCall) => namingWords(rollCall.own));
 	const common = new Set(
-		[...new Set(motionWords.flatMap((words) => [...words]))].filter(
+		[...new Set(ownWords.flatMap((words) => [...words]))].filter(
 			(word) =>
-				rollCalls.length > 1 &&
-				motionWords.filter((words) => words.has(word)).length >
+				rollCalls.length > 2 &&
+				ownWords.filter((words) => words.has(word)).length >
 					rollCalls.length / 2,
 		),
 	);
@@ -361,15 +395,26 @@ export function rollCallTally(
 			[...words].filter((word) => wanted.has(word) && !common.has(word)).length,
 	);
 	const best = Math.max(0, ...scores);
-	if (best < 2) return null;
-	const tallies = new Set(
-		rollCalls
-			.filter((_, index) => scores[index] === best)
-			.map((rollCall) => `${rollCall.yes}-${rollCall.no}`),
+	if (best < 2) return [];
+	return rollCalls.filter((_, index) => scores[index] === best);
+}
+
+/**
+ * The yes and no count of the roll call on `motion`, found as
+ * {@link rollCallsOn} finds it. Null when there is none, or when the roll
+ * calls that match best count differently.
+ */
+export function rollCallTally(
+	documentsText: string,
+	motion: string,
+): { yes: number; no: number } | null {
+	const counts = new Map(
+		rollCallsOn(documentsText, motion).map(({ yes, no }) => [
+			`${yes}-${no}`,
+			{ yes, no },
+		]),
 	);
-	if (tallies.size !== 1) return null;
-	const chosen = rollCalls[scores.indexOf(best)];
-	return { yes: chosen.yes, no: chosen.no };
+	return counts.size === 1 ? [...counts.values()][0] : null;
 }
 
 /** Wording that says a sum is not in the record. */
