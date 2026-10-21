@@ -23,7 +23,6 @@ The first audit over the 36 stored summaries held seven meetings on votes that a
 | a dash pair is a tally only beside a vote word | "5-6 buildings" | widening the window to nine words left every test green |
 | stop words (`for`, `at`, `from` …) end the vote-word window | "approved plans for 5-6 buildings" | "voted at 3-2" against a 4-1 roll call passed |
 | "Month N" is a date | "March 23" against a record writing "3/23/2026" | "In May 40 residents spoke" passed with no 40 in the record |
-| "Month N" is a date unless a plural follows | "In March 25 employees were laid off" | "In March 25 staff were cut", "In April 2 people resigned" |
 
 All four were found by mutating the rule and seeing the suite stay green, or by probing the check with a sentence the fixture did not cover. None were found by the tests the fixing commit added.
 
