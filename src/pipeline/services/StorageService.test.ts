@@ -9,7 +9,7 @@ import { Effect } from "effect";
 import { afterAll, describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import type { ScoredDramaCategory } from "#/lib/drama-levels.ts";
-import { prePublish, toPublication } from "#/pipeline/checks/prePublish.ts";
+import { checkDraft, toPublication } from "#/pipeline/checks/prePublish.ts";
 import { PUBLISHED, publicationOf } from "#/pipeline/checks/test-outcomes.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import { computeSourceFingerprint } from "#/pipeline/sources.ts";
@@ -2118,7 +2118,7 @@ describe("StorageService", () => {
 
 		function held(runId: string) {
 			return toPublication(
-				prePublish({
+				checkDraft({
 					draft: truncatedDraft,
 					context: {
 						input: { sources: [], meetingContext: "" },

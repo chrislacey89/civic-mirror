@@ -1,6 +1,6 @@
 import type { SummarizationResult } from "#/pipeline/services/SummarizationService.ts";
 import type { LabelledSource } from "#/pipeline/sources.ts";
-import { prePublish, toPublication } from "./prePublish.ts";
+import { checkDraft, toPublication } from "./prePublish.ts";
 import type { SummaryPublication, WriteUp } from "./types.ts";
 
 /**
@@ -12,7 +12,7 @@ export function summarized(
 ): SummarizationResult {
 	return {
 		...result,
-		prePublish: prePublish({
+		prePublish: checkDraft({
 			draft: {
 				highlights: result.highlights,
 				prose: result.prose,
@@ -37,7 +37,7 @@ export function publicationOf(
 	sources: LabelledSource[] = [],
 ): SummaryPublication {
 	return toPublication(
-		prePublish({
+		checkDraft({
 			draft: { ...text, finishReason: "stop", usage: null },
 			context: { input: { sources, meetingContext: "" }, ledger: [] },
 		}),
