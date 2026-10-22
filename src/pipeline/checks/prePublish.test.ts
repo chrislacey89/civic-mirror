@@ -14,7 +14,7 @@ const context: CheckContext = {
 
 function drafted(prose: string): WrittenDraft {
 	return {
-		highlights: ["Council approves $139,775 paving bid"],
+		highlights: ["Council approves paving bid"],
 		prose,
 		finishReason: "stop",
 		usage: { inputTokens: 1200, outputTokens: 300, reasoningTokens: 40 },
@@ -37,6 +37,20 @@ const undecidedA1: CodeCheck = {
 };
 
 describe("prePublish", () => {
+	it("records how many figures the draft states that a source writes", () => {
+		const outcome = prePublish({
+			draft: drafted("The council approved the $139,775.03 paving bid."),
+			context: {
+				...context,
+				input: {
+					...context.input,
+					sources: [{ kind: "documents", text: "Paving bid $139,775.03." }],
+				},
+			},
+		});
+		expect(outcome.rounds[0]?.groundedFigures).toBe(1);
+	});
+
 	it("publishes a draft that passes every check", () => {
 		const outcome = prePublish({ draft: complete, context });
 		expect(outcome.kind).toBe("publish");

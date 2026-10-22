@@ -1,3 +1,4 @@
+import { groundedFigureCount } from "./figures.ts";
 import { CODE_CHECKS, runCodeChecks } from "./index.ts";
 import {
 	type CheckContext,
@@ -38,7 +39,7 @@ export function prePublish(args: {
 	const { draft } = args;
 	const code = runCodeChecks(draft, args.context, args.checks ?? CODE_CHECKS);
 	const gateFails = failedGates(code);
-	// Grounded figures and the style score come from checks not yet built.
+	// The style score comes from checks not yet built.
 	const round: Round = {
 		round: 1,
 		draft,
@@ -46,7 +47,7 @@ export function prePublish(args: {
 		judge: "skipped",
 		gateFailures: gateFails.length,
 		styleScore: 0,
-		groundedFigures: 0,
+		groundedFigures: groundedFigureCount(draft, args.context),
 	};
 	const rounds = [round];
 

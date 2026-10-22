@@ -2,16 +2,14 @@ import { google } from "@ai-sdk/google";
 import { generateText, type LanguageModelUsage, Output } from "ai";
 import { z } from "zod";
 import type { WrittenDraft } from "#/pipeline/checks/types.ts";
+import { sourceTextOfKind } from "#/pipeline/sources.ts";
 import type {
 	SummarizationGenerateFn,
 	SummarizationInput,
 	SummarizationOutput,
 	SummarizationWriteFn,
 } from "./SummarizationService.ts";
-import {
-	sourceTextOfKind,
-	summarizationOutputSchema,
-} from "./SummarizationService.ts";
+import { summarizationOutputSchema } from "./SummarizationService.ts";
 
 /**
  * Effect teaching note: This file is the boundary between the Effect world
