@@ -1,7 +1,7 @@
 import { google } from "@ai-sdk/google";
 import { generateText, type LanguageModelUsage, Output } from "ai";
 import { z } from "zod";
-import type { WrittenDraft } from "#/pipeline/checks/types.ts";
+import type { Feedback, WrittenDraft } from "#/pipeline/checks/types.ts";
 import { sourceTextOfKind } from "#/pipeline/sources.ts";
 import type {
 	SummarizationGenerateFn,
@@ -147,11 +147,14 @@ Produce a structured summary of this meeting.
 
 /**
  * The sources again, then the service's final ledger, so the prose carries
- * the figures and statuses the receipts table will show.
+ * the figures and statuses the receipts table will show. With feedback, a
+ * FEEDBACK block names the checks the last draft failed; it quotes that
+ * draft and never says what to write instead.
  */
 function buildWritingPrompt(
 	input: SummarizationInput,
 	ledger: SummarizationOutput["fiscalDecisions"],
+	feedback: readonly Feedback[] = [],
 ): string {
 	const blocks = (["documents", "transcript"] as const)
 		.filter((kind) => input.sources.some((source) => source.kind === kind))
@@ -172,6 +175,15 @@ function buildWritingPrompt(
 	if (glossary.length > 0) {
 		blocks.push(
 			`GLOSSARY:\n---\n${glossary.map((line) => `- ${line}`).join("\n")}\n---`,
+		);
+	}
+
+	if (feedback.length > 0) {
+		const items = feedback.map(
+			({ checkId, quote, finding }) => `- ${checkId}: "${quote}" — ${finding}`,
+		);
+		blocks.push(
+			`FEEDBACK:\n---\nThe last draft failed these checks of the writing rules. Write the highlights and prose again so that each passes.\n${items.join("\n")}\nA figure in the ledger that the documents or transcript do not contain exactly is left out of the prose.\n---`,
 		);
 	}
 
@@ -249,12 +261,12 @@ function draftOfWritingCall(call: WritingCallResult): WrittenDraft {
 function createGeminiWriter(
 	config: GeminiSummarizerConfig,
 ): SummarizationWriteFn {
-	return async (input, ledger) => {
+	return async (input, ledger, feedback) => {
 		const writingCall = await generateText({
 			model: google(config.modelId),
 			system: WRITING_INSTRUCTIONS,
 			temperature: 0,
-			prompt: buildWritingPrompt(input, ledger),
+			prompt: buildWritingPrompt(input, ledger, feedback),
 			experimental_output: Output.object({ schema: writingOutputSchema }),
 		});
 		return draftOfWritingCall(writingCall);

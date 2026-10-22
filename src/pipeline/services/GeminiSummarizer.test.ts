@@ -246,6 +246,32 @@ describe("buildWritingPrompt", () => {
 			"GLOSSARY:",
 		);
 	});
+
+	it("appends a FEEDBACK block quoting each failed check, with the rule on unsourced ledger figures, only when feedback is given", () => {
+		const prompt = buildWritingPrompt(
+			input,
+			[],
+			[
+				{
+					checkId: "A1",
+					quote: "It accepted a $140,000 paving bid.",
+					finding: '"$140,000" is in no document or transcript',
+				},
+			],
+		);
+		const feedback = prompt.slice(prompt.indexOf("FEEDBACK:"));
+		expect(feedback).toContain(
+			'- A1: "It accepted a $140,000 paving bid." — "$140,000" is in no document or transcript',
+		);
+		expect(feedback).toContain(
+			"A figure in the ledger that the documents or transcript do not contain exactly is left out of the prose.",
+		);
+		expect(prompt.indexOf("FEEDBACK:")).toBeGreaterThan(
+			prompt.indexOf("LEDGER:"),
+		);
+		expect(buildWritingPrompt(input, [], [])).not.toContain("FEEDBACK:");
+		expect(buildWritingPrompt(input, [])).not.toContain("FEEDBACK:");
+	});
 });
 
 describe("draftOfWritingCall", () => {
