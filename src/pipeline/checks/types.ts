@@ -89,6 +89,15 @@ export interface CheckReport {
 	readonly verdicts: Readonly<Partial<Record<CheckId, Verdict>>>;
 }
 
+/** What the writing call is told about one failed check when it revises. */
+export interface Feedback {
+	readonly checkId: CheckId;
+	/** The offending draft text, verbatim. */
+	readonly quote: string;
+	/** What the check found in the sources; never replacement wording. */
+	readonly finding: string;
+}
+
 export interface WriteUp {
 	readonly highlights: readonly string[];
 	readonly prose: string;

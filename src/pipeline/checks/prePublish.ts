@@ -1,9 +1,11 @@
+import { feedbackFrom } from "./feedback.ts";
 import { groundedFigureCount } from "./figures.ts";
 import { CODE_CHECKS, runCodeChecks } from "./index.ts";
 import {
 	type CheckContext,
 	type CheckReport,
 	type CodeCheck,
+	type Feedback,
 	GATE_IDS,
 	type GateId,
 	type PrePublishOutcome,
@@ -26,45 +28,109 @@ function failedStyles(report: CheckReport): StyleId[] {
 	return STYLE_IDS.filter((id) => report.verdicts[id]?.outcome === "fail");
 }
 
-/**
- * Whether a draft may be published. One round of code checks, no judge, so
- * an unchecked gate holds the draft as a failed one does. Never publishes a
- * draft with a gate failure.
- */
-export function prePublish(args: {
-	draft: WrittenDraft;
-	context: CheckContext;
-	checks?: readonly CodeCheck[];
-}): PrePublishOutcome {
-	const { draft } = args;
-	const code = runCodeChecks(draft, args.context, args.checks ?? CODE_CHECKS);
-	const gateFails = failedGates(code);
+function roundOf(
+	round: number,
+	draft: WrittenDraft,
+	context: CheckContext,
+	checks: readonly CodeCheck[],
+): Round {
+	const code = runCodeChecks(draft, context, checks);
 	// The style score comes from checks not yet built.
-	const round: Round = {
-		round: 1,
+	return {
+		round,
 		draft,
 		code,
 		judge: "skipped",
-		gateFailures: gateFails.length,
+		gateFailures: failedGates(code).length,
 		styleScore: 0,
-		groundedFigures: groundedFigureCount(draft, args.context),
+		groundedFigures: groundedFigureCount(draft, context),
 	};
-	const rounds = [round];
+}
 
+/** The outcome of publishing `best`'s draft. Never publishes a gate failure. */
+function outcomeOf(best: Round, rounds: readonly Round[]): PrePublishOutcome {
+	const gateFails = failedGates(best.code);
 	if (gateFails.length > 0) {
 		return {
 			kind: "held",
 			reason: "gate-failed",
-			best: draft,
+			best: best.draft,
 			gateFails,
 			rounds,
 		};
 	}
-	const styleFails = failedStyles(code);
+	const styleFails = failedStyles(best.code);
 	if (styleFails.length > 0) {
-		return { kind: "publish-flagged", best: draft, styleFails, rounds };
+		return { kind: "publish-flagged", best: best.draft, styleFails, rounds };
 	}
-	return { kind: "publish", best: draft, rounds };
+	return { kind: "publish", best: best.draft, rounds };
+}
+
+/**
+ * Whether `round` is better than `best`: fewer gate failures, or as many and
+ * a higher style score. A round that keeps fewer grounded figures is not, so
+ * a writer cannot pass A1 by dropping figures.
+ */
+function improves(round: Round, best: Round): boolean {
+	if (round.groundedFigures < best.groundedFigures) return false;
+	if (round.gateFailures !== best.gateFailures) {
+		return round.gateFailures < best.gateFailures;
+	}
+	return round.styleScore > best.styleScore;
+}
+
+function passesEveryCheck(round: Round): boolean {
+	return round.gateFailures === 0 && failedStyles(round.code).length === 0;
+}
+
+/**
+ * Whether one draft may be published: one round of code checks, no
+ * revision and no judge, so an unchecked gate holds the draft as a failed
+ * one does.
+ */
+export function checkDraft(args: {
+	draft: WrittenDraft;
+	context: CheckContext;
+	checks?: readonly CodeCheck[];
+}): PrePublishOutcome {
+	const round = roundOf(
+		1,
+		args.draft,
+		args.context,
+		args.checks ?? CODE_CHECKS,
+	);
+	return outcomeOf(round, [round]);
+}
+
+/**
+ * Checks a draft and has the writing call revise it from the feedback until
+ * every check passes, a round does not improve on the best, or `cap` drafts
+ * have been written. The outcome is the best draft's, not the last's; a
+ * revision call that fails ends the loop with the best so far.
+ */
+export async function prePublish(args: {
+	draft: WrittenDraft;
+	context: CheckContext;
+	revise: (feedback: readonly Feedback[]) => Promise<WrittenDraft>;
+	cap: number;
+	checks?: readonly CodeCheck[];
+}): Promise<PrePublishOutcome> {
+	const checks = args.checks ?? CODE_CHECKS;
+	let best = roundOf(1, args.draft, args.context, checks);
+	const rounds = [best];
+	while (!passesEveryCheck(best) && rounds.length < args.cap) {
+		let draft: WrittenDraft;
+		try {
+			draft = await args.revise(feedbackFrom(best.code, best.draft));
+		} catch {
+			break;
+		}
+		const round = roundOf(rounds.length + 1, draft, args.context, checks);
+		rounds.push(round);
+		if (!improves(round, best)) break;
+		best = round;
+	}
+	return outcomeOf(best, rounds);
 }
 
 /** What storage records of an outcome. A flagged draft is published. */

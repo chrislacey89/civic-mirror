@@ -1,7 +1,8 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Duration, Effect, Layer, Schedule } from "effect";
 import { z } from "zod";
 import { prePublish } from "#/pipeline/checks/prePublish.ts";
 import type {
+	Feedback,
 	PrePublishOutcome,
 	WrittenDraft,
 } from "#/pipeline/checks/types.ts";
@@ -388,12 +389,14 @@ type SummarizationGenerateFn = (
 /**
  * Injectable writer: the highlights and prose for a meeting, given its
  * sources and the ledger the service will return, with the call's finish
- * reason and token usage. In production, `createGeminiWriter` returns one of
- * these.
+ * reason and token usage. Given `feedback`, it revises: the feedback names
+ * what the last draft got wrong. In production, `createGeminiWriter` returns
+ * one of these.
  */
 type SummarizationWriteFn = (
 	input: SummarizationInput,
 	ledger: SummarizationOutput["fiscalDecisions"],
+	feedback?: readonly Feedback[],
 ) => Promise<WrittenDraft>;
 
 type SummarizationServiceConfig = {
@@ -406,7 +409,20 @@ type SummarizationServiceConfig = {
 	 * generator's own text is written before the ledger is settled.
 	 */
 	writeFn: SummarizationWriteFn;
+	/**
+	 * How many drafts the writing call may write for one meeting, the first
+	 * included. 1, the default, never revises.
+	 */
+	roundCap?: number;
+	/** How a failed revision call is retried before the loop ends with the best draft. */
+	revisionRetry?: Schedule.Schedule<unknown>;
 };
+
+/** As the orchestrator retries a model call. */
+const REVISION_RETRY = Schedule.max([
+	Schedule.exponential(Duration.millis(1000)),
+	Schedule.recurs(2),
+]);
 
 /**
  * Effect teaching note: This service follows the same dependency-injection
@@ -506,9 +522,17 @@ function SummarizationServiceLive(
 					// The text is written from the ledger this summary returns, so
 					// the prose cannot carry a figure or an entry the ledger dropped.
 					const draft = await config.writeFn(input, verified);
-					const checked = prePublish({
+					// A revision rewrites only the text, so the ledger call is never re-run.
+					const checked = await prePublish({
 						draft,
 						context: { input, ledger: verified },
+						revise: (feedback) =>
+							Effect.runPromise(
+								Effect.tryPromise(() =>
+									config.writeFn(input, verified, feedback),
+								).pipe(Effect.retry(config.revisionRetry ?? REVISION_RETRY)),
+							),
+						cap: config.roundCap ?? 1,
 					});
 					const highlights = [...checked.best.highlights];
 					const prose = checked.best.prose;

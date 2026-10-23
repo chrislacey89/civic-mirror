@@ -41,6 +41,12 @@ import { v2 as dramaProfile } from "../../evals/profiles/v2.ts";
  */
 
 /**
+ * How many drafts the writing call may write for a meeting, the first
+ * included, before the best is kept. Measured in #194.
+ */
+const DEFAULT_ROUND_CAP = 7;
+
+/**
  * Hardcoded governing body list for this initial CLI. Later iterations should
  * read this from the `governing_bodies` table so adding a body is a DB insert,
  * not a code change — but for the first end-to-end run, hardcoding keeps the
@@ -205,6 +211,7 @@ function buildProductionLayers(input: BuildLayersInput) {
 		model: geminiModelId,
 		generateFn: geminiGenerator,
 		writeFn: createGeminiWriter({ modelId: geminiModelId }),
+		roundCap: DEFAULT_ROUND_CAP,
 	});
 
 	const meetingMatch = MeetingMatchServiceLive({
@@ -265,6 +272,7 @@ function buildProductionLayers(input: BuildLayersInput) {
 
 export {
 	DEFAULT_BODIES,
+	DEFAULT_ROUND_CAP,
 	extractPdfText,
 	parseSourcesFlag,
 	readEnv,

@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { gateEvidence, prePublish, toPublication } from "./prePublish.ts";
-import type {
-	CheckContext,
-	CodeCheck,
-	PrePublishOutcome,
-	WrittenDraft,
+import {
+	checkDraft,
+	gateEvidence,
+	prePublish,
+	toPublication,
+} from "./prePublish.ts";
+import {
+	type CheckContext,
+	type CodeCheck,
+	type Feedback,
+	GATE_IDS,
+	type PrePublishOutcome,
+	type WrittenDraft,
 } from "./types.ts";
 
 const context: CheckContext = {
@@ -36,9 +43,9 @@ const undecidedA1: CodeCheck = {
 	run: () => ({ A1: { outcome: "unchecked", reason: "no names list" } }),
 };
 
-describe("prePublish", () => {
+describe("checkDraft", () => {
 	it("records how many figures the draft states that a source writes", () => {
-		const outcome = prePublish({
+		const outcome = checkDraft({
 			draft: drafted("The council approved the $139,775.03 paving bid."),
 			context: {
 				...context,
@@ -52,13 +59,13 @@ describe("prePublish", () => {
 	});
 
 	it("publishes a draft that passes every check", () => {
-		const outcome = prePublish({ draft: complete, context });
+		const outcome = checkDraft({ draft: complete, context });
 		expect(outcome.kind).toBe("publish");
 		expect(outcome.best).toBe(complete);
 	});
 
 	it("publishes flagged a draft whose gates pass and a style check fails", () => {
-		const outcome = prePublish({
+		const outcome = checkDraft({
 			draft: complete,
 			context,
 			checks: [longHeadline],
@@ -71,7 +78,7 @@ describe("prePublish", () => {
 	});
 
 	it("holds a draft that fails a gate, with reason gate-failed", () => {
-		const outcome = prePublish({ draft: truncated, context });
+		const outcome = checkDraft({ draft: truncated, context });
 		expect(outcome).toMatchObject({
 			kind: "held",
 			reason: "gate-failed",
@@ -81,7 +88,7 @@ describe("prePublish", () => {
 	});
 
 	it("holds a draft whose gate is unchecked", () => {
-		const outcome = prePublish({
+		const outcome = checkDraft({
 			draft: complete,
 			context,
 			checks: [undecidedA1],
@@ -90,7 +97,7 @@ describe("prePublish", () => {
 	});
 
 	it("records the one round it ran, with the judge skipped", () => {
-		const outcome = prePublish({ draft: truncated, context });
+		const outcome = checkDraft({ draft: truncated, context });
 		expect(outcome.rounds).toHaveLength(1);
 		expect(outcome.rounds[0]).toMatchObject({
 			round: 1,
@@ -103,7 +110,7 @@ describe("prePublish", () => {
 });
 
 describe("toPublication", () => {
-	const rounds = prePublish({ draft: complete, context }).rounds;
+	const rounds = checkDraft({ draft: complete, context }).rounds;
 
 	it.each([
 		[
@@ -148,14 +155,14 @@ describe("toPublication", () => {
 
 describe("gateEvidence", () => {
 	it("quotes each failed gate of the best round, by id", () => {
-		const outcome = prePublish({ draft: truncated, context });
+		const outcome = checkDraft({ draft: truncated, context });
 		expect(gateEvidence(outcome)).toEqual([
 			"TRUNC: The council approved the paving bid for",
 		]);
 	});
 
 	it("gives the reason for an unchecked gate", () => {
-		const outcome = prePublish({
+		const outcome = checkDraft({
 			draft: complete,
 			context,
 			checks: [undecidedA1],
@@ -164,6 +171,187 @@ describe("gateEvidence", () => {
 	});
 
 	it("is empty for a published outcome", () => {
-		expect(gateEvidence(prePublish({ draft: complete, context }))).toEqual([]);
+		expect(gateEvidence(checkDraft({ draft: complete, context }))).toEqual([]);
+	});
+});
+
+describe("prePublish", () => {
+	/** A writer that returns `drafts` in order, counting its calls. */
+	function writer(...drafts: WrittenDraft[]) {
+		const calls: (readonly Feedback[])[] = [];
+		return {
+			calls,
+			revise: async (feedback: readonly Feedback[]) => {
+				calls.push(feedback);
+				const next = drafts[calls.length - 1];
+				if (next === undefined) throw new Error("no more drafts");
+				return next;
+			},
+		};
+	}
+
+	it("when round 1 fails a gate and round 2 passes every gate, publishes round 2's draft and stores both rounds under one runId", async () => {
+		const { revise, calls } = writer(complete);
+		const outcome = await prePublish({
+			draft: truncated,
+			context,
+			revise,
+			cap: 7,
+		});
+		expect(outcome).toMatchObject({ kind: "publish", best: complete });
+		expect(outcome.rounds.map((r) => r.draft)).toEqual([truncated, complete]);
+		expect(outcome.rounds.map((r) => r.round)).toEqual([1, 2]);
+		expect(calls).toHaveLength(1);
+		expect(calls[0]?.map((item) => item.checkId)).toEqual(["TRUNC"]);
+		const publication = toPublication(outcome, "run-1");
+		expect(publication).toMatchObject({ runId: "run-1", status: "published" });
+		expect(publication.rounds).toHaveLength(2);
+	});
+
+	/** A draft that fails its first `n` gates under {@link scripted}. */
+	function failing(n: number, prose = "The council met."): WrittenDraft {
+		return { ...drafted(prose), highlights: [`fails ${n}`] };
+	}
+
+	/** Fails as many gates as the draft's highlight says. */
+	const scripted: CodeCheck = {
+		owns: GATE_IDS,
+		run: (draft) => {
+			const n = Number(draft.highlights[0]?.replace("fails ", "") ?? 0);
+			return Object.fromEntries(
+				GATE_IDS.map((id, index) => [
+					id,
+					index < n
+						? { outcome: "fail", evidence: `"${draft.prose}"` }
+						: { outcome: "pass" },
+				]),
+			);
+		},
+	};
+
+	it("if a round does not improve on the best, stops and returns the best draft, not the last", async () => {
+		const second = failing(1);
+		const third = failing(2);
+		const { revise, calls } = writer(second, third, failing(0));
+		const outcome = await prePublish({
+			draft: failing(3),
+			context,
+			revise,
+			cap: 7,
+			checks: [scripted],
+		});
+		expect(calls).toHaveLength(2);
+		expect(outcome.rounds).toHaveLength(3);
+		expect(outcome).toMatchObject({ kind: "held", best: second });
+		expect(outcome.kind === "held" && outcome.gateFails).toEqual(["A1"]);
+	});
+
+	it("if a round passes more gates but keeps fewer grounded figures than the best, does not count it as an improvement", async () => {
+		const sourced: CheckContext = {
+			...context,
+			input: {
+				...context.input,
+				sources: [{ kind: "documents", text: "Paving bid $139,775.03." }],
+			},
+		};
+		const withFigure = failing(1, "The council accepted the $139,775.03 bid.");
+		const { revise } = writer(failing(0, "The council accepted a bid."));
+		const outcome = await prePublish({
+			draft: withFigure,
+			context: sourced,
+			revise,
+			cap: 7,
+			checks: [scripted],
+		});
+		expect(outcome.rounds.map((r) => r.groundedFigures)).toEqual([1, 0]);
+		expect(outcome).toMatchObject({ kind: "held", best: withFigure });
+	});
+
+	it("at the cap, makes at most `cap` writing calls", async () => {
+		const { revise, calls } = writer(
+			failing(5),
+			failing(4),
+			failing(3),
+			failing(2),
+		);
+		const outcome = await prePublish({
+			draft: failing(6),
+			context,
+			revise,
+			cap: 3,
+			checks: [scripted],
+		});
+		// The first draft is one of the cap's writing calls.
+		expect(1 + calls.length).toBe(3);
+		expect(outcome.rounds).toHaveLength(3);
+		expect(outcome.best).toEqual(failing(4));
+	});
+
+	it("does not revise a draft that passes every check", async () => {
+		const { revise, calls } = writer();
+		const outcome = await prePublish({
+			draft: complete,
+			context,
+			revise,
+			cap: 7,
+		});
+		expect(calls).toHaveLength(0);
+		expect(outcome.kind).toBe("publish");
+	});
+
+	it("revises a draft whose only failure is a style check", async () => {
+		const { revise, calls } = writer(complete);
+		const outcome = await prePublish({
+			draft: complete,
+			context,
+			revise,
+			cap: 7,
+			checks: [longHeadline],
+		});
+		expect(calls[0]?.map((item) => item.checkId)).toEqual(["B3"]);
+		expect(outcome.kind).toBe("publish-flagged");
+	});
+
+	it("if a revision call fails, ends the loop with the best draft so far", async () => {
+		const second = failing(1);
+		const { revise, calls } = writer(second);
+		const outcome = await prePublish({
+			draft: failing(2),
+			context,
+			revise,
+			cap: 7,
+			checks: [scripted],
+		});
+		expect(calls).toHaveLength(2);
+		expect(outcome.rounds).toHaveLength(2);
+		expect(outcome.best).toBe(second);
+	});
+
+	it("never publishes when the best draft has a gate failure, over random verdict sequences", async () => {
+		let seed = 202;
+		const random = () => {
+			seed = (seed * 1103515245 + 12345) % 2 ** 31;
+			return seed / 2 ** 31;
+		};
+		const gateCount = () => Math.floor(random() * 3) * Math.floor(random() * 3);
+		for (let trial = 0; trial < 500; trial++) {
+			const drafts = Array.from({ length: 8 }, () => failing(gateCount()));
+			const { revise, calls } = writer(...drafts.slice(1));
+			const cap = 1 + Math.floor(random() * 7);
+			const outcome = await prePublish({
+				draft: drafts[0] as WrittenDraft,
+				context,
+				revise,
+				cap,
+				checks: [scripted],
+			});
+			const best = outcome.rounds.find((r) => r.draft === outcome.best);
+			expect(best).toBeDefined();
+			if (outcome.kind !== "held") expect(best?.gateFailures).toBe(0);
+			else expect(best?.gateFailures).toBeGreaterThan(0);
+			expect(1 + calls.length).toBeLessThanOrEqual(cap);
+			const fewest = Math.min(...outcome.rounds.map((r) => r.gateFailures));
+			expect(best?.gateFailures).toBe(fewest);
+		}
 	});
 });

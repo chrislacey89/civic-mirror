@@ -1,5 +1,6 @@
-import { Effect } from "effect";
+import { Effect, Schedule } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import type { Feedback } from "#/pipeline/checks/types.ts";
 import {
 	figureIsIn,
 	proseWarnings,
@@ -365,6 +366,87 @@ describe("SummarizationService", () => {
 			expect(result.prePublish.kind).toBe("publish");
 			expect(result.highlights).toEqual(["Council approves paving bid"]);
 			expect(result.prose).toBe("The council approved the paving bid.");
+		});
+
+		describe("with revision", () => {
+			const cut = {
+				highlights: ["Council approves paving bid"],
+				prose: "The council approved the paving bid for",
+				finishReason: "stop",
+				usage: null,
+			};
+			const whole = { ...cut, prose: "The council approved the paving bid." };
+
+			/** Summarizes from both kinds of source, counting the ledger calls. */
+			async function revising(
+				writeFn: SummarizationWriteFn,
+				revisionRetry = Schedule.recurs(0),
+			) {
+				let ledgerCalls = 0;
+				const result = await Effect.runPromise(
+					Effect.gen(function* () {
+						const service = yield* SummarizationService;
+						return yield* service.summarize({
+							sources: [
+								{ kind: "documents", text: SOURCE_TEXT },
+								{ kind: "transcript", text: SOURCE_TEXT },
+							],
+							meetingContext: "Town Council, May 27, 2025",
+						});
+					}).pipe(
+						Effect.provide(
+							SummarizationServiceLive({
+								model: "gemini-2.5-flash",
+								writeFn,
+								roundCap: 7,
+								revisionRetry,
+								generateFn: async () => {
+									ledgerCalls++;
+									return {
+										highlights: [],
+										prose: "",
+										fiscalDecisions: [],
+										budgetDiscussions: [],
+										sourceDisagreements: [],
+									};
+								},
+							}),
+						),
+					),
+				);
+				return { result, ledgerCalls };
+			}
+
+			it("revises a held draft from its feedback, and the ledger call runs exactly as often as without revision", async () => {
+				const feedback: (readonly Feedback[] | undefined)[] = [];
+				const { result, ledgerCalls } = await revising(
+					async (_input, _ledger, given) => {
+						feedback.push(given);
+						return feedback.length === 1 ? cut : whole;
+					},
+				);
+
+				expect(ledgerCalls).toBe(2);
+				expect(feedback).toHaveLength(2);
+				expect(feedback[0]).toBeUndefined();
+				expect(feedback[1]?.map((item) => item.checkId)).toEqual(["TRUNC"]);
+				expect(result.prePublish.kind).toBe("publish");
+				expect(result.prePublish.rounds).toHaveLength(2);
+				expect(result.prose).toBe(whole.prose);
+			});
+
+			it("if a revision call fails after its retries, ends the loop with the best draft so far", async () => {
+				let calls = 0;
+				const { result } = await revising(async () => {
+					calls++;
+					if (calls === 1) return cut;
+					throw new Error("503 Service Unavailable");
+				}, Schedule.recurs(1));
+
+				expect(calls).toBe(3);
+				expect(result.prePublish).toMatchObject({ kind: "held", best: cut });
+				expect(result.prose).toBe(cut.prose);
+			});
 		});
 	});
 
