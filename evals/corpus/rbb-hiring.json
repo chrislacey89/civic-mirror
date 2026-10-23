@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "id": "rbb-hiring",
+  "transcript_path": "transcripts/rbb-hiring.txt",
+  "meeting_context": "Richland-Bean Blossom School Board, regular meeting, 2026-04-21 (clip 22:01–37:08, ~15 min). Discussion + vote on creating a 'school psychologist in training' position funded by an IU/SEEDS grant; sustained objection from one board member about advertising scope and approving a position before its job description; motion carries with a single 'I opposed' vote.",
+  "graded_at": "2026-05-09",
+  "graded_by": "chrislacey89",
+  "ground_truth": {
+    "category_scores": {
+      "procedural_breakdown": {
+        "score": 3,
+        "evidence_quotes": [
+          "[32:09] The position of psychologists in training, we wouldn't we don't [32:14] actually approve job descriptions, but [32:16] we'd be creating it without looking at a [32:19] job description.",
+          "[32:24] if you're comfortable in doing that, we could move [32:26] forward that way and then fill those [32:28] positions. Um or [32:33] again, we could table [32:33] those appointments until they bring the [32:36] position to us.",
+          "[33:38] no, because I won't have time to look [33:40] through the job description."
+        ]
+      },
+      "question_looping": {
+        "score": 3,
+        "evidence_quotes": [
+          "[31:20] I guess [31:22] that's a question. The four that [31:22] that you're recommending, are they [31:24] internal or was [31:26] one of those an external [31:26] maybe or two of them?",
+          "[31:39] Okay. So we had so we had six internal [31:41] and two [31:42] external then.",
+          "[35:23] please bring job descriptions [35:27] and positions to us first um so that we [35:31] know what we're uh looking at.",
+          "[36:21] I hadn't heard anything about it until [36:23] till this. So, that's why I'm really [36:26] surprised because I I do think there [36:30] would have been more applicants if they [36:33] known what the benefits of being a [36:36] psychologist in training were."
+        ]
+      },
+      "defensive_hedging": {
+        "score": 2,
+        "evidence_quotes": [
+          "[35:45] um you know yes [35:45] getting it posted you know Robin putting [35:47] out there but if I would have looked and [35:49] saw psych psychologist in training as a [35:52] position [35:54] to me that's not going to sound [35:55] very [35:55] exciting uh honestly",
+          "[33:02] Yeah. that that that'll postpone us [33:05] because"
+        ]
+      },
+      "timeline_pressure": {
+        "score": 2,
+        "evidence_quotes": [
+          "[33:11] and we we have [33:13] another meeting in May so [33:13] it gives us a",
+          "[33:15] right but we're [33:16] making staffing [33:16] decisions now",
+          "[33:33] Are you okay with creating it tonight?"
+        ]
+      },
+      "improvised_workarounds": {
+        "score": 3,
+        "evidence_quotes": [
+          "[32:38] Can I make a suggestion? Can we take the [32:41] job description that was in the [32:43] posting, [32:45] have Jennifer [32:45] uh go print it off and give the board [32:49] that job [32:49] description and approve that?",
+          "[32:52] We've approved we've approved before the [32:56] job [32:56] description the same night we voted [32:58] the person in. We've done that before",
+          "[32:14] we don't [32:14] actually approve job descriptions, but [32:16] we'd be creating it without looking at a [32:19] job [32:19] description."
+        ]
+      },
+      "visible_dissent": {
+        "score": 3,
+        "evidence_quotes": [
+          "[37:04] um any other comments? [37:06] All those in favor say I. I [37:08] I opposed. Motion carries.",
+          "[35:21] I'll just make two comments for the [35:23] vote. one, please bring job descriptions [35:27] and positions to us first um so that we [35:31] know what we're uh looking at. And two, [35:35] if a position like this comes up before, [35:39] I [35:39] think extra efforts need to be made in [35:42] getting that out there.",
+          "[33:38] no, because I won't have time to look [33:40] through the job description."
+        ]
+      },
+      "post_hoc_corrections": {
+        "score": 1,
+        "evidence_quotes": [
+          "[33:24] and they did post the position [33:26] they did post it just wasn't created"
+        ]
+      }
+    },
+    "level": "off-the-rails",
+    "headline": "Board approves new psychologist-in-training role 6-1 over sustained objection that no job description was reviewed",
+    "narrative": "The board voted to create a grant-funded 'school psychologist in training' position before any job description had been brought to them, after one member spent ~15 minutes pressing administrators on whether the underlying posting had been advertised broadly enough and on the internal vs. external candidate split. The chair acknowledged mid-discussion that the board does not normally approve job descriptions but in this case 'we'd be creating it without looking at one.' A second member proposed an in-meeting workaround — have staff print the existing posting so the board could approve it the same night — which the dissenting member rejected for lack of review time. The motion carried with a single audible 'I opposed' vote, after the dissenter had already stated two for-the-record demands: that future job descriptions arrive before positions, and that uncommon benefits be advertised more aggressively.",
+    "notes": "Per project drama-watch rubric: sustained objection on a ratified item is the drama; this clip is a textbook case. Hand-graded sum (3+3+2+2+3+3+1=17) maps mechanically to off-the-rails, which matches the spirit of the rubric here even though the 17 threshold is the floor of that tier. Defensive_hedging is held at 2 because the administrator's responses are mostly substantive even when the questioner is dismissive of them; visible_dissent is held at 3 (not higher) because the dissenter never escalates beyond two for-the-record statements + an 'I opposed' — there is no procedural objection, no roll-call request, no walk-out. Question_looping is held at 3 because the same board member returns to advertising scope and internal/external counts at least four distinct times across the 15-minute window. Improvised_workarounds is high because the 'have Jennifer print the posting and approve it tonight' suggestion is exactly the on-the-fly redefinition of approval scope that the rubric flags."
+  }
+}

@@ -1,0 +1,22 @@
+{
+	"schema_version": 2,
+	"id": "old",
+	"transcript_path": "transcripts/old.txt",
+	"meeting_context": "Fixture with future schema_version",
+	"graded_at": "2026-05-02",
+	"graded_by": "fixture",
+	"ground_truth": {
+		"category_scores": {
+			"procedural_breakdown": { "score": 0, "evidence_quotes": [] },
+			"question_looping": { "score": 0, "evidence_quotes": [] },
+			"defensive_hedging": { "score": 0, "evidence_quotes": [] },
+			"timeline_pressure": { "score": 0, "evidence_quotes": [] },
+			"improvised_workarounds": { "score": 0, "evidence_quotes": [] },
+			"visible_dissent": { "score": 0, "evidence_quotes": [] },
+			"post_hoc_corrections": { "score": 0, "evidence_quotes": [] }
+		},
+		"level": "routine",
+		"headline": "x",
+		"narrative": "x"
+	}
+}
