@@ -229,7 +229,7 @@ describe("prePublish", () => {
 		},
 	};
 
-	it("if a round does not improve on the best, stops and returns the best draft, not the last", async () => {
+	it("if a round fails more gates than the best, stops and returns the best draft, not the last", async () => {
 		const second = failing(1);
 		const third = failing(2);
 		const { revise, calls } = writer(second, third, failing(0));
@@ -246,7 +246,48 @@ describe("prePublish", () => {
 		expect(outcome.kind === "held" && outcome.gateFails).toEqual(["A1"]);
 	});
 
-	it("if a round passes more gates but keeps fewer grounded figures than the best, does not count it as an improvement", async () => {
+	it("if a round fails as many gates as the best, keeps revising from it", async () => {
+		const second = failing(1, "The council met on Monday.");
+		const { revise, calls } = writer(second, failing(0));
+		const outcome = await prePublish({
+			draft: failing(1),
+			context,
+			revise,
+			cap: 7,
+			checks: [scripted],
+		});
+		expect(calls).toHaveLength(2);
+		expect(outcome.rounds).toHaveLength(3);
+		expect(calls[1]?.[0]?.quote).toContain("Monday");
+		expect(outcome).toMatchObject({ kind: "publish", best: failing(0) });
+	});
+
+	it("if a revision fixes some of a gate's failed items, keeps revising from it", async () => {
+		/** Fails A1 with one evidence line per sentence of the prose. */
+		const perSentence: CodeCheck = {
+			owns: ["A1"],
+			run: (draft) => {
+				const lines = draft.prose
+					.split(". ")
+					.map((sentence) => `"${sentence}" is in no source: "x"`);
+				return { A1: { outcome: "fail", evidence: lines.join("\n") } };
+			},
+		};
+		const fewer = drafted("Bid $9");
+		const { revise, calls } = writer(fewer);
+		const outcome = await prePublish({
+			draft: drafted("Bid $5. Bid $6. Bid $7"),
+			context,
+			revise,
+			cap: 7,
+			checks: [perSentence],
+		});
+		expect(calls.map((feedback) => feedback.length)).toEqual([3, 1]);
+		expect(outcome.rounds).toHaveLength(2);
+		expect(outcome).toMatchObject({ kind: "held", best: fewer });
+	});
+
+	it("if a round passes more gates but keeps fewer grounded figures than the best, stops and keeps the best", async () => {
 		const sourced: CheckContext = {
 			...context,
 			input: {
@@ -255,7 +296,10 @@ describe("prePublish", () => {
 			},
 		};
 		const withFigure = failing(1, "The council accepted the $139,775.03 bid.");
-		const { revise } = writer(failing(0, "The council accepted a bid."));
+		const { revise, calls } = writer(
+			failing(0, "The council accepted a bid."),
+			failing(0, "The council accepted the $139,775.03 bid."),
+		);
 		const outcome = await prePublish({
 			draft: withFigure,
 			context: sourced,
@@ -263,6 +307,7 @@ describe("prePublish", () => {
 			cap: 7,
 			checks: [scripted],
 		});
+		expect(calls).toHaveLength(1);
 		expect(outcome.rounds.map((r) => r.groundedFigures)).toEqual([1, 0]);
 		expect(outcome).toMatchObject({ kind: "held", best: withFigure });
 	});

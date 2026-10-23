@@ -67,16 +67,17 @@ function outcomeOf(best: Round, rounds: readonly Round[]): PrePublishOutcome {
 }
 
 /**
- * Whether `round` is better than `best`: fewer gate failures, or as many and
- * a higher style score. A round that keeps fewer grounded figures is not, so
- * a writer cannot pass A1 by dropping figures.
+ * Whether `round` is worse than `best`: more gate failures, or as many and a
+ * lower style score. A round that keeps fewer grounded figures is worse too,
+ * so a writer cannot pass A1 by dropping figures. A round that is not worse
+ * ties or improves, and may still have fixed some of a gate's failed items.
  */
-function improves(round: Round, best: Round): boolean {
-	if (round.groundedFigures < best.groundedFigures) return false;
+function worsens(round: Round, best: Round): boolean {
+	if (round.groundedFigures < best.groundedFigures) return true;
 	if (round.gateFailures !== best.gateFailures) {
-		return round.gateFailures < best.gateFailures;
+		return round.gateFailures > best.gateFailures;
 	}
-	return round.styleScore > best.styleScore;
+	return round.styleScore < best.styleScore;
 }
 
 function passesEveryCheck(round: Round): boolean {
@@ -104,9 +105,10 @@ export function checkDraft(args: {
 
 /**
  * Checks a draft and has the writing call revise it from the feedback until
- * every check passes, a round does not improve on the best, or `cap` drafts
- * have been written. The outcome is the best draft's, not the last's; a
- * revision call that fails ends the loop with the best so far.
+ * every check passes, a round is worse than the best, or `cap` drafts have
+ * been written. A round that ties the best replaces it, and the next
+ * revision starts from it. The outcome is the best draft's, not the last's;
+ * a revision call that fails ends the loop with the best so far.
  */
 export async function prePublish(args: {
 	draft: WrittenDraft;
@@ -127,7 +129,7 @@ export async function prePublish(args: {
 		}
 		const round = roundOf(rounds.length + 1, draft, args.context, checks);
 		rounds.push(round);
-		if (!improves(round, best)) break;
+		if (worsens(round, best)) break;
 		best = round;
 	}
 	return outcomeOf(best, rounds);
