@@ -42,9 +42,15 @@ import { v2 as dramaProfile } from "../../evals/profiles/v2.ts";
 
 /**
  * How many drafts the writing call may write for a meeting, the first
- * included, before the best is kept. Measured in #194.
+ * included, before the best is kept: the first draft and up to seven
+ * revisions. The loop stops sooner only when every check passes or a round
+ * is worse than the best; a tie keeps revising.
+ *
+ * Measured in #194, with a loop that revised until the draft was clean:
+ * seven revisions is the fewest at which 95% of the meetings it eventually
+ * fixed were fixed, across 36 meetings and two runs.
  */
-const DEFAULT_ROUND_CAP = 7;
+const DEFAULT_ROUND_CAP = 8;
 
 /**
  * Hardcoded governing body list for this initial CLI. Later iterations should
