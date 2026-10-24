@@ -52,7 +52,7 @@ The outcome was predictable from the decision: when a slice consumes a measured 
 
 #212 (PR #217):
 
-- the loop's stop rules are in the `prePublish` docstring in `src/pipeline/checks/prePublish.ts`;
+- the loop stops only on a worse round, so a tie keeps revising, matching the spike's never-stop-early loop more closely;
 - the cap is 8, the first draft plus seven revisions;
 - the comment states the unit and the source:
 
@@ -61,13 +61,14 @@ The outcome was predictable from the decision: when a slice consumes a measured 
  * How many drafts the writing call may write for a meeting, the first
  * included, before the best is kept: the first draft and up to seven
  * revisions. …
- * Measured in #194; its conditions are in the verdict comment there, and
- * this loop's stop rules are in the `prePublish` docstring.
+ * Measured in #194, with a loop that revised until the draft was clean:
+ * seven revisions is the fewest at which 95% of the meetings it eventually
+ * fixed were fixed, across 36 meetings and two runs.
  */
 const DEFAULT_ROUND_CAP = 8;
 ```
 
-The differences from #194's conditions are in the `prePublish` docstring and #194's verdict comment. #213 is the re-measurement against the shipped loop.
+The remaining difference, that the shipped loop still stops on a worse round and the spike's did not, is stated in PR #217's known-weak spots. #213 is the re-measurement against the shipped loop.
 
 ## Prevention
 

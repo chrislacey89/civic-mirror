@@ -45,8 +45,9 @@ import { v2 as dramaProfile } from "../../evals/profiles/v2.ts";
  * included, before the best is kept: the first draft and up to seven
  * revisions.
  *
- * Measured in #194; its conditions are in the verdict comment there, and
- * this loop's stop rules are in the `prePublish` docstring.
+ * Measured in #194, with a loop that revised until the draft was clean:
+ * seven revisions is the fewest at which 95% of the meetings it eventually
+ * fixed were fixed, across 36 meetings and two runs.
  */
 const DEFAULT_ROUND_CAP = 8;
 
