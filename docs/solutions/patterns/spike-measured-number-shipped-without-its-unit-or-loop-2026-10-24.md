@@ -23,7 +23,7 @@ Two things differed between the spike and the shipped loop, and neither was visi
 - **Unit.** The spike's round 0 was the fresh draft and rounds 1–8 were revisions (`spike.ts`, `for (round = 0; round <= MAX_ROUNDS; …)`). "Fixed at round 7" meant the seventh revision. The shipped `prePublish` counts drafts with the first included (`rounds.length < cap`), so a cap of 7 allowed six revisions. The meeting #194 fixed at its seventh revision was past the shipped cap.
 - **Stop rule.** The spike's loop stopped only when the draft was clean or at the round limit. It counted failed *items*, not failed gates. The shipped loop also stopped when a round failed to beat the best draft, which it measured in failed *gates*. A draft that cut A1's bad figures from five to one tied on gates and stopped after one revision. So the meetings #194 fixed at rounds 3, 4 and 7 mostly could not be reached.
 
-The review of #202 (in #211) caught the stop rule (#212). The unit mismatch surfaced only when #212's acceptance criterion asked the cap's comment to "state what the cap counts and where its value comes from": writing that sentence forced the comparison.
+The review of #202 (in #211) caught the stop rule (#212). PR #211's Key Decisions flagged the cap's unit and left it for a decision before merge (`gh pr view 211`).
 
 ## Symptoms
 
@@ -33,14 +33,14 @@ The review of #202 (in #211) caught the stop rule (#212). The unit mismatch surf
 
 ## Root Cause
 
-The verdict was written as a value ("cap 7"), and a value travels without its frame. The spike's counting convention lived in its harness code. Its stop rule was implicit in how the loop was written, not stated in the verdict. #202 was built from the verdict, not the harness. Nothing later compared the shipped loop's structure against the measured one, because both read as "a revise loop with a cap of 7".
+The verdict was written as a value ("cap 7"), and a value travels without its frame. The spike's counting convention lived in its harness code. Its stop rule was implicit in how the loop was written, not stated in the verdict. #202 was built from the verdict, not the harness.
 
 The outcome was predictable from the decision: when a slice consumes a measured number, the number is only as valid as the match between the conditions it was measured under and the conditions it is used under.
 
 ## Learning Level
 
 - **Level:** Pattern
-- **Feedback loop or delay:** missing feedback. #194's per-round output, the only data that could show what the shipped loop would have done on the same meetings, was in a scratch `.context/` directory and was gone by the time #212 needed it. Each later change to the loop (#212's tie rule, #205's judge) moves it further from the measured conditions, and no step re-measures.
+- **Feedback loop or delay:** PR #211's Key Decisions flagged the cap's unit and left it for a decision before merge (`gh pr view 211`). #194's per-round output, the only data that could show what the shipped loop would have done on the same meetings, was in a scratch `.context/` directory and was gone by the time #212 needed it. Each later change to the loop (#212's tie rule, #205's judge) moves it further from the measured conditions, and no step re-measures.
 
 ## Rule Scope
 
@@ -82,7 +82,6 @@ The remaining difference, that the shipped loop still stops on a worse round and
 
 ## Planning / Calibration Notes
 
-- **What widened the work:** #212 was written as a choice among three stop rules. Writing the cap's comment turned up a second, independent mismatch (the unit) that the issue did not name.
 - **Future planning adjustment:** when `/prd-to-issues` writes a slice that consumes a spike's number, its Context block should quote the unit and the harness's stop rule, not only the value.
 
 ## Key Decision
