@@ -43,8 +43,7 @@ import { v2 as dramaProfile } from "../../evals/profiles/v2.ts";
 /**
  * How many drafts the writing call may write for a meeting, the first
  * included, before the best is kept: the first draft and up to seven
- * revisions. The loop stops sooner only when every check passes or a round
- * is worse than the best; a tie keeps revising.
+ * revisions.
  *
  * Measured in #194, with a loop that revised until the draft was clean:
  * seven revisions is the fewest at which 95% of the meetings it eventually
