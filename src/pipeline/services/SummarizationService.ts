@@ -2,8 +2,8 @@ import { Context, Duration, Effect, Layer, Schedule } from "effect";
 import { z } from "zod";
 import { prePublish } from "#/pipeline/checks/prePublish.ts";
 import type {
-	Feedback,
 	PrePublishOutcome,
+	Revision,
 	WrittenDraft,
 } from "#/pipeline/checks/types.ts";
 import { LlmError } from "#/pipeline/errors.ts";
@@ -396,7 +396,7 @@ type SummarizationGenerateFn = (
 type SummarizationWriteFn = (
 	input: SummarizationInput,
 	ledger: SummarizationOutput["fiscalDecisions"],
-	feedback?: readonly Feedback[],
+	revision?: Revision,
 ) => Promise<WrittenDraft>;
 
 type SummarizationServiceConfig = {
@@ -526,10 +526,10 @@ function SummarizationServiceLive(
 					const checked = await prePublish({
 						draft,
 						context: { input, ledger: verified },
-						revise: (feedback) =>
+						revise: (revision) =>
 							Effect.runPromise(
 								Effect.tryPromise(() =>
-									config.writeFn(input, verified, feedback),
+									config.writeFn(input, verified, revision),
 								).pipe(Effect.retry(config.revisionRetry ?? REVISION_RETRY)),
 							),
 						cap: config.roundCap ?? 1,

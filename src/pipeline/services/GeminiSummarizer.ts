@@ -1,7 +1,7 @@
 import { google } from "@ai-sdk/google";
 import { generateText, type LanguageModelUsage, Output } from "ai";
 import { z } from "zod";
-import type { Feedback, WrittenDraft } from "#/pipeline/checks/types.ts";
+import type { Revision, WrittenDraft } from "#/pipeline/checks/types.ts";
 import { sourceTextOfKind } from "#/pipeline/sources.ts";
 import type {
 	SummarizationGenerateFn,
@@ -147,14 +147,15 @@ Produce a structured summary of this meeting.
 
 /**
  * The sources again, then the service's final ledger, so the prose carries
- * the figures and statuses the receipts table will show. With feedback, a
- * FEEDBACK block names the checks the last draft failed; it quotes that
- * draft and never says what to write instead.
+ * the figures and statuses the receipts table will show. When revising, a
+ * FEEDBACK block names the checks the draft failed, quoting it and never
+ * saying what to write instead, and the draft itself follows the prompt so
+ * the writer revises it rather than writing afresh.
  */
 function buildWritingPrompt(
 	input: SummarizationInput,
 	ledger: SummarizationOutput["fiscalDecisions"],
-	feedback: readonly Feedback[] = [],
+	revision?: Revision,
 ): string {
 	const blocks = (["documents", "transcript"] as const)
 		.filter((kind) => input.sources.some((source) => source.kind === kind))
@@ -178,6 +179,7 @@ function buildWritingPrompt(
 		);
 	}
 
+	const feedback = revision?.feedback ?? [];
 	if (feedback.length > 0) {
 		const items = feedback.map(
 			({ checkId, quote, finding }) => `- ${checkId}: "${quote}" — ${finding}`,
@@ -187,13 +189,28 @@ function buildWritingPrompt(
 		);
 	}
 
-	return `
+	const prompt = `
 Meeting context: ${input.meetingContext}
 
 ${blocks.join("\n\n")}
 
 Write the highlights and prose for this meeting.
 `.trim();
+	if (revision === undefined || feedback.length === 0) return prompt;
+	const highlights = revision.draft.highlights
+		.map((highlight, index) => `${index}. ${highlight}`)
+		.join("\n");
+	return `${prompt}
+
+YOUR PREVIOUS DRAFT:
+---
+highlights:
+${highlights}
+
+prose:
+${revision.draft.prose}
+---
+Revise this draft: keep what passed, and change only what the feedback names. Do not add any figure, name or vote that is not in the DOCUMENTS or TRANSCRIPT. If a figure cannot be found there exactly, leave it out; never correct or recompute it.`;
 }
 
 /**
@@ -261,12 +278,12 @@ function draftOfWritingCall(call: WritingCallResult): WrittenDraft {
 function createGeminiWriter(
 	config: GeminiSummarizerConfig,
 ): SummarizationWriteFn {
-	return async (input, ledger, feedback) => {
+	return async (input, ledger, revision) => {
 		const writingCall = await generateText({
 			model: google(config.modelId),
 			system: WRITING_INSTRUCTIONS,
 			temperature: 0,
-			prompt: buildWritingPrompt(input, ledger, feedback),
+			prompt: buildWritingPrompt(input, ledger, revision),
 			experimental_output: Output.object({ schema: writingOutputSchema }),
 		});
 		return draftOfWritingCall(writingCall);

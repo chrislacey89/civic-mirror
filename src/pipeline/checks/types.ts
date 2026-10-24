@@ -98,6 +98,12 @@ export interface Feedback {
 	readonly finding: string;
 }
 
+/** What the writing call revises from: a draft, and the feedback on it. */
+export interface Revision {
+	readonly feedback: readonly Feedback[];
+	readonly draft: WriteUp;
+}
+
 export interface WriteUp {
 	readonly highlights: readonly string[];
 	readonly prose: string;

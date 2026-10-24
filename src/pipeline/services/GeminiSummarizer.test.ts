@@ -247,18 +247,20 @@ describe("buildWritingPrompt", () => {
 		);
 	});
 
-	it("appends a FEEDBACK block quoting each failed check, with the rule on unsourced ledger figures, only when feedback is given", () => {
-		const prompt = buildWritingPrompt(
-			input,
-			[],
-			[
+	it("appends a FEEDBACK block quoting each failed check, with the rule on unsourced ledger figures, only when revising", () => {
+		const prompt = buildWritingPrompt(input, [], {
+			feedback: [
 				{
 					checkId: "A1",
 					quote: "It accepted a $140,000 paving bid.",
 					finding: '"$140,000" is in no document or transcript',
 				},
 			],
-		);
+			draft: {
+				highlights: ["Council accepts paving bid"],
+				prose: "It accepted a $140,000 paving bid.",
+			},
+		});
 		const feedback = prompt.slice(prompt.indexOf("FEEDBACK:"));
 		expect(feedback).toContain(
 			'- A1: "It accepted a $140,000 paving bid." — "$140,000" is in no document or transcript',
@@ -269,8 +271,35 @@ describe("buildWritingPrompt", () => {
 		expect(prompt.indexOf("FEEDBACK:")).toBeGreaterThan(
 			prompt.indexOf("LEDGER:"),
 		);
-		expect(buildWritingPrompt(input, [], [])).not.toContain("FEEDBACK:");
 		expect(buildWritingPrompt(input, [])).not.toContain("FEEDBACK:");
+	});
+
+	it("when revising, gives the draft the feedback is about after the FEEDBACK block, and asks for a figure that is not in a source to be left out, not recomputed", () => {
+		const prompt = buildWritingPrompt(input, [], {
+			feedback: [
+				{
+					checkId: "TRUNC",
+					quote: "The council approved the paving bid for",
+					finding: "the prose stops before a sentence ends",
+				},
+			],
+			draft: {
+				highlights: ["Council accepts paving bid", "Park hours change"],
+				prose: "The council approved the paving bid for",
+			},
+		});
+		const previous = prompt.slice(prompt.indexOf("PREVIOUS DRAFT:"));
+		expect(prompt.indexOf("PREVIOUS DRAFT:")).toBeGreaterThan(
+			prompt.indexOf("FEEDBACK:"),
+		);
+		expect(previous).toContain(
+			"0. Council accepts paving bid\n1. Park hours change",
+		);
+		expect(previous).toContain("The council approved the paving bid for");
+		expect(prompt).toContain(
+			"If a figure cannot be found there exactly, leave it out; never correct or recompute it.",
+		);
+		expect(buildWritingPrompt(input, [])).not.toContain("PREVIOUS DRAFT:");
 	});
 });
 

@@ -5,10 +5,10 @@ import {
 	type CheckContext,
 	type CheckReport,
 	type CodeCheck,
-	type Feedback,
 	GATE_IDS,
 	type GateId,
 	type PrePublishOutcome,
+	type Revision,
 	type Round,
 	STYLE_IDS,
 	type StyleId,
@@ -80,7 +80,16 @@ function worsens(round: Round, best: Round): boolean {
 	return round.styleScore < best.styleScore;
 }
 
-function sameFeedback(a: readonly Feedback[], b: readonly Feedback[]): boolean {
+/** The revision's text, as the writing prompt gives it. */
+function revisionOf(round: Round): Revision {
+	const { highlights, prose } = round.draft;
+	return {
+		feedback: feedbackFrom(round.code, round.draft),
+		draft: { highlights, prose },
+	};
+}
+
+function sameRevision(a: Revision, b: Revision): boolean {
 	return JSON.stringify(a) === JSON.stringify(b);
 }
 
@@ -109,16 +118,16 @@ export function checkDraft(args: {
 
 /**
  * Checks a draft and has the writing call revise it from the feedback until
- * every check passes, a round is worse than the best, a round's feedback
- * equals the best's (the next prompt would repeat the last), or `cap` drafts
- * have been written. A round that ties the best replaces it, and the next
+ * every check passes, a round is worse than the best, a round's draft and
+ * feedback equal the best's (the next prompt would repeat the last), or `cap`
+ * drafts have been written. A round that ties the best replaces it, and the next
  * revision starts from it. The outcome is the best draft's, not the last's;
  * a revision call that fails ends the loop with the best so far.
  */
 export async function prePublish(args: {
 	draft: WrittenDraft;
 	context: CheckContext;
-	revise: (feedback: readonly Feedback[]) => Promise<WrittenDraft>;
+	revise: (revision: Revision) => Promise<WrittenDraft>;
 	cap: number;
 	checks?: readonly CodeCheck[];
 }): Promise<PrePublishOutcome> {
@@ -126,10 +135,10 @@ export async function prePublish(args: {
 	let best = roundOf(1, args.draft, args.context, checks);
 	const rounds = [best];
 	while (!passesEveryCheck(best) && rounds.length < args.cap) {
-		const feedback = feedbackFrom(best.code, best.draft);
+		const revision = revisionOf(best);
 		let draft: WrittenDraft;
 		try {
-			draft = await args.revise(feedback);
+			draft = await args.revise(revision);
 		} catch {
 			break;
 		}
@@ -137,8 +146,7 @@ export async function prePublish(args: {
 		rounds.push(round);
 		if (worsens(round, best)) break;
 		const stuck =
-			!passesEveryCheck(round) &&
-			sameFeedback(feedback, feedbackFrom(round.code, round.draft));
+			!passesEveryCheck(round) && sameRevision(revision, revisionOf(round));
 		best = round;
 		if (stuck) break;
 	}
