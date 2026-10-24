@@ -262,6 +262,20 @@ describe("prePublish", () => {
 		expect(outcome).toMatchObject({ kind: "publish", best: failing(0) });
 	});
 
+	it("if a round ties the best with the same feedback, stops instead of repeating the prompt", async () => {
+		const { revise, calls } = writer(failing(1), failing(1), failing(0));
+		const outcome = await prePublish({
+			draft: failing(1),
+			context,
+			revise,
+			cap: 7,
+			checks: [scripted],
+		});
+		expect(calls).toHaveLength(1);
+		expect(outcome.rounds).toHaveLength(2);
+		expect(outcome.kind).toBe("held");
+	});
+
 	it("if a revision fixes some of a gate's failed items, keeps revising from it", async () => {
 		/** Fails A1 with one evidence line per sentence of the prose. */
 		const perSentence: CodeCheck = {

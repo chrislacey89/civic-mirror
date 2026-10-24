@@ -80,6 +80,10 @@ function worsens(round: Round, best: Round): boolean {
 	return round.styleScore < best.styleScore;
 }
 
+function sameFeedback(a: readonly Feedback[], b: readonly Feedback[]): boolean {
+	return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function passesEveryCheck(round: Round): boolean {
 	return round.gateFailures === 0 && failedStyles(round.code).length === 0;
 }
@@ -105,8 +109,9 @@ export function checkDraft(args: {
 
 /**
  * Checks a draft and has the writing call revise it from the feedback until
- * every check passes, a round is worse than the best, or `cap` drafts have
- * been written. A round that ties the best replaces it, and the next
+ * every check passes, a round is worse than the best, a round's feedback
+ * equals the best's (the next prompt would repeat the last), or `cap` drafts
+ * have been written. A round that ties the best replaces it, and the next
  * revision starts from it. The outcome is the best draft's, not the last's;
  * a revision call that fails ends the loop with the best so far.
  */
@@ -121,16 +126,21 @@ export async function prePublish(args: {
 	let best = roundOf(1, args.draft, args.context, checks);
 	const rounds = [best];
 	while (!passesEveryCheck(best) && rounds.length < args.cap) {
+		const feedback = feedbackFrom(best.code, best.draft);
 		let draft: WrittenDraft;
 		try {
-			draft = await args.revise(feedbackFrom(best.code, best.draft));
+			draft = await args.revise(feedback);
 		} catch {
 			break;
 		}
 		const round = roundOf(rounds.length + 1, draft, args.context, checks);
 		rounds.push(round);
 		if (worsens(round, best)) break;
+		const stuck =
+			!passesEveryCheck(round) &&
+			sameFeedback(feedback, feedbackFrom(round.code, round.draft));
 		best = round;
+		if (stuck) break;
 	}
 	return outcomeOf(best, rounds);
 }
