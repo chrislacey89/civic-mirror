@@ -52,6 +52,7 @@ The outcome was predictable from the decision: when a slice consumes a measured 
 
 #212 (PR #217):
 
+- the loop stops only on a worse round, so a tie keeps revising, matching the spike's never-stop-early loop more closely;
 - the cap is 8, the first draft plus seven revisions;
 - the comment states the unit and the source:
 
@@ -67,7 +68,7 @@ The outcome was predictable from the decision: when a slice consumes a measured 
 const DEFAULT_ROUND_CAP = 8;
 ```
 
-The loop's stop rules are stated in the `prePublish` docstring (`src/pipeline/checks/prePublish.ts`). #213 is the re-measurement against the shipped loop.
+The remaining difference, that the shipped loop still stops on a worse round and the spike's did not, is stated in PR #217's known-weak spots. #213 is the re-measurement against the shipped loop.
 
 ## Prevention
 
@@ -85,9 +86,9 @@ The loop's stop rules are stated in the `prePublish` docstring (`src/pipeline/ch
 
 ## Key Decision
 
-**Decision:** set the cap to 8, not 7.
+**Decision:** keep revising on a tie and stop only on a worse round, and set the cap to 8, not 7.
 **Rationale:** both move the shipped loop toward the conditions #194 measured. Re-measuring under the old stop rule would need a new spike, and the old spike's raw data no longer existed.
-**Alternatives considered:** count failed items inside gates; keep the stop rule and re-measure the cap.
+**Alternatives considered:** count failed items inside gates (still stops when a round fixes nothing, which #194's loop never did); keep the stop rule and re-measure the cap.
 **Revisable:** yes. When #213 re-measures the shipped loop, its per-round counts decide whether the worse-round stop cuts slow meetings off, and what the cap should be.
 
 ## Related
