@@ -28,7 +28,6 @@ Each round's fix also created the next round's finding. For three of the five fi
 
 - A review finding says the prompt "under-claims" a check, and the fix for it draws an "over-promises" finding in the next round, or the other way round.
 - Rewriting the rule to mean the opposite leaves every test green. Here a breaker inverted `LEDGER_FIGURE_RULE` and all 778 pipeline tests passed, and restoring the "however it is written" wording also passed.
-- A second hand-written copy of the rule (the revision instruction) agrees with the constant today only because both were edited in the same commit.
 
 ## Root Cause
 
@@ -51,7 +50,7 @@ The second root cause is that a test cannot read what an English sentence means.
 
 ## Solution
 
-- Keep the rule as one constant next to the check, interpolated everywhere the model is told it. Don't keep a hand-written second copy. The revision instruction is still one, and #220 tracks it.
+- Keep the rule as one constant next to the check, interpolated everywhere the model is told it. Don't keep a hand-written second copy.
 - Word the rule to cover a subset of what the check accepts. State the gap and the reason in the docstring ("stricter than A1 … because the writer cannot predict A1's tokenizer; a dropped figure costs a figure, a kept one A1 rejects holds the summary").
 - Pin the check's behaviour next to the constant on the case the rule governs. Don't pin the sentence's wording. A wording test only checks that the sentence exists, not that it is true.
 - Accept that the sentence's meaning cannot be tested. Name test blocks so they claim only what they check, and write acceptance criteria that don't promise "a test fails if they diverge" for prose.
