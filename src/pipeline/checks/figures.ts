@@ -501,9 +501,17 @@ export function groundedFigureCount(draft: WriteUp, ctx: CheckContext): number {
 }
 
 /**
+ * What A1 means for a ledger figure, as the writing prompt and its FEEDBACK
+ * block tell it to the writer. Both interpolate this, so the writer is told
+ * the rule the check holds it to.
+ */
+export const LEDGER_FIGURE_RULE =
+	"A figure in LEDGER that neither DOCUMENTS nor TRANSCRIPT writes exactly is left out of the prose.";
+
+/**
  * A1 for figures and votes, G1 and G4. Every figure in the headline,
  * highlights and prose must be written as a whole token in the documents or
- * the transcript; the ledger is not a source.
+ * the transcript; the ledger is not a source (LEDGER_FIGURE_RULE).
  */
 export const figuresCheck: CodeCheck = {
 	owns: ["A1", "G1", "G4"],

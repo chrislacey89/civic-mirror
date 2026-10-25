@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { LEDGER_FIGURE_RULE } from "#/pipeline/checks/figures.ts";
 import {
 	buildSummarizationPrompt,
 	buildWritingPrompt,
@@ -179,6 +180,23 @@ describe("the ledger prompt and the writing prompt", () => {
 	});
 });
 
+describe("the ledger-figure rule A1 enforces", () => {
+	const occurrences = (text: string) =>
+		text.split(LEDGER_FIGURE_RULE).length - 1;
+
+	it("is stated once in the writing prompt", () => {
+		expect(occurrences(WRITING_INSTRUCTIONS)).toBe(1);
+	});
+
+	it("is not overruled by a rule that ranks LEDGER's figure above the sources", () => {
+		expect(WRITING_INSTRUCTIONS).not.toMatch(/outranks/);
+		expect(WRITING_INSTRUCTIONS).not.toMatch(
+			/LEDGER's figure[^.]*even where DOCUMENTS or TRANSCRIPT states another/,
+		);
+		expect(WRITING_INSTRUCTIONS).not.toMatch(/neither LEDGER nor the sources/);
+	});
+});
+
 describe("buildWritingPrompt", () => {
 	const input = {
 		sources: [
@@ -265,9 +283,7 @@ describe("buildWritingPrompt", () => {
 		expect(feedback).toContain(
 			'- A1: "It accepted a $140,000 paving bid." — "$140,000" is in no document or transcript',
 		);
-		expect(feedback).toContain(
-			"A figure in the ledger that the documents or transcript do not contain exactly is left out of the prose.",
-		);
+		expect(feedback).toContain(LEDGER_FIGURE_RULE);
 		expect(prompt.indexOf("FEEDBACK:")).toBeGreaterThan(
 			prompt.indexOf("LEDGER:"),
 		);
