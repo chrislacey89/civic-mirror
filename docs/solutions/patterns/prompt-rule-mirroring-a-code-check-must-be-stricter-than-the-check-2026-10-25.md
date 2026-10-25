@@ -12,15 +12,15 @@ volatility: stable
 
 ## Problem
 
-The writing prompt tells the writer what the A1 figures check will hold it to. Wording that sentence to match A1 exactly was tried three ways in one PR. Two were wrong and the third works only because it is deliberately stricter than A1. No test could tell the three apart.
+The writing prompt tells the writer what the A1 figures check will hold it to. Wording that sentence to match A1 exactly was tried three ways in one PR. No test could tell the three apart.
 
 ## Context
 
 PR #219 (slice #214 of #193) made one sentence, `LEDGER_FIGURE_RULE` in `src/pipeline/checks/figures.ts`, the single statement of when a ledger figure may appear in the prose. Rule 11 and the FEEDBACK block both interpolate it. The sentence went through three wordings across two review rounds:
 
 1. **"writes exactly"** (`453ff93`). Stricter than A1, which compares figures by value, so "$258,400" passes against a source's "$258.400.00". Review said the writer was told to drop figures A1 accepts.
-2. **"the same amount however it is written"** (`59b3e54`). Matched A1's by-value comparison, but promised more than A1 accepts. A1 passes "two million" and fails "two hundred thousand", and fails a figure glued to letters ("fpaa-215.10") or inside a hyphenated range without spaces ("$41,700-$45,000"). It also contradicted rule 11's "garbled form" clause, which is the case #214 was meant to fix.
-3. **"as a clear numeral, even if punctuated differently … left out … when a source gives it only in words or inside garbled text"** (`14068ef`). Stricter than A1 on purpose. The docstring gives the reason.
+2. **"the same amount however it is written"** (`59b3e54`). Matched A1's by-value comparison, but promised more than A1 accepts. It also contradicted rule 11's "garbled form" clause, which is the case #214 was meant to fix.
+3. **"as a clear numeral, even if punctuated differently … left out … when a source gives it only in words or inside garbled text"** (`14068ef`).
 
 Each round's fix also created the next round's finding. For three of the five fixes, a mutation breaker still passed every test, and two of the five introduced new findings.
 
@@ -34,7 +34,7 @@ Each round's fix also created the next round's finding. For three of the five fi
 
 A code check like A1 does not accept a set that can be stated in a sentence. Its tokenizer, spelled-number parser and exclusions decide case by case, so "what A1 accepts" can only be described exactly by the code. A sentence aimed at that set misses it somewhere. If it claims less, the writer drops figures it could keep, which is the under-claiming #193 tracks. If it claims more, the writer keeps figures A1 then holds, and the whole summary goes back for a revision.
 
-The two failures cost different amounts. A dropped figure costs one number. A held summary costs a revision round, or the meeting doesn't publish. So the sentence should miss only on the cheap side. That means being stricter than the check and saying so in the docstring, not matching it.
+The two failures cost different amounts. A dropped figure costs one number. A held summary costs a revision round, or the meeting doesn't publish.
 
 The second root cause is that a test cannot read what an English sentence means. What it can do is pin the check's behaviour next to the constant. `figures.test.ts` runs A1 on the case the rule governs: a ledger-only figure fails, and the same draft passes once the figure is dropped or a source writes it. That catches a change to A1. It does not catch a reworded sentence, and #220 R1 records that as a known limit.
 
@@ -73,7 +73,7 @@ Clustering judgment: the nearest entry is `check-on-model-output-passes-or-fails
 
 ## Key Decision
 
-**Decision:** `LEDGER_FIGURE_RULE` is stricter than A1. It keeps a ledger figure only when a source writes it as a clear numeral, and drops it when sources give it only in words or garbled.
+**Decision:** See the `LEDGER_FIGURE_RULE` docstring in `src/pipeline/checks/figures.ts` for how the rule relates to A1.
 **Rationale:** the writer can't predict A1's tokenizer. Missing on the strict side costs one figure, and missing on the loose side holds the summary.
 **Alternatives considered:** "writes exactly" (under-claims by-value matches); "however it is written" (over-promises spelled-out and glued figures A1 rejects); teaching A1 to accept ledger figures (rejected, because A1 is the site's "every figure traceable to a source" promise).
 **Revisable:** yes, if A1's accepted set becomes something a sentence can state, e.g. a normalizer that exposes the exact forms it accepts.
