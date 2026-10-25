@@ -503,10 +503,11 @@ export function groundedFigureCount(draft: WriteUp, ctx: CheckContext): number {
 /**
  * What A1 means for a ledger figure, as the writing prompt and its FEEDBACK
  * block tell it to the writer. Both interpolate this, so the writer is told
- * the rule the check holds it to.
+ * the rule the check holds it to: A1 compares figures by value, so a source
+ * that writes the amount differently still grounds it.
  */
 export const LEDGER_FIGURE_RULE =
-	"A figure in LEDGER that neither DOCUMENTS nor TRANSCRIPT writes exactly is left out of the prose.";
+	'A figure in LEDGER is kept in the prose only if DOCUMENTS or TRANSCRIPT states the same amount, however it is written ("$258.400.00" or "two million"), and is left out otherwise.';
 
 /**
  * A1 for figures and votes, G1 and G4. Every figure in the headline,
