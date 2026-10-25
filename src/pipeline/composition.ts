@@ -47,10 +47,10 @@ import { v2 as dramaProfile } from "../../evals/profiles/v2.ts";
  *
  * Measured in #194: seven revisions is the fewest at which 95% of the
  * meetings it eventually fixed were fixed, across 36 meetings and two runs.
- * #194's loop kept revising until the draft was clean or a call failed, and
- * revised from the previous draft as well as the feedback; this one can stop
- * sooner, by the rules in the `prePublish` docstring. #213 re-measures it as
- * shipped.
+ * That loop revised until the draft was clean or a call failed. Measured on
+ * this loop in #213, over the same meetings in two runs: every fix took one
+ * or two revisions, no meeting wrote more than three drafts, and the stops
+ * in the `prePublish` docstring ended every loop before the cap.
  */
 const DEFAULT_ROUND_CAP = 8;
 

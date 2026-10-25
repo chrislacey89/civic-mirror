@@ -1,6 +1,6 @@
 import { Effect, Schedule } from "effect";
 import { describe, expect, it, vi } from "vitest";
-import type { Feedback } from "#/pipeline/checks/types.ts";
+import type { Revision } from "#/pipeline/checks/types.ts";
 import {
 	figureIsIn,
 	proseWarnings,
@@ -417,19 +417,25 @@ describe("SummarizationService", () => {
 				return { result, ledgerCalls };
 			}
 
-			it("revises a held draft from its feedback, and the ledger call runs exactly as often as without revision", async () => {
-				const feedback: (readonly Feedback[] | undefined)[] = [];
+			it("revises a held draft from its feedback and its text, and the ledger call runs exactly as often as without revision", async () => {
+				const revisions: (Revision | undefined)[] = [];
 				const { result, ledgerCalls } = await revising(
 					async (_input, _ledger, given) => {
-						feedback.push(given);
-						return feedback.length === 1 ? cut : whole;
+						revisions.push(given);
+						return revisions.length === 1 ? cut : whole;
 					},
 				);
 
 				expect(ledgerCalls).toBe(2);
-				expect(feedback).toHaveLength(2);
-				expect(feedback[0]).toBeUndefined();
-				expect(feedback[1]?.map((item) => item.checkId)).toEqual(["TRUNC"]);
+				expect(revisions).toHaveLength(2);
+				expect(revisions[0]).toBeUndefined();
+				expect(revisions[1]?.feedback.map((item) => item.checkId)).toEqual([
+					"TRUNC",
+				]);
+				expect(revisions[1]?.draft).toEqual({
+					highlights: cut.highlights,
+					prose: cut.prose,
+				});
 				expect(result.prePublish.kind).toBe("publish");
 				expect(result.prePublish.rounds).toHaveLength(2);
 				expect(result.prose).toBe(whole.prose);

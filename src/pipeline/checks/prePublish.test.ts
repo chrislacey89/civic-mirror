@@ -8,9 +8,9 @@ import {
 import {
 	type CheckContext,
 	type CodeCheck,
-	type Feedback,
 	GATE_IDS,
 	type PrePublishOutcome,
+	type Revision,
 	type WrittenDraft,
 } from "./types.ts";
 
@@ -26,6 +26,11 @@ function drafted(prose: string): WrittenDraft {
 		finishReason: "stop",
 		usage: { inputTokens: 1200, outputTokens: 300, reasoningTokens: 40 },
 	};
+}
+
+/** The text of a draft, as a revision carries it. */
+function textOf({ highlights, prose }: WrittenDraft) {
+	return { highlights, prose };
 }
 
 const complete = drafted("The council approved the paving bid.");
@@ -176,13 +181,13 @@ describe("gateEvidence", () => {
 });
 
 describe("prePublish", () => {
-	/** A writer that returns `drafts` in order, counting its calls. */
+	/** A writer that returns `drafts` in order, recording each revision it is given. */
 	function writer(...drafts: WrittenDraft[]) {
-		const calls: (readonly Feedback[])[] = [];
+		const calls: Revision[] = [];
 		return {
 			calls,
-			revise: async (feedback: readonly Feedback[]) => {
-				calls.push(feedback);
+			revise: async (revision: Revision) => {
+				calls.push(revision);
 				const next = drafts[calls.length - 1];
 				if (next === undefined) throw new Error("no more drafts");
 				return next;
@@ -202,7 +207,8 @@ describe("prePublish", () => {
 		expect(outcome.rounds.map((r) => r.draft)).toEqual([truncated, complete]);
 		expect(outcome.rounds.map((r) => r.round)).toEqual([1, 2]);
 		expect(calls).toHaveLength(1);
-		expect(calls[0]?.map((item) => item.checkId)).toEqual(["TRUNC"]);
+		expect(calls[0]?.feedback.map((item) => item.checkId)).toEqual(["TRUNC"]);
+		expect(calls[0]?.draft).toEqual(textOf(truncated));
 		const publication = toPublication(outcome, "run-1");
 		expect(publication).toMatchObject({ runId: "run-1", status: "published" });
 		expect(publication.rounds).toHaveLength(2);
@@ -258,11 +264,41 @@ describe("prePublish", () => {
 		});
 		expect(calls).toHaveLength(2);
 		expect(outcome.rounds).toHaveLength(3);
-		expect(calls[1]?.[0]?.quote).toContain("Monday");
+		expect(calls[1]?.feedback[0]?.quote).toContain("Monday");
+		expect(calls[1]?.draft).toEqual(textOf(second));
 		expect(outcome).toMatchObject({ kind: "publish", best: failing(0) });
 	});
 
-	it("if a round ties the best with the same feedback, stops instead of repeating the prompt", async () => {
+	it("if a round ties the best with the same feedback but a different draft, keeps revising, since the prompt carries the draft", async () => {
+		/** Fails A1 quoting the highlight, so the feedback is the same whatever the prose. */
+		const byHighlight: CodeCheck = {
+			owns: ["A1"],
+			run: (draft) =>
+				draft.highlights[0] === "fails 1"
+					? {
+							A1: {
+								outcome: "fail",
+								evidence: '"fails 1" is in no source: "x"',
+							},
+						}
+					: { A1: { outcome: "pass" } },
+		};
+		const reworded = failing(1, "The council met on Tuesday.");
+		const { revise, calls } = writer(reworded, failing(0));
+		const outcome = await prePublish({
+			draft: failing(1, "The council met on Monday."),
+			context,
+			revise,
+			cap: 7,
+			checks: [byHighlight],
+		});
+		expect(calls).toHaveLength(2);
+		expect(calls[0]?.feedback).toEqual(calls[1]?.feedback);
+		expect(calls[1]?.draft).toEqual(textOf(reworded));
+		expect(outcome).toMatchObject({ kind: "publish", best: failing(0) });
+	});
+
+	it("if a round ties the best with the same feedback and the same draft, stops instead of repeating the prompt", async () => {
 		const { revise, calls } = writer(failing(1), failing(1), failing(0));
 		const outcome = await prePublish({
 			draft: failing(1),
@@ -296,7 +332,7 @@ describe("prePublish", () => {
 			cap: 7,
 			checks: [perSentence],
 		});
-		expect(calls.map((feedback) => feedback.length)).toEqual([3, 1]);
+		expect(calls.map((revision) => revision.feedback.length)).toEqual([3, 1]);
 		expect(outcome.rounds).toHaveLength(2);
 		expect(outcome).toMatchObject({ kind: "held", best: fewer });
 	});
@@ -367,7 +403,7 @@ describe("prePublish", () => {
 			cap: 7,
 			checks: [longHeadline],
 		});
-		expect(calls[0]?.map((item) => item.checkId)).toEqual(["B3"]);
+		expect(calls[0]?.feedback.map((item) => item.checkId)).toEqual(["B3"]);
 		expect(outcome.kind).toBe("publish-flagged");
 	});
 
