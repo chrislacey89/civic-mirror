@@ -22,7 +22,7 @@ The spike's harness and the shipped loop differed in three ways:
 
 - **Unit.** The spike's round 0 was the fresh draft and rounds 1–8 were revisions (`spike.ts`, `for (round = 0; round <= MAX_ROUNDS; …)`). "Fixed at round 7" meant the seventh revision. The shipped `prePublish` counts drafts with the first included (`rounds.length < cap`), so a cap of 7 allowed six revisions. The meeting #194 fixed at its seventh revision was past the shipped cap.
 - **Stop rule.** The spike's loop stopped when the draft was clean, when a writing call failed, or at the round limit. It never stopped because a round failed to improve. The shipped loop also stopped when a round failed to beat the best draft, measured in failed *gates*. A revision that cut A1's bad figures from five to one would tie on gates and stop the loop after one revision. So the meetings #194 fixed at rounds 3, 4 and 7 mostly could not be reached.
-- **Prompt.** The spike's revision prompt carried the previous draft as well as the feedback (`spike.ts`, `feedbackBlock`). The shipped prompt carries only the feedback (`GeminiSummarizer.ts`).
+- **Prompt.** The spike's revision prompt carried the previous draft as well as the feedback (`spike.ts`, `feedbackBlock`). The prompt #202 shipped carried only the feedback (`GeminiSummarizer.ts`).
 
 PR #211, which shipped #202, named the unit in its Key Decisions: "`DEFAULT_ROUND_CAP = 7` here allows 6 revisions, which would have fixed 15 of #194's 16. To match #194 exactly, make it 8. **This needs a decision before merge.**" It also listed "The cap's unit" under spec drift. It merged on 2026-10-23 with the cap at 7. Its review caught the stop rule, and #212 was filed for both.
 
@@ -61,10 +61,12 @@ The first failure was predictable from the decision to publish a bare number. Th
 
 - **Cap.** It is 8: the first draft plus seven revisions.
 - **Ties.** A round that ties the best draft on failed gates and style score replaces the best and the loop keeps revising. The loop stops on a worse round: more failed gates, a lower style score at equal gates, or fewer grounded figures.
-- **Repeated feedback.** It also stops when a round's feedback is identical to the best draft's. The prompt carries only the feedback, so the next call would repeat the last one. #194's loop had neither this stop nor the worse-round stop. Its prompt carried the previous draft, so its feedback never fully determined the next call.
+- **Repeated prompt.** It also stops when a round would repeat the last prompt. #194's loop had neither this stop nor the worse-round stop.
 - **Statements.** The loop's stop rules are stated once, in the `prePublish` docstring. The cap's comment states its unit and points there.
 
-#213 re-measures the shipped loop against #194's meetings, including whether these stops cut slow meetings off.
+#213 (PR #218) then re-measured the loop as shipped, on #194's 36 meetings, twice, with a harness that imported the production `prePublish`, `CODE_CHECKS` and `createGeminiWriter` instead of reimplementing them. **The difference nobody had compared cost the most.** With the feedback-only prompt, 30 of 36 meetings were gate-clean in both runs (#194: 34). With the previous draft added back, 35 of 36 were. That PR passes the draft to the writer as a `Revision` (`{ feedback, draft }`), and the repeated-prompt stop now compares both, since the same feedback on a different draft is a different prompt.
+
+The re-measurement also settled the stops. Every fix took one or two revisions, no meeting wrote more than three drafts, and the cap never bound. The repeated-prompt stop never fired. Every one of the 13 holds across six runs ended at the worse-round stop on fewer grounded figures, and in 6 of them the rejected round passed every gate.
 
 ## Prevention
 
@@ -76,6 +78,8 @@ The first failure was predictable from the decision to publish a bare number. Th
 - The slice that consumes the number compares the production loop against those conditions before shipping, and records each difference as a known-weak spot or a follow-up issue.
 - A PR body that says a decision is needed before merge is not mergeable until the decision is recorded: as an edit to the PR, a comment, or a follow-up issue linked from the body. `/pre-merge`'s reviewer and `/closeout` should look for open decision lines in the body before merging.
 - Keep a spike's raw per-round output somewhere durable, such as an issue attachment or a committed fixture, whenever a later slice will consume its numbers. Scratch `.context/` output cannot answer the follow-up question.
+- Compare the prompt, not only the loop. The unit and the stop rule were visible in the loop's code. The prompt difference sat in a string, and it was the one that changed the result.
+- When re-measuring, import the production loop, checks and writer rather than porting them into the harness. A ported harness measures the port. #213's harness imported them, so its numbers describe the code that ships.
 
 ## Planning / Calibration Notes
 
@@ -86,12 +90,12 @@ The first failure was predictable from the decision to publish a bare number. Th
 **Decision:** keep revising on a tie, stop on a worse round or on repeated feedback, and set the cap to 8, not 7.
 **Rationale:** the tie rule and the cap move the shipped loop toward the conditions #194 measured. The repeated-feedback stop departs from them on purpose, because a repeated feedback-only prompt is likely to repeat its output, although temperature 0 does not guarantee that. Re-measuring under the old stop rule would have needed a new spike, and the old spike's raw data no longer existed.
 **Alternatives considered:** count failed items inside gates; keep the old stop rule and re-measure the cap.
-**Revisable:** yes. When #213 re-measures the shipped loop, its per-round counts decide whether the worse-round and repeated-feedback stops cut slow meetings off, and what the cap should be.
+**Revisable:** yes. #213 re-measured it: the cap of 8 never binds, and the worse-round stop on fewer grounded figures decides every hold. That stop is the next thing to revise.
 
 ## Related
 
-- #194 (spike verdict), #202 (loop as first shipped), PR #211 (shipped #202; flagged the unit), #212 (this fix), PR #217, #213 (re-measurement)
+- #194 (spike verdict), #202 (loop as first shipped), PR #211 (shipped #202; flagged the unit), #212 (this fix), PR #217, #213 and PR #218 (re-measurement; per-meeting rows on #213)
 
 ## Shelf Life
 
-Evergreen as a principle. The specific numbers expire when #213 re-measures the loop as shipped.
+Evergreen as a principle. The numbers are #213's, measured at PR #218; they expire when the loop's stop rules or the revision prompt change again.
