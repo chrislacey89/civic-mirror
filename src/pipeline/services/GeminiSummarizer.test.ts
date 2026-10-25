@@ -313,7 +313,7 @@ describe("buildWritingPrompt", () => {
 		);
 		expect(previous).toContain("The council approved the paving bid for");
 		expect(prompt).toContain(
-			"If a figure's amount cannot be found there, however it is written, leave it out; never correct or recompute it.",
+			"If a figure's amount cannot be found there as a clear numeral, leave it out; never correct or recompute it.",
 		);
 		expect(buildWritingPrompt(input, [])).not.toContain("PREVIOUS DRAFT:");
 	});
