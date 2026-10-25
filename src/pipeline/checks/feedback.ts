@@ -8,42 +8,43 @@ import {
 } from "./types.ts";
 
 /**
- * Each check's rule as docs/writing-rubric.md states it, without its worked
- * examples or counts: a finding may carry nothing the draft does not.
+ * Each check's title as docs/writing-rubric.md writes it, word for word
+ * (rubric.test.ts holds them equal). A title carries no worked example, so a
+ * finding carries nothing the draft does not.
  */
-const RULES: Readonly<Record<CheckId, string>> = {
-	A1: "every figure, name and vote is in a source",
-	A2: "no opinion, no motive, no loaded words",
-	A3: "no source artifacts leak",
-	A4: "each sentence says what the source says",
-	A5: "officials by name and role, the public by count",
-	TRUNC: "the prose stops before a sentence ends",
-	B1: "the headline is the one thing you would shout",
-	B2: "the headline puts actor, verb and object first",
-	B3: "the headline is short, with no clause after a comma",
-	B4: "the headline names a concrete object",
-	C1: "the lede adds a fact the headline did not give",
-	C2: "the lede does not set the scene",
-	C3: "the lede stands alone",
-	C4: "the lede is short",
-	D1: "importance order, not agenda order",
-	D2: "meeting mechanics are cut",
-	D3: "every item a resident could act on is kept, with its date",
-	D4: "few highlights, one fact each",
-	D5: "short paragraphs, one item each",
-	D6: "length scales with the meeting",
-	E1: "the body does the verb",
-	E2: "verbs, not zombie nouns, on first mention",
-	E3: "one thought per sentence",
-	E4: "varied openings, steady names",
-	F1: "no officialese",
-	F2: "jargon is glossed or replaced on first use",
-	F3: "no hedges, no filler, no announcers",
-	F4: "plain words a neighbour uses",
-	G1: "the figure appears as the record writes it, once",
-	G2: "scale comes from the record or not at all",
-	G3: "the vote is given when the record gives it",
-	G4: "a sum with no stated amount says so",
+export const RULES: Readonly<Record<CheckId, string>> = {
+	A1: "Every figure, name and vote is in a source",
+	A2: "No opinion, no motive, no loaded words",
+	A3: "No source artifacts leak",
+	A4: "Each sentence says what the source says, not what it was meant to say",
+	A5: "Officials by name and role; the public by count",
+	TRUNC: "The prose ends at a sentence end",
+	B1: "The headline is the one thing you would shout",
+	B2: "The headline puts actor, verb and object in its first four words",
+	B3: "The headline is twelve words or fewer, with no clause after a comma",
+	B4: "The headline names a concrete object",
+	C1: "The lede adds a fact the headline did not give",
+	C2: "The lede does not set the scene",
+	C3: "The lede stands alone",
+	C4: "The lede is twenty-five words or fewer",
+	D1: "Importance order, not agenda order",
+	D2: "Meeting mechanics are cut",
+	D3: "Every item a resident could act on is kept, with its date",
+	D4: "Three to six highlights, one fact each, 20 words or fewer, none duplicating the lede",
+	D5: "Paragraphs of two to five sentences, one item each",
+	D6: "Length scales with the meeting, anchored at 300–400 for the largest",
+	E1: "The body does the verb",
+	E2: "Verbs, not zombie nouns, for first mention",
+	E3: "One thought per sentence; 30 words is the ceiling, 18 the average",
+	E4: "Varied openings, steady names",
+	F1: "No officialese",
+	F2: "Jargon is glossed or replaced on first use",
+	F3: "No hedges, no filler, no announcers",
+	F4: "Plain words a neighbour uses",
+	G1: "The figure appears as the record writes it, once",
+	G2: "Scale comes from the record or not at all",
+	G3: "The vote is given when the record gives it",
+	G4: "A sum with no stated amount says so",
 };
 
 /**

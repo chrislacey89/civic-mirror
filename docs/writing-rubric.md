@@ -85,14 +85,14 @@ their text for scoring.
 
 ## B. Headline: `highlights[0]` (4 points)
 
-- **B1. It is the one thing you would shout.** The single most consequential
+- **B1. The headline is the one thing you would shout.** The single most consequential
   decision or event of the meeting, not the first agenda item. Minutes approval,
   paying the bills, prayer, roll call and adjournment are never the headline.
   *Test: would a resident who read only this line know the main thing that
   happened?* (`smart-brevity/references/lede-craft.md`, Elevator Shout Test;
   `chip-heath-made-to-stick/references/simple.md`, "if you say three things,
   you've said nothing")
-- **B2. Actor, verb, object, in the first four words.** "Council approves
+- **B2. The headline puts actor, verb and object in its first four words.** "Council approves
   $139,775 street resurfacing bid", not "Approval of bid for resurfacing
   project". A label fails; a fact passes. When the meeting took no vote (a
   public hearing, a presentation), the headline leads with the finding
@@ -102,33 +102,33 @@ their text for scoring.
   do. *Test: read the first four words alone.*
   (`smart-brevity/references/tease-and-headlines.md`, "Reid Won't Seek
   Reelection"; `.../word-power.md`; Process Watch prompt, "Framing rule")
-- **B3. Twelve words or fewer, no clause after a comma.** *Test: count.*
+- **B3. The headline is twelve words or fewer, with no clause after a comma.** *Test: count.*
   (`smart-brevity/references/rules-of-thumb.md`, headlines six words where
   possible; the twelve-word ceiling is house, set by the `<h1>` width)
-- **B4. Concrete object.** A street, parcel, vehicle, dollar sum, ordinance's
+- **B4. The headline names a concrete object.** A street, parcel, vehicle, dollar sum, ordinance's
   effect, person's job. "Street resurfacing on five streets", not
   "infrastructure improvements". *Test: can two residents picture the same
   thing?* (`chip-heath-made-to-stick/references/concrete.md`)
 
 ## C. Lede: first sentence of `prose` (4 points)
 
-- **C1. It adds a fact the headline did not give.** Usually the *why* or the
+- **C1. The lede adds a fact the headline did not give.** Usually the *why* or the
   *for whom*: what the money buys, what the ordinance changes, what happens
   next. It never restates `highlights[0]` in other words. *Test: cover the
   headline; does the lede still tell you something new? Then cover the lede; is
   anything lost?* (`smart-brevity/references/implementation-playbook.md`, "the
   most commonly violated rule")
-- **C2. No scene-setting.** The lede never opens with the body convening, the
+- **C2. The lede does not set the scene.** The lede never opens with the body convening, the
   date, the time, the prayer, the roll call, or "held a regular meeting".
   The date and body are already on the page. *Test: does the sentence survive
   if you swap in a different meeting's date? If so, it is scene-setting.*
   (`william-zinsser-on-writing-well/references/leads-and-endings.md`,
   breakfast-to-bed; `smart-brevity/references/lede-craft.md`)
-- **C3. Stands alone.** It is rendered by itself under the `<h1>`, so no
+- **C3. The lede stands alone.** It is rendered by itself under the `<h1>`, so no
   pronoun without a referent, no "also", no "the proposal" before the proposal
   has been named. *Test: read it with nothing above it.*
   (`several-short-sentences-about-writing/references/core-framework.md`)
-- **C4. Twenty-five words or fewer.** *Test: count.* (`smart-brevity/references/
+- **C4. The lede is twenty-five words or fewer.** *Test: count.* (`smart-brevity/references/
   rules-of-thumb.md`, a takeaway under 12 words; the 25 ceiling is house)
 
 ## D. Selection and order (6 points)
