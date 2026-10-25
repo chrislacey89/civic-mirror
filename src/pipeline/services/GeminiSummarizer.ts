@@ -211,7 +211,7 @@ ${highlights}
 prose:
 ${revision.draft.prose}
 ---
-Revise this draft: keep what passed, and change only what the feedback names. Do not add any figure, name or vote that is not in the DOCUMENTS or TRANSCRIPT. If a figure cannot be found there exactly, leave it out; never correct or recompute it.`;
+Revise this draft: keep what passed, and change only what the feedback names. Do not add any figure, name or vote that is not in the DOCUMENTS or TRANSCRIPT. If a figure's amount cannot be found there, however it is written, leave it out; never correct or recompute it.`;
 }
 
 /**
