@@ -510,7 +510,7 @@ export function groundedFigureCount(draft: WriteUp, ctx: CheckContext): number {
  * a dropped figure costs a figure, a kept one A1 rejects holds the summary.
  */
 export const LEDGER_FIGURE_RULE =
-	'A figure in LEDGER is kept in the prose only if DOCUMENTS or TRANSCRIPT writes the same amount as a clear numeral, even if punctuated differently ("$258.400.00" for $258,400), and is left out otherwise, including when a source gives it only in words or inside garbled text.';
+	'A figure in LEDGER is kept in the prose only if DOCUMENTS or TRANSCRIPT writes the same amount as a clear numeral, even if punctuated differently ("$41.700.00" for $41,700), and is left out otherwise, including when a source gives it only in words or inside garbled text.';
 
 /**
  * A1 for figures and votes, G1 and G4. Every figure in the headline,

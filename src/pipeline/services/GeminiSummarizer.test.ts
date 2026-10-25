@@ -172,9 +172,18 @@ describe("the ledger prompt and the writing prompt", () => {
 	});
 
 	it("uses invented example figures, not ones from a stored meeting", () => {
-		const examples = WRITING_INSTRUCTIONS.match(/\$[\d,]+(?:\.\d\d)?/g) ?? [];
+		const examples = WRITING_INSTRUCTIONS.match(/\$\d(?:[\d,.]*\d)?/g) ?? [];
 		expect(examples.length).toBeGreaterThan(0);
-		for (const real of ["$139,775.03", "$29,425", "$52,000", "$200,000"]) {
+		for (const real of [
+			"$139,775.03",
+			"$29,425",
+			"$52,000",
+			"$200,000",
+			// the 2026-02-02 scan's string, and the amount it reads as
+			"$258.400.00",
+			"$258,400.00",
+			"$258,400",
+		]) {
 			expect(examples).not.toContain(real);
 		}
 	});
