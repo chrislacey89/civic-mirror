@@ -15,7 +15,7 @@ const WORD = String.raw`\p{Lu}[\p{L}'’-]*\p{Ll}`;
  * so what the possessive owns cannot hide the person.
  */
 const CAPITALISED_RUN = new RegExp(
-	String.raw`(?<![\p{L}\d'’-])(?:(?:Mr|Mrs|Ms|Dr)\.? )?${WORD}(?:(?<!['’]s) (?:\p{Lu}\. )?${WORD})*(?:['’]s)?(?![\p{L}\d])`,
+	String.raw`(?<![\p{L}\d'’-])(?:(?:Mr|Mrs|Ms|Dr|Sgt|Lt|Capt|Cpl|Det)\.? )?${WORD}(?:(?<!['’]s) (?:\p{Lu}\. )?${WORD})*(?:['’]s)?(?![\p{L}\d])`,
 	"gu",
 );
 
@@ -42,7 +42,7 @@ const DATE_WORDS: ReadonlySet<string> = new Set(
  * may be anything, so it is read as a name only here or after a title.
  */
 const ATTRIBUTION =
-	/^ (?:added|asked|explained|moved|noted|presented|recommended|reported|said|stated|thanked|told|voted)\b/;
+	/^ (?:(?:also|then|later|again) )?(?:acknowledged|added|advised|agreed|announced|asked|clarified|confirmed|discussed|encouraged|explained|expressed|informed|introduced|mentioned|moved|noted|offered|presented|proposed|questioned|recommended|reminded|reported|requested|said|seconded|stated|suggested|thanked|told|voted|warned)\b/;
 
 /**
  * Words that end a job title or rank. What comes after the last of them in a
@@ -50,7 +50,7 @@ const ATTRIBUTION =
  * "Utilities Billing Clerk" gives nothing, and "Chief Palmer" gives "Palmer".
  */
 const TITLES: ReadonlySet<string> = new Set(
-	"administrator applicant assistant attorney auditor captain chair chairman chairperson chairwoman chief clerk coach commissioner commissioners contractor coordinator councilman councilmember councilor councilperson councilwoman counsel deputy detective developer director dr engineer firefighter foreman inspector judge lieutenant lt manager marshal mayor member members mr mrs ms officer officers owner petitioner planner president principal prosecutor recorder representative resident secretary senator sergeant sgt sheriff specialist superintendent supervisor surveyor teacher tech technician treasurer trustee vice".split(
+	"administrator applicant assistant attorney auditor capt captain chair chairman chairperson chairwoman chief clerk coach commissioner commissioners contractor coordinator councilman councilmember councilor councilperson councilwoman counsel cpl deputy det detective developer director dr engineer firefighter foreman inspector judge lieutenant lt manager marshal mayor member members mr mrs ms officer officers owner petitioner planner president principal prosecutor recorder representative resident secretary senator sergeant sgt sheriff specialist superintendent supervisor surveyor teacher tech technician treasurer trustee vice".split(
 		" ",
 	),
 );

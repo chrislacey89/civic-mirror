@@ -60,6 +60,27 @@ describe("extractNames", () => {
 		expect(extractNames("Staff said so. Residents asked why.")).toEqual([]);
 	});
 
+	it.each([
+		"Palmer proposed a truck.",
+		"Palmer warned the engine is failing.",
+		"Palmer also said no.",
+		"Palmer then suggested a vote.",
+		"Sgt. Palmer spoke.",
+		"Lt. Palmer spoke.",
+		"Capt. Palmer spoke.",
+	])("reads an invented last name in %s", (text) => {
+		expect(extractNames(text)).toEqual(["Palmer"]);
+	});
+
+	it.each([
+		"Staff also said no.",
+		"Council proposed a truck.",
+		"Council also warned the town.",
+		"Residents then asked why.",
+	])("still reads no one in %s", (text) => {
+		expect(extractNames(text)).toEqual([]);
+	});
+
 	it("reads a person whose first name is a month or a surname is a direction or a grant", () => {
 		expect(
 			extractNames(
