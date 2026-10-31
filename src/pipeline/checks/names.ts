@@ -11,9 +11,11 @@ const WORD = String.raw`\p{Lu}[\p{L}'’-]*\p{Ll}`;
 /**
  * A run of capitalised words on one line and in one sentence. An honorific's
  * period and a middle initial do not end it: "Dr. Ada Clerk", "Ada B. Clerk".
+ * A possessive does: in "Ada Clerk's Fire Department" the run is "Ada Clerk",
+ * so what the possessive owns cannot hide the person.
  */
 const CAPITALISED_RUN = new RegExp(
-	String.raw`(?<![\p{L}\d'’-])(?:(?:Mr|Mrs|Ms|Dr)\.? )?${WORD}(?: (?:\p{Lu}\. )?${WORD})*(?:['’]s)?(?![\p{L}\d])`,
+	String.raw`(?<![\p{L}\d'’-])(?:(?:Mr|Mrs|Ms|Dr)\.? )?${WORD}(?:(?<!['’]s) (?:\p{Lu}\. )?${WORD})*(?:['’]s)?(?![\p{L}\d])`,
 	"gu",
 );
 

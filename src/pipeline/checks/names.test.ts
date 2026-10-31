@@ -99,6 +99,18 @@ describe("extractNames", () => {
 		expect(extractNames(text)).toEqual([]);
 	});
 
+	it.each([
+		["Fire Chief Ada Lovelace's Report was read.", ["Ada Lovelace"]],
+		["Ada Lovelace's Fire Department budget rose.", ["Ada Lovelace"]],
+		["Bo Reed's Fence Variance passed.", ["Bo Reed"]],
+	])("ends a run at a possessive, so %j names the person before it", (text, names) => {
+		expect(extractNames(text)).toEqual(names);
+	});
+
+	it("still reads a possessive organisation as no one", () => {
+		expect(extractNames("The Town Council's Report was read.")).toEqual([]);
+	});
+
 	it("still reads a person whose surname is also a place word", () => {
 		expect(extractNames("Sergeant Richard Hall spoke.")).toEqual([
 			"Richard Hall",
@@ -233,6 +245,17 @@ describe("namesCheck against the town's list", () => {
 				officials: officialsFor("ellettsville-town-council", "2026-09-28"),
 			}).A1?.outcome,
 		).toBe("fail");
+	});
+});
+
+describe("namesCheck with a possessive", () => {
+	it.each([
+		"Fire Chief Ada Lovelace's Report was read.",
+		"Ada Lovelace's Fire Department budget rose.",
+	])("fails A1 on an unsourced name in %j", (text) => {
+		expect(namesCheck.run(draftOf(text), contextOf([])).A1?.outcome).toBe(
+			"fail",
+		);
 	});
 });
 
