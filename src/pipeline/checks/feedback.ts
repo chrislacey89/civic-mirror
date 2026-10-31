@@ -13,7 +13,7 @@ import {
  * finding carries nothing the draft does not.
  */
 export const RULES: Readonly<Record<CheckId, string>> = {
-	A1: "Every figure, name and vote is in a source",
+	A1: "Every figure and vote is in a source, and every name is in a source or on the officials list",
 	A2: "No opinion, no motive, no loaded words",
 	A3: "No source artifacts leak",
 	A4: "Each sentence says what the source says, not what it was meant to say",

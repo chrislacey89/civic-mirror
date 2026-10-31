@@ -44,11 +44,14 @@ their text for scoring.
 
 ## A. Fidelity gates (house)
 
-- **A1. Every figure, name and vote is in a source.** Dollar figures copied as
+- **A1. Every figure and vote is in a source, and every name is in a source or on the officials list.** Dollar figures copied as
   the record writes them. Vote counts only when the record states them. No
   figure is estimated, rounded, annualized or added up unless the record adds it
-  up. *Test: pick any number in the text and find it in DOCUMENTS or
-  TRANSCRIPT.*
+  up. A name passes when DOCUMENTS or TRANSCRIPT writes it, or when the body's
+  officials list for the meeting's date does; the list is how a council member
+  heard only in captions passes on a transcript-only meeting. *Test: pick any
+  number in the text and find it in DOCUMENTS or TRANSCRIPT; pick any name and
+  find it there or on the officials list.*
 - **A2. No opinion, no motive, no loaded words.** No "sparked debate",
   "controversial", "finally", "only", "merely", "sadly". Attribution verbs are
   *said*, *asked*, *told*, *voted*, *moved*; never *admitted*, *claimed*,
@@ -76,7 +79,7 @@ their text for scoring.
   no speaker labels, most speakers become "staff" or "a council member"; that
   is expected, not a defect (writing prompt rule 10). *Test: every proper
   name belongs to someone with a role in the item, and is spelled as DOCUMENTS
-  spells it.* (Process Watch prompt, "Naming people"; decided 2026-10-09)
+  or the officials list spells it.* (Process Watch prompt, "Naming people"; decided 2026-10-09)
 - **TRUNC. The prose ends at a sentence end.** Its last character is `.`,
   `!` or `?`, or a closing quotation mark after one. A write-up cut off
   mid-sentence is held, even when the model reported a normal finish. *Test:
