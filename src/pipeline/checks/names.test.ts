@@ -137,6 +137,15 @@ describe("extractNames", () => {
 			"Richard Hall",
 		]);
 	});
+
+	it.each([
+		["Rob Pike spoke.", "Rob Pike"],
+		["Ada Parks spoke.", "Ada Parks"],
+		["Mike High spoke.", "Mike High"],
+		["Sam Place spoke.", "Sam Place"],
+	])("reads a person whose surname is also a place word in %j", (text, name) => {
+		expect(extractNames(text)).toEqual([name]);
+	});
 });
 
 function official(name: string, variants: string[] = []): Official {
@@ -224,6 +233,18 @@ describe("namesCheck grounding", () => {
 		["after a hyphenated title", "Clerk-Treasurer Kevin Palmer spoke."],
 	])("fails a name in no source %s", (_where, prose) => {
 		expect(a1(draftOf(prose), [])?.outcome).toBe("fail");
+	});
+
+	it("passes a Curry Pike-shaped place by being in a source, and fails it when none prints it", () => {
+		const prose = draftOf("The crew repaved Curry Pike last week.");
+		expect(
+			a1(prose, [{ kind: "documents", text: "Repaving of Curry Pike." }]),
+		).toEqual({ outcome: "pass" });
+		expect(a1(prose, [])?.outcome).toBe("fail");
+	});
+
+	it("fails a person named Pike when no source prints the name", () => {
+		expect(a1(draftOf("Rob Pike spoke."), [])?.outcome).toBe("fail");
 	});
 
 	it("reads the headline and highlights as well as the prose", () => {
