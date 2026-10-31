@@ -4173,6 +4173,51 @@ describe("runPipeline document regeneration", () => {
 		expect(attach.log.summarize[0].officials).not.toEqual([]);
 	});
 
+	it("hands the summarizer the officials serving on the meeting's ISO date when a Finalsite listing's date cell is not ISO", async () => {
+		const body = { ...BOARD, slug: "ellettsville-town-council" };
+		const expected = officialsFor(body.slug, "2025-06-10");
+		// Three of the council took office after this date, so a string
+		// comparison against the raw "June 10, 2025" cell would seat them.
+		expect(expected).not.toEqual([]);
+		expect(expected).not.toEqual(officialsFor(body.slug, "2025-12-31"));
+		const document = (name: "agenda" | "minutes") => ({
+			uuid: `uuid-${name}`,
+			documentType: name,
+			downloadUrl: `/fs/resource-manager/view/uuid-${name}`,
+			fileName: `${name}.pdf`,
+		});
+		const listing = (
+			...documents: ReturnType<typeof document>[]
+		): FinalsiteMeetingListing => ({
+			date: "June 10, 2025",
+			meetingType: "Regular Meeting",
+			year: 2025,
+			documents,
+		});
+
+		const created = await setup();
+		await created.db
+			.insert(schema.governingBodies)
+			.values({ name: body.name, slug: body.slug, type: "town" })
+			.run();
+		const first = await created.run(
+			{ finalsiteListings: [listing(document("agenda"))] },
+			body,
+		);
+		expect(first.log.summarize).toHaveLength(1);
+		expect(first.log.summarize[0].officials).toEqual(expected);
+
+		const attach = await created.run(
+			{
+				finalsiteListings: [listing(document("agenda"), document("minutes"))],
+				summarizationResult: REGENERATED,
+			},
+			body,
+		);
+		expect(attach.log.summarize).toHaveLength(1);
+		expect(attach.log.summarize[0].officials).toEqual(expected);
+	});
+
 	it("hands the body's glossary to the summarizer when a document joins a meeting that already has documents, on both the eGov and Finalsite paths", async () => {
 		const glossary = ["UDO — Unified Development Ordinance"];
 
