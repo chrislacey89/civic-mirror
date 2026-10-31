@@ -36,6 +36,14 @@ const DATE_WORDS: ReadonlySet<string> = new Set(
 	),
 );
 
+/** Words that put a date right after them: "In June", "Since May". */
+const DATE_PREPOSITIONS: ReadonlySet<string> = new Set([
+	"in",
+	"on",
+	"during",
+	"since",
+]);
+
 /** A weekday is never a first name, so it is dropped wherever it ends a run. */
 const WEEKDAYS: ReadonlySet<string> = new Set(
 	"monday tuesday wednesday thursday friday saturday sunday".split(" "),
@@ -103,12 +111,13 @@ function nameIn(run: string, after: string): string | null {
 		.lastIndexOf(true);
 	let rest = words.slice(lastTitle + 1);
 	if (lastTitle === -1) {
-		const before = rest.length;
+		let opened = false;
 		while (rest[0] !== undefined && OPENERS.has(wordOf(rest[0]))) {
+			opened = DATE_PREPOSITIONS.has(wordOf(rest[0]));
 			rest = rest.slice(1);
 		}
-		// An opener before a month is the signal that it is a date.
-		const opened = rest.length < before;
+		// Only a date word right before a month signals a date: "In June Reed
+		// spoke" drops June, "After June Reed spoke" keeps it.
 		while (
 			rest[0] !== undefined &&
 			(WEEKDAYS.has(wordOf(rest[0])) ||

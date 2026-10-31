@@ -104,6 +104,9 @@ describe("extractNames", () => {
 		["In June Farmer reported.", ["Farmer"]],
 		["In May Bo Reed did.", ["Bo Reed"]],
 		["June Reed spoke.", ["June Reed"]],
+		["After June Reed spoke, the council met.", ["June Reed"]],
+		["Then June Reed spoke.", ["June Reed"]],
+		["Since May Bo Reed did.", ["Bo Reed"]],
 		["May Reed spoke.", ["May Reed"]],
 		[
 			"Councilmen Scott Oldham and Dan Swafford voted no.",
@@ -273,6 +276,9 @@ describe("namesCheck grounding", () => {
 		["before a suffix", "Kevin Palmer Jr. spoke."],
 		["after a plural title", "Councilmen Kevin Palmer and Dan Reed voted no."],
 		["after a title and a month", "In May Kevin Palmer spoke."],
+		["after a non-date opener and a month", "After June Reed spoke."],
+		["after With and a month", "With August Reed present."],
+		["after Then and a month", "Then June Reed spoke."],
 	])("fails a name in no source %s", (_where, prose) => {
 		expect(a1(draftOf(prose), [])?.outcome).toBe("fail");
 	});
