@@ -14,6 +14,7 @@ import {
 	NetworkError,
 	TranscriptionError,
 } from "#/pipeline/errors.ts";
+import { officialsFor } from "#/pipeline/officials/index.ts";
 import {
 	holdVideoAndAlert,
 	runDramaDetectForVideo,
@@ -51,6 +52,7 @@ import {
 import type {
 	SummarizationInput,
 	SummarizationResult,
+	SummarizeRequest,
 } from "#/pipeline/services/SummarizationService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import {
@@ -74,7 +76,7 @@ type CallLog = {
 	finalsiteDownload: Array<string>;
 	youtubeList: Array<string>;
 	transcribe: Array<string>;
-	summarize: Array<SummarizationInput>;
+	summarize: Array<SummarizeRequest>;
 	store: Array<{ bodySlug: string; date: string }>;
 	storeInputs: Array<MeetingInput>;
 	transcripts: Array<{ meetingId: number; sourceUrl?: string }>;
@@ -4155,6 +4157,20 @@ describe("runPipeline document regeneration", () => {
 
 		expect(third.log.summarize).toEqual([]);
 		expect(await rows()).toEqual(after);
+	});
+
+	it("hands the summarizer the officials of the body serving on the meeting's date", async () => {
+		const council = { ...COUNCIL, slug: "ellettsville-town-council" };
+		const context = await setup();
+		await context.run({ egovListings: [AGENDA] }, council);
+		const attach = await context.run(
+			{ egovListings: [AGENDA, MINUTES], summarizationResult: REGENERATED },
+			council,
+		);
+		expect(attach.log.summarize[0].officials).toEqual(
+			officialsFor(council.slug, "2025-06-01"),
+		);
+		expect(attach.log.summarize[0].officials).not.toEqual([]);
 	});
 
 	it("hands the body's glossary to the summarizer when a document joins a meeting that already has documents, on both the eGov and Finalsite paths", async () => {

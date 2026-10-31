@@ -1,8 +1,8 @@
 import type { Official } from "./types.ts";
 
 /**
- * Seeded from the stored minutes by scripts/seed-officials.ts and reviewed by
- * hand. `served.from` is the first meeting whose minutes print the name, not
+ * Seeded from the stored minutes by scripts/seed-officials.ts; a person reviews
+ * every entry. `served.from` is the first meeting whose minutes print the name, not
  * the start of the term. Names here are spelled as the minutes usually spell them.
  */
 export const ELLETTSVILLE_TOWN_COUNCIL: readonly Official[] = [

@@ -53,6 +53,21 @@ describe("extractNames", () => {
 		expect(extractNames("Ada B. Lovelace spoke.")).toEqual(["Ada B. Lovelace"]);
 	});
 
+	it("reads a last name alone before an attribution verb, and not elsewhere", () => {
+		expect(
+			extractNames("Palmer said the Engine needs work. Palmer's Garage Reed."),
+		).toEqual(["Palmer"]);
+		expect(extractNames("Staff said so. Residents asked why.")).toEqual([]);
+	});
+
+	it("reads a person whose first name is a month or a surname is a direction or a grant", () => {
+		expect(
+			extractNames(
+				"June Reed spoke with Adam West, Hugh Grant and Eugene Levy.",
+			),
+		).toEqual(["June Reed", "Adam West", "Hugh Grant", "Eugene Levy"]);
+	});
+
 	it("does not read a surname alone, a sentence opener or a date before a name as part of it", () => {
 		expect(
 			extractNames(
@@ -163,6 +178,19 @@ describe("namesCheck grounding", () => {
 			a1(draftOf("Chief Bo Lovelace spoke."), [], [official("Ada Lovelace")])
 				?.outcome,
 		).toBe("fail");
+	});
+
+	it.each([
+		["after a title", "Chief Palmer spoke."],
+		["before an attribution verb", "Palmer said the engine is late."],
+		["after a sentence opener", "After Kevin Palmer spoke, the council met."],
+		["after a date", "On Monday Kevin Palmer spoke."],
+		["with a first name that is a month", "June Palmer spoke."],
+		["with a surname that is a direction", "Adam West spoke."],
+		["that is a direction, after a title", "Chief West spoke."],
+		["after a hyphenated title", "Clerk-Treasurer Kevin Palmer spoke."],
+	])("fails a name in no source %s", (_where, prose) => {
+		expect(a1(draftOf(prose), [])?.outcome).toBe("fail");
 	});
 
 	it("reads the headline and highlights as well as the prose", () => {

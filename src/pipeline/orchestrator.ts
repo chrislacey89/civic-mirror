@@ -1199,7 +1199,7 @@ function processFinalsiteListing(
 				},
 				meetingContext: `${body.name}, ${listing.date}`,
 				glossary: body.glossary,
-				officials: officialsFor(body.slug, listing.date),
+				officials: officialsFor(body.slug, meetingDate),
 				config,
 			});
 			return { processed: 1, errors: 0 };
@@ -1250,7 +1250,7 @@ function processFinalsiteListing(
 				sources: readableSources,
 				meetingContext: `${body.name}, ${listing.date}`,
 				glossary: body.glossary,
-				officials: officialsFor(body.slug, listing.date),
+				officials: officialsFor(body.slug, meetingDate),
 			})
 			.pipe(Effect.retry(config.llmSchedule));
 		yield* Effect.log("finalsite.summarize.finish");

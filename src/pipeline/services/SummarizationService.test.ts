@@ -1,6 +1,7 @@
 import { Effect, Schedule } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import type { Revision } from "#/pipeline/checks/types.ts";
+import type { Official } from "#/pipeline/officials/types.ts";
 import {
 	figureIsIn,
 	proseWarnings,
@@ -38,6 +39,48 @@ with ABC Paving for sidewalk improvements. The motion passed 4-1.
 `;
 
 describe("SummarizationService", () => {
+	it("grounds a name from the officials it is given, and holds the draft without them", async () => {
+		const output = {
+			highlights: [],
+			prose: "Town Manager Ada Lovelace spoke.",
+			fiscalDecisions: [],
+			budgetDiscussions: [],
+			sourceDisagreements: [],
+		};
+		const summarizeWith = (officials: readonly Official[]) =>
+			Effect.runPromise(
+				Effect.gen(function* () {
+					const service = yield* SummarizationService;
+					return yield* service.summarize({
+						officials,
+						sources: [{ kind: "transcript", text: "the manager spoke" }],
+						meetingContext: "Town Council, March 23, 2026",
+					});
+				}).pipe(
+					Effect.provide(
+						SummarizationServiceLive({
+							model: "gemini-2.5-flash",
+							writeFn: writes(output),
+							generateFn: async () => output,
+						}),
+					),
+				),
+			);
+
+		const unlisted = await summarizeWith([]);
+		expect(unlisted.prePublish.kind).toBe("held");
+
+		const listed = await summarizeWith([
+			{
+				name: "Ada Lovelace",
+				variants: [],
+				role: "Town Manager",
+				served: { from: "2020-01-01", to: null },
+			},
+		]);
+		expect(listed.prePublish.kind).not.toBe("held");
+	});
+
 	describe("figureIsIn", () => {
 		it.each([
 			["$750.00", "$75,000", false],

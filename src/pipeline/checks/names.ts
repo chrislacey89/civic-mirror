@@ -17,12 +17,30 @@ const CAPITALISED_RUN = new RegExp(
 	"gu",
 );
 
-/** Words that open a sentence or a date and are no part of a name. */
+/** Words that open a sentence and are no part of a name. */
 const OPENERS: ReadonlySet<string> = new Set(
-	"a about after also although an and april as at august because before both but by december despite during each february finally following for friday from further here however if in instead january july june last later march may meanwhile monday moreover next november now october of on once over per saturday september since some sunday than that the their then there these they this those through thursday to tuesday under until wednesday when where while with within without yet".split(
+	"a about after also although an and as at attendees because before both but by despite during each everyone finally following for from further here however if in instead last later many meanwhile moreover next now of officials on once others over per residents several since some speakers staff than that the their then there these they this those through to under until when where while with within without yet".split(
 		" ",
 	),
 );
+
+/**
+ * Words that open a date. Some are first names too, so one is dropped only
+ * when a full name is left: "In May Ada Lovelace" but not "May Reed".
+ */
+const DATE_WORDS: ReadonlySet<string> = new Set(
+	"january february march april may june july august september october november december monday tuesday wednesday thursday friday saturday sunday".split(
+		" ",
+	),
+);
+
+/**
+ * What follows a last name used alone in a sentence: the rubric's attribution
+ * verbs and the ones the summaries use beside them. A capitalised word alone
+ * may be anything, so it is read as a name only here or after a title.
+ */
+const ATTRIBUTION =
+	/^ (?:added|asked|explained|moved|noted|presented|recommended|reported|said|stated|thanked|told|voted)\b/;
 
 /**
  * Words that end a job title or rank. What comes after the last of them in a
@@ -43,7 +61,7 @@ const TITLES: ReadonlySet<string> = new Set(
  * read as a name, and a place with one passes by being in a source.
  */
 const NOT_A_PERSON: ReadonlySet<string> = new Set(
-	"academy account acquisition act administrative agency agreement alley amendment annexation appeal appeals association authority ave avenue bank blvd board boulevard budget building bureau business center centre chamber circle city claims club code college comments commerce commission committee community company construction consulting contract contractors control cooperative corporation council county creek crossing crossings ct cumulative department design development dist district division drive easement economic edgewood education electric ellettsville emergency energy engineering equipment estates exchange exteriors fair fairgrounds farm farms federal fence festival finance fire floor foundation fund funds funeral garage general girls government grant group heritage high highway homes hospital housing inc income indiana industrial institute insurance interlocal investigation legion levy library llc llp ltd lumber management manual map market medical memorial mitigation motor municipal national office old ordinance parks parkway partners paving pay petition phase pike place plan planning plant plat plaza police policy program project public quarter ranch recreation redevelopment reimbursement reorganization report reports reserve residential resolution resources richland river riverfront road roads roadways rural safety school schools senate service services sewage sewer shelter site society solid specifications state station steering stormwater street streets subdivision system tax team tech tif town township trail transit trust union unit united university update updates utilities utility valley vehicle vehicles village wastewater water week works year youth zoning".split(
+	"academy account acquisition act administrative agency agreement alley amendment annexation appeal appeals association authority ave avenue bank blvd board boulevard budget building bureau business center centre chamber circle city claims club code college comments commerce commission committee community company construction consulting contract contractors control cooperative corporation council county creek crossing crossings ct cumulative department design development dist district division drive easement economic edgewood education electric ellettsville emergency energy engineering equipment estates exchange exteriors fairgrounds farm farms federal fence festival finance fire floor foundation fund funds funeral garage general girls government group growth heritage high highway homes hospital housing inc income indiana industrial institute insurance interlocal investigation legion library llc llp ltd lumber management manual map market matching medical memorial mitigation motor municipal national office old ordinance parks parkway partners paving pay petition phase pike place plan planning plat plaza police policy program project public quarter ranch recreation redevelopment reimbursement reorganization report reports reserve residential resolution resources richland riverfront road roads roadways rural safety school schools senate services sewage sewer shelter site society solid specifications state station steering stormwater street streets subdivision system tax team tech tif town township trail transit treatment trust union unit united university update updates utilities utility vehicle vehicles village wastewater water week works year youth zoning".split(
 		" ",
 	),
 );
@@ -60,8 +78,11 @@ function wordOf(word: string): string {
 	return word.replace(/\.$/, "").toLowerCase();
 }
 
-/** The name in a capitalised run, as the run writes it, or null if it has none. */
-function nameIn(run: string): string | null {
+/**
+ * The name in a capitalised run, as the run writes it, or null if it has none.
+ * `after` is the text following the run.
+ */
+function nameIn(run: string, after: string): string | null {
 	const words = run.replace(/['’]s$/, "").split(" ");
 	const lastTitle = words
 		.map((word) =>
@@ -75,23 +96,28 @@ function nameIn(run: string): string | null {
 		while (rest[0] !== undefined && OPENERS.has(wordOf(rest[0]))) {
 			rest = rest.slice(1);
 		}
+		while (rest.length > 2 && DATE_WORDS.has(wordOf(rest[0] ?? ""))) {
+			rest = rest.slice(1);
+		}
 	}
-	if (DIRECTIONS.has(wordOf(rest[0] ?? ""))) return null;
+	if (DIRECTIONS.has(wordOf(rest[0] ?? "")) && rest.length > 1) return null;
 	if (rest.some((word) => NOT_A_PERSON.has(wordOf(word)))) return null;
 	const full = rest.filter((word) => !/^\p{Lu}\.$/u.test(word)).length >= 2;
-	return full || (lastTitle !== -1 && rest.length === 1)
-		? rest.join(" ")
-		: null;
+	const lastNameAlone =
+		rest.length === 1 && (lastTitle !== -1 || ATTRIBUTION.test(after));
+	return full || lastNameAlone ? rest.join(" ") : null;
 }
 
 /**
  * The people `text` names, each once, as it writes them and without their
- * titles: a first and last name, or a last name after a title ("Mr. Oldham").
- * A surname alone is not read, since a capitalised word alone may be anything.
+ * titles: a first and last name, or a last name after a title ("Mr. Oldham")
+ * or before an attribution verb ("Oldham said"). Words in capitals are not
+ * read, so "KEVIN PALMER" is not.
  */
 export function extractNames(text: string): readonly string[] {
 	const names = [...text.matchAll(CAPITALISED_RUN)].flatMap((match) => {
-		const name = nameIn(match[0]);
+		const end = match.index + match[0].length;
+		const name = nameIn(match[0], text.slice(end, end + 20));
 		return name === null ? [] : [name];
 	});
 	return [...new Set(names)];

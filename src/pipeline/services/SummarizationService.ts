@@ -598,6 +598,7 @@ export type {
 	LabelledSource,
 	SummarizationGenerateFn,
 	SummarizationInput,
+	SummarizeRequest,
 	SummarizationOutput,
 	SummarizationResult,
 	SummarizationServiceConfig,
