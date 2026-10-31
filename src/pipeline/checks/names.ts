@@ -61,9 +61,7 @@ const ATTRIBUTION =
 	/^ (?:(?:also|then|later|again) )?(?:acknowledged|added|advised|agreed|announced|asked|clarified|confirmed|discussed|encouraged|explained|expressed|informed|introduced|mentioned|moved|noted|offered|presented|proposed|questioned|recommended|reminded|reported|requested|said|seconded|stated|suggested|thanked|told|voted|warned)\b/;
 
 /**
- * Words that end a job title or rank. What comes after the last of them in a
- * run is the name, so "Richland Township Trustee Ada Clerk" gives "Ada Clerk",
- * "Utilities Billing Clerk" gives nothing, and "Chief Palmer" gives "Palmer".
+ * Words that end a job title or rank.
  */
 const TITLES: ReadonlySet<string> = new Set(
 	"administrator applicant assistant attorney auditor capt captain chair chairman chairperson chairwoman chief clerk coach commissioner commissioners contractor coordinator councilman councilmember councilmembers councilmen councilor councilors councilperson councilpersons councilwoman councilwomen counsel cpl deputy det detective developer director dr engineer firefighter foreman inspector judge lieutenant lt manager marshal mayor member members mr mrs ms officer officers owner petitioner planner president principal prosecutor recorder representative resident reverend rev secretary senator sergeant sgt sheriff specialist superintendent supervisor surveyor teacher tech technician treasurer trustee vice".split(
