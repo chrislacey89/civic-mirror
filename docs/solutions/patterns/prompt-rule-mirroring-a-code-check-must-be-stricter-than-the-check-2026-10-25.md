@@ -35,6 +35,8 @@ A code check like A1 does not accept a set that can be stated in a sentence. Its
 
 The two failures cost different amounts. A dropped figure costs one number. A held summary costs a revision round, or the meeting doesn't publish.
 
+So the sentence should miss only on the cheap side, which means keeping fewer figures than A1 accepts. The shipped wording does not fully meet that goal. A1 fails "$45,000" when a source writes "$41,700-$45,000" with no spaces around the hyphen, because `wholeFigures` skips any figure right after a hyphen, and the sentence still tells the writer to keep it (tracked on #220).
+
 The second root cause is that a test cannot read what an English sentence means. What it can do is pin the check's behaviour next to the constant. `figures.test.ts` runs A1 on the case the rule governs: a ledger-only figure fails, and the same draft passes once the figure is dropped or a source writes it. That catches a change to A1. It does not catch a reworded sentence, and #220 R1 records that as a known limit.
 
 ## Learning Level
@@ -72,7 +74,7 @@ Clustering judgment: the nearest entry is `check-on-model-output-passes-or-fails
 
 ## Key Decision
 
-**Decision:** See the `LEDGER_FIGURE_RULE` docstring in `src/pipeline/checks/figures.ts` for how the rule relates to A1.
+**Decision:** The rule keeps a ledger figure only when a source writes it as a clear numeral, punctuation aside, and leaves it out when sources give it only in words or garbled; stricter than A1 is the goal, not a guarantee, and the `LEDGER_FIGURE_RULE` docstring in `src/pipeline/checks/figures.ts` says how it relates to A1.
 **Rationale:** the writer can't predict A1's tokenizer. Missing on the strict side costs one figure, and missing on the loose side holds the summary.
 **Alternatives considered:** "writes exactly" (under-claims by-value matches); "however it is written" (over-promises spelled-out and glued figures A1 rejects); teaching A1 to accept ledger figures (rejected, because A1 is the site's "every figure traceable to a source" promise).
 **Revisable:** yes, if A1's accepted set becomes something a sentence can state, e.g. a normalizer that exposes the exact forms it accepts.
