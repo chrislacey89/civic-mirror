@@ -12,7 +12,7 @@ volatility: stable
 
 ## Problem
 
-The writing prompt tells the writer what the A1 figures check will hold it to. Wording that sentence to match A1 exactly was tried three ways in one PR. No test could tell the three apart.
+The writing prompt tells the writer what the A1 figures check will hold it to. Three wordings of that sentence were tried in one PR (see Context). No test could tell the three apart.
 
 ## Context
 
@@ -35,7 +35,7 @@ A code check like A1 does not accept a set that can be stated in a sentence. Its
 
 The two failures cost different amounts. A dropped figure costs one number. A held summary costs a revision round, or the meeting doesn't publish.
 
-So the sentence should miss only on the cheap side, which means keeping fewer figures than A1 accepts. The shipped wording does not fully meet that goal. A1 fails "$45,000" when a source writes "$41,700-$45,000" with no spaces around the hyphen, because `wholeFigures` skips any figure right after a hyphen, and the sentence still tells the writer to keep it (tracked on #220).
+So the sentence should miss only on the cheap side, which means keeping fewer figures than A1 accepts. That is not a licence to be as strict as possible. A1 compares figures by value, so punctuation is something the writer can predict and the rule should not ask for it ("writes exactly" did, and so dropped figures A1 accepts). Be stricter only where the tokenizer is unpredictable, such as a figure given in words or inside garbled text. The shipped wording does not fully meet that goal. A1 fails "$45,000" when a source writes "$41,700-$45,000" with no spaces around the hyphen, because `wholeFigures` skips any figure right after a hyphen, and the sentence still tells the writer to keep it (tracked on #220).
 
 The second root cause is that a test cannot read what an English sentence means. What it can do is pin the check's behaviour next to the constant. `figures.test.ts` runs A1 on the case the rule governs: a ledger-only figure fails, and the same draft passes once the figure is dropped or a source writes it. That catches a change to A1. It does not catch a reworded sentence, and #220 R1 records that as a known limit.
 
