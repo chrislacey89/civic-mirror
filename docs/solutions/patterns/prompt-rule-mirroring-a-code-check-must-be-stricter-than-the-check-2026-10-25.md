@@ -52,7 +52,7 @@ The second root cause is that a test cannot read what an English sentence means.
 
 ## Solution
 
-- Keep the rule as one constant next to the check, interpolated everywhere the model is told it. Don't keep a hand-written second copy.
+- Keep the rule as one constant next to the check, interpolated everywhere the model is told it. Don't keep a hand-written second copy. The revision instruction at `GeminiSummarizer.ts:214` is still one, and #220 tracks it (comment of 2026-10-25).
 - Word the rule to cover a subset of what the check accepts.
 - Pin the check's behaviour next to the constant on the case the rule governs. Don't pin the sentence's wording. A wording test only checks that the sentence exists, not that it is true.
 - Accept that the sentence's meaning cannot be tested. Name test blocks so they claim only what they check, and write acceptance criteria that don't promise "a test fails if they diverge" for prose.
@@ -82,7 +82,7 @@ Clustering judgment: the nearest entry is `check-on-model-output-passes-or-fails
 ## Related
 
 - PR #219, slice #214, PRD #193
-- #220: the gaps this left open (R1 sentence untestable, R3 nothing pins "stricter", R6 rule 12 and rubric "as the record writes them", R7 thin example coverage)
+- #220: the gaps this left open (R1 sentence untestable, R3 nothing pins "stricter", R6 rule 12 and rubric "as the record writes them", R7 thin example coverage; plus two gaps added in a later comment: the revision instruction in `GeminiSummarizer.ts` is a hand-written second copy of the rule, and the rule still over-promises on unspaced hyphenated ranges like "$41,700-$45,000")
 
 ## Shelf Life
 
