@@ -97,6 +97,26 @@ describe("extractNames", () => {
 		).toEqual(["Ada Lovelace", "Bo Reed"]);
 	});
 
+	it.each([
+		["On Monday Reed said no.", ["Reed"]],
+		["Monday Reed said no.", ["Reed"]],
+		["Mike Farmer Tuesday asked for time.", ["Mike Farmer"]],
+		["In June Farmer reported.", ["Farmer"]],
+		["In May Bo Reed did.", ["Bo Reed"]],
+		["June Reed spoke.", ["June Reed"]],
+		["May Reed spoke.", ["May Reed"]],
+		[
+			"Councilmen Scott Oldham and Dan Swafford voted no.",
+			["Scott Oldham", "Dan Swafford"],
+		],
+		["Councilwomen Ada Lovelace spoke.", ["Ada Lovelace"]],
+		["Reverend Bo Reed prayed.", ["Bo Reed"]],
+		["Bo Reed Jr. spoke.", ["Bo Reed"]],
+		["Bo Reed Sr. spoke.", ["Bo Reed"]],
+	])("drops a date, plural title or suffix from the name in %j", (text, names) => {
+		expect(extractNames(text)).toEqual(names);
+	});
+
 	it("does not join names across a sentence end", () => {
 		expect(
 			extractNames("The vote went to Ellettsville. Ada Lovelace left."),
@@ -201,6 +221,24 @@ describe("namesCheck grounding", () => {
 		).toBe("fail");
 	});
 
+	it("grounds a name with a suffix on the source printing it without one", () => {
+		expect(
+			a1(draftOf("Bo Reed Jr. spoke."), [
+				{ kind: "documents", text: "Bo Reed reported." },
+			]),
+		).toEqual({ outcome: "pass" });
+	});
+
+	it("passes a month or weekday after an opener beside a listed last name", () => {
+		const list = [official("Bo Reed")];
+		expect(a1(draftOf("In June Reed reported."), [], list)).toEqual({
+			outcome: "pass",
+		});
+		expect(a1(draftOf("On Monday Reed said no."), [], list)).toEqual({
+			outcome: "pass",
+		});
+	});
+
 	it("passes a named official on the list, though no source prints the name", () => {
 		expect(a1(speaks, [], [official("Ada Lovelace")])).toEqual({
 			outcome: "pass",
@@ -231,6 +269,10 @@ describe("namesCheck grounding", () => {
 		["with a surname that is a direction", "Adam West spoke."],
 		["that is a direction, after a title", "Chief West spoke."],
 		["after a hyphenated title", "Clerk-Treasurer Kevin Palmer spoke."],
+		["before a weekday", "Kevin Palmer Tuesday asked for time."],
+		["before a suffix", "Kevin Palmer Jr. spoke."],
+		["after a plural title", "Councilmen Kevin Palmer and Dan Reed voted no."],
+		["after a title and a month", "In May Kevin Palmer spoke."],
 	])("fails a name in no source %s", (_where, prose) => {
 		expect(a1(draftOf(prose), [])?.outcome).toBe("fail");
 	});

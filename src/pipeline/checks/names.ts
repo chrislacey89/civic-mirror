@@ -36,6 +36,14 @@ const DATE_WORDS: ReadonlySet<string> = new Set(
 	),
 );
 
+/** A weekday is never a first name, so it is dropped wherever it ends a run. */
+const WEEKDAYS: ReadonlySet<string> = new Set(
+	"monday tuesday wednesday thursday friday saturday sunday".split(" "),
+);
+
+/** Written after a name, and no part of it: "Bo Reed Jr." is "Bo Reed". */
+const SUFFIXES: ReadonlySet<string> = new Set(["jr", "sr"]);
+
 /**
  * What follows a last name used alone in a sentence: the rubric's attribution
  * verbs and the ones the summaries use beside them. A capitalised word alone
@@ -50,7 +58,7 @@ const ATTRIBUTION =
  * "Utilities Billing Clerk" gives nothing, and "Chief Palmer" gives "Palmer".
  */
 const TITLES: ReadonlySet<string> = new Set(
-	"administrator applicant assistant attorney auditor capt captain chair chairman chairperson chairwoman chief clerk coach commissioner commissioners contractor coordinator councilman councilmember councilor councilperson councilwoman counsel cpl deputy det detective developer director dr engineer firefighter foreman inspector judge lieutenant lt manager marshal mayor member members mr mrs ms officer officers owner petitioner planner president principal prosecutor recorder representative resident secretary senator sergeant sgt sheriff specialist superintendent supervisor surveyor teacher tech technician treasurer trustee vice".split(
+	"administrator applicant assistant attorney auditor capt captain chair chairman chairperson chairwoman chief clerk coach commissioner commissioners contractor coordinator councilman councilmember councilmembers councilmen councilor councilors councilperson councilpersons councilwoman councilwomen counsel cpl deputy det detective developer director dr engineer firefighter foreman inspector judge lieutenant lt manager marshal mayor member members mr mrs ms officer officers owner petitioner planner president principal prosecutor recorder representative resident reverend rev secretary senator sergeant sgt sheriff specialist superintendent supervisor surveyor teacher tech technician treasurer trustee vice".split(
 		" ",
 	),
 );
@@ -95,12 +103,26 @@ function nameIn(run: string, after: string): string | null {
 		.lastIndexOf(true);
 	let rest = words.slice(lastTitle + 1);
 	if (lastTitle === -1) {
+		const before = rest.length;
 		while (rest[0] !== undefined && OPENERS.has(wordOf(rest[0]))) {
 			rest = rest.slice(1);
 		}
-		while (rest.length > 2 && DATE_WORDS.has(wordOf(rest[0] ?? ""))) {
+		// An opener before a month is the signal that it is a date.
+		const opened = rest.length < before;
+		while (
+			rest[0] !== undefined &&
+			(WEEKDAYS.has(wordOf(rest[0])) ||
+				(DATE_WORDS.has(wordOf(rest[0])) && (opened || rest.length > 2)))
+		) {
 			rest = rest.slice(1);
 		}
+	}
+	while (
+		rest.length > 0 &&
+		(WEEKDAYS.has(wordOf(rest.at(-1) ?? "")) ||
+			SUFFIXES.has(wordOf(rest.at(-1) ?? "")))
+	) {
+		rest = rest.slice(0, -1);
 	}
 	if (DIRECTIONS.has(wordOf(rest[0] ?? "")) && rest.length > 1) return null;
 	if (rest.some((word) => NOT_A_PERSON.has(wordOf(word)))) return null;
