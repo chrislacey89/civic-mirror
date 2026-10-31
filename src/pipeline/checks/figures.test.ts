@@ -15,6 +15,7 @@ function contextOf(
 	return {
 		input: { sources, meetingContext: "Town Council, May 27, 2025" },
 		ledger,
+		officials: [],
 	};
 }
 

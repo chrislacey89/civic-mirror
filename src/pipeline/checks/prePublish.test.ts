@@ -17,6 +17,7 @@ import {
 const context: CheckContext = {
 	input: { sources: [], meetingContext: "Town Council, May 27, 2025" },
 	ledger: [],
+	officials: [],
 };
 
 function drafted(prose: string): WrittenDraft {

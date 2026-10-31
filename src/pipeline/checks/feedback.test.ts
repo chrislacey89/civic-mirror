@@ -19,6 +19,7 @@ const context: CheckContext = {
 		meetingContext: "Town Council, May 27, 2025",
 	},
 	ledger: [],
+	officials: [],
 };
 
 const draft: WriteUp = {

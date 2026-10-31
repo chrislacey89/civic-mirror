@@ -143,6 +143,7 @@ async function setup(options: {
 				sourceUrl,
 				meetingContext: "Town Council, 2025-08-25",
 				glossary: undefined,
+				officials: [],
 			}).pipe(Effect.provide(layers)),
 		);
 
@@ -184,6 +185,7 @@ describe("detachDocumentAndRegenerate", () => {
 			{
 				sources: [{ kind: "documents", text: AUGUST_MINUTES.rawText }],
 				meetingContext: "Town Council, 2025-08-25",
+				officials: [],
 			},
 		]);
 		const after = await rows();

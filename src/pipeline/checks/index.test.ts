@@ -5,6 +5,7 @@ import type { CheckContext, CodeCheck, Verdict } from "./types.ts";
 const context: CheckContext = {
 	input: { sources: [], meetingContext: "Town Council, May 27, 2025" },
 	ledger: [],
+	officials: [],
 };
 
 const draft = { highlights: ["Council approves budget"], prose: "It did." };
