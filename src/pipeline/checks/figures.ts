@@ -501,9 +501,16 @@ export function groundedFigureCount(draft: WriteUp, ctx: CheckContext): number {
 }
 
 /**
+ * What A1 means for a ledger figure, as the writing prompt and its FEEDBACK
+ * block tell it to the writer.
+ */
+export const LEDGER_FIGURE_RULE =
+	'A figure in LEDGER is kept in the prose only if DOCUMENTS or TRANSCRIPT writes the same amount as a clear numeral, even if punctuated differently ("$41.700.00" for $41,700), and is left out otherwise, including when a source gives it only in words or inside garbled text.';
+
+/**
  * A1 for figures and votes, G1 and G4. Every figure in the headline,
  * highlights and prose must be written as a whole token in the documents or
- * the transcript; the ledger is not a source.
+ * the transcript; the ledger is not a source (LEDGER_FIGURE_RULE).
  */
 export const figuresCheck: CodeCheck = {
 	owns: ["A1", "G1", "G4"],

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { LabelledSource } from "#/pipeline/sources.ts";
-import { figuresCheck, groundedFigureCount, rollCallTally } from "./figures.ts";
+import {
+	figuresCheck,
+	groundedFigureCount,
+	LEDGER_FIGURE_RULE,
+	rollCallTally,
+} from "./figures.ts";
 import type { CheckContext, WriteUp } from "./types.ts";
 
 function contextOf(
@@ -577,5 +582,53 @@ describe("groundedFigureCount", () => {
 				contextOf([documents("Paving contract $45,000.00. Three bids.")]),
 			),
 		).toBe(1);
+	});
+});
+
+describe("LEDGER_FIGURE_RULE, the sentence the writer is given for A1", () => {
+	const ledger: CheckContext["ledger"] = [
+		{
+			title: "Road salt",
+			description: "",
+			amount: 12000,
+			originalAmount: "$12,000",
+			status: "approved",
+			confidence: 1,
+			isRecurring: false,
+		},
+	];
+	const verdictOn = (prose: string, source: string) =>
+		figuresCheck.run(draftOf(prose), contextOf([documents(source)], ledger)).A1
+			?.outcome;
+
+	it("names LEDGER, the thing A1 does not treat as a source", () => {
+		expect(LEDGER_FIGURE_RULE).toContain("LEDGER");
+	});
+
+	it(`${LEDGER_FIGURE_RULE} A1 fails the draft that uses it`, () => {
+		expect(
+			verdictOn(
+				"The council paid $12,000 for salt.",
+				"Motion to purchase road salt. Motion carries.",
+			),
+		).toBe("fail");
+	});
+
+	it("A1 passes the same draft once the figure is left out", () => {
+		expect(
+			verdictOn(
+				"The council bought road salt.",
+				"Motion to purchase road salt. Motion carries.",
+			),
+		).toBe("pass");
+	});
+
+	it("A1 passes the figure once a source writes it", () => {
+		expect(
+			verdictOn(
+				"The council paid $12,000 for salt.",
+				"Purchase of road salt for $12,000.",
+			),
+		).toBe("pass");
 	});
 });

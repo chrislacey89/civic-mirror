@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { LEDGER_FIGURE_RULE } from "#/pipeline/checks/figures.ts";
 import {
 	buildSummarizationPrompt,
 	buildWritingPrompt,
@@ -171,11 +172,37 @@ describe("the ledger prompt and the writing prompt", () => {
 	});
 
 	it("uses invented example figures, not ones from a stored meeting", () => {
-		const examples = WRITING_INSTRUCTIONS.match(/\$[\d,]+(?:\.\d\d)?/g) ?? [];
+		const examples = WRITING_INSTRUCTIONS.match(/\$\d(?:[\d,.]*\d)?/g) ?? [];
 		expect(examples.length).toBeGreaterThan(0);
-		for (const real of ["$139,775.03", "$29,425", "$52,000", "$200,000"]) {
+		for (const real of [
+			"$139,775.03",
+			"$29,425",
+			"$52,000",
+			"$200,000",
+			// the 2026-02-02 scan's string, and the amount it reads as
+			"$258.400.00",
+			"$258,400.00",
+			"$258,400",
+		]) {
 			expect(examples).not.toContain(real);
 		}
+	});
+});
+
+describe("the ledger-figure rule A1 enforces", () => {
+	const occurrences = (text: string) =>
+		text.split(LEDGER_FIGURE_RULE).length - 1;
+
+	it("is stated once in the writing prompt", () => {
+		expect(occurrences(WRITING_INSTRUCTIONS)).toBe(1);
+	});
+
+	it("is not overruled by a rule that ranks LEDGER's figure above the sources", () => {
+		expect(WRITING_INSTRUCTIONS).not.toMatch(/outranks/);
+		expect(WRITING_INSTRUCTIONS).not.toMatch(
+			/LEDGER's figure[^.]*even where DOCUMENTS or TRANSCRIPT states another/,
+		);
+		expect(WRITING_INSTRUCTIONS).not.toMatch(/neither LEDGER nor the sources/);
 	});
 });
 
@@ -265,9 +292,7 @@ describe("buildWritingPrompt", () => {
 		expect(feedback).toContain(
 			'- A1: "It accepted a $140,000 paving bid." — "$140,000" is in no document or transcript',
 		);
-		expect(feedback).toContain(
-			"A figure in the ledger that the documents or transcript do not contain exactly is left out of the prose.",
-		);
+		expect(feedback).toContain(LEDGER_FIGURE_RULE);
 		expect(prompt.indexOf("FEEDBACK:")).toBeGreaterThan(
 			prompt.indexOf("LEDGER:"),
 		);
@@ -297,7 +322,7 @@ describe("buildWritingPrompt", () => {
 		);
 		expect(previous).toContain("The council approved the paving bid for");
 		expect(prompt).toContain(
-			"If a figure cannot be found there exactly, leave it out; never correct or recompute it.",
+			"If a figure's amount cannot be found there as a clear numeral, leave it out; never correct or recompute it.",
 		);
 		expect(buildWritingPrompt(input, [])).not.toContain("PREVIOUS DRAFT:");
 	});

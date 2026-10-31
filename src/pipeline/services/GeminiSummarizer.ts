@@ -1,6 +1,7 @@
 import { google } from "@ai-sdk/google";
 import { generateText, type LanguageModelUsage, Output } from "ai";
 import { z } from "zod";
+import { LEDGER_FIGURE_RULE } from "#/pipeline/checks/figures.ts";
 import type { Revision, WrittenDraft } from "#/pipeline/checks/types.ts";
 import { sourceTextOfKind } from "#/pipeline/sources.ts";
 import type {
@@ -77,7 +78,7 @@ You write the highlights and prose of a meeting report for Civic Mirror, a publi
 You are given the meeting's sources and its fiscal LEDGER, already extracted. Return highlights, an array of strings, and prose, one string. Do not editorialize: report what the record says, not what you think of it.
 
 SOURCES:
-DOCUMENTS is the official written record: agendas, minutes and ordinances. TRANSCRIPT is the auto-generated captions of the meeting video; it has no speaker labels and often garbles names. When both are present, DOCUMENTS governs names, votes and dollar amounts; use TRANSCRIPT for the discussion, public comment and stated reasons that DOCUMENTS leaves out. Spell names as DOCUMENTS spells them. LEDGER lists each fiscal decision with the figure and status to use; for those motions LEDGER outranks both sources, and the prose never uses a figure that neither LEDGER nor the sources state.
+DOCUMENTS is the official written record: agendas, minutes and ordinances. TRANSCRIPT is the auto-generated captions of the meeting video; it has no speaker labels and often garbles names. When both are present, DOCUMENTS governs names, votes and dollar amounts; use TRANSCRIPT for the discussion, public comment and stated reasons that DOCUMENTS leaves out. Spell names as DOCUMENTS spells them. LEDGER lists each fiscal decision with its settled figure and status; rule 11 says how the prose uses them.
 
 WRITING:
 The highlights and prose are what a resident reads. highlights[0] is printed as the page headline and the first sentence of prose as the lede under it; the first three highlights appear on the meeting card.
@@ -91,7 +92,7 @@ The highlights and prose are what a resident reads. highlights[0] is printed as 
 8. On first use, spell out and gloss any term a resident would not know: an abbreviation, a program or fund, a zoning code, a legal term. When a GLOSSARY is given and lists the term, use its wording; otherwise give a short plain gloss of your own. GLOSSARY holds only this body's terms, so never borrow a meaning for a term from elsewhere.
 9. No hedges or filler: not "it should be noted", "various", "several items", "a number of", "discussion ensued", "a lengthy discussion", "largely". Attribution ("staff estimated") is not a hedge and stays. Use one name per actor throughout: the council is never also "the board" or "the governing body".
 10. Name council members, staff, applicants and presenters from organizations, as DOCUMENTS spells them, with their role on first mention. Never write the name of a resident who speaks at public comment, anywhere in highlights or prose, even though DOCUMENTS records it: write "a resident", "four residents" or "the owner of a Main Street business" instead. A business owner speaking about their own matter at public comment is a resident. Attribute a statement to a named person only when TRANSCRIPT itself names the speaker or DOCUMENTS records it; otherwise report what was said without a name.
-11. The prose never mentions the sources: not "the transcript", "the minutes", "the record states", "stated as", nor any garbled caption text. For a motion in LEDGER, the prose uses LEDGER's figure and status, even where DOCUMENTS or TRANSCRIPT states another; LEDGER already settled which source governs that figure. For anything not in LEDGER, where DOCUMENTS and TRANSCRIPT disagree the prose uses the DOCUMENTS figure and says nothing about the disagreement; that is recorded elsewhere. Leave out a figure the record states only in garbled form and give its clearly stated parts instead; never add the parts up yourself.
+11. The prose never mentions the sources: not "the transcript", "the minutes", "the record states", "stated as", nor any garbled caption text. For a motion in LEDGER, the prose uses LEDGER's status, and LEDGER's figure where the two sources disagree, since LEDGER already settled which source governs it. ${LEDGER_FIGURE_RULE} For anything not in LEDGER, where DOCUMENTS and TRANSCRIPT disagree the prose uses the DOCUMENTS figure and says nothing about the disagreement; that is recorded elsewhere. Leave out a figure the record states only in garbled form and give its clearly stated parts instead; never add the parts up yourself.
 12. Write each figure once, as the record writes it, dropping only a trailing ".00" ($18,000 for "$18,000.00", but $212,400.50 stays as written). Give a vote count, or "unanimously", when the record gives it. Give a per-household or comparison figure only when the record itself states it. When a motion's amount is not stated, say so.
 13. No opinion, motive or loaded words ("controversial", "sparked", "finally", "sadly"). Attribution verbs are said, asked, told, voted, moved; never admitted, claimed, insisted, pointed out. Report what the record says, not what you think of it.
 14. Before returning, check the prose against these and fix it if any fails: no paragraph runs past five sentences and no item the prose covers gets fewer than two, except a closing recognition or announcement; the first sentence does not restate highlights[0]; no resident who spoke at public comment is named; the words "additional appropriation", "entertained", "Accounts Payable", "convened", "the transcript" and "the minutes" do not appear; no sum appears that the record did not itself state.
@@ -185,7 +186,7 @@ function buildWritingPrompt(
 			({ checkId, quote, finding }) => `- ${checkId}: "${quote}" — ${finding}`,
 		);
 		blocks.push(
-			`FEEDBACK:\n---\nThe last draft failed these checks of the writing rules. Write the highlights and prose again so that each passes.\n${items.join("\n")}\nA figure in the ledger that the documents or transcript do not contain exactly is left out of the prose.\n---`,
+			`FEEDBACK:\n---\nThe last draft failed these checks of the writing rules. Write the highlights and prose again so that each passes.\n${items.join("\n")}\n${LEDGER_FIGURE_RULE}\n---`,
 		);
 	}
 
@@ -210,7 +211,7 @@ ${highlights}
 prose:
 ${revision.draft.prose}
 ---
-Revise this draft: keep what passed, and change only what the feedback names. Do not add any figure, name or vote that is not in the DOCUMENTS or TRANSCRIPT. If a figure cannot be found there exactly, leave it out; never correct or recompute it.`;
+Revise this draft: keep what passed, and change only what the feedback names. Do not add any figure, name or vote that is not in the DOCUMENTS or TRANSCRIPT. If a figure's amount cannot be found there as a clear numeral, leave it out; never correct or recompute it.`;
 }
 
 /**
