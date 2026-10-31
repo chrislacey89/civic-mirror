@@ -74,7 +74,7 @@ Clustering judgment: the nearest entry is `check-on-model-output-passes-or-fails
 
 ## Key Decision
 
-**Decision:** The rule keeps a ledger figure only when a source writes it as a clear numeral, punctuation aside, and leaves it out when sources give it only in words or garbled; stricter than A1 is the goal, not a guarantee, and the `LEDGER_FIGURE_RULE` docstring in `src/pipeline/checks/figures.ts` says how it relates to A1.
+**Decision:** The rule keeps a ledger figure only when a source writes it as a clear numeral, punctuation aside, and leaves it out when sources give it only in words or garbled; stricter than A1 is the goal, not a guarantee, and Root Cause says how it relates to A1.
 **Rationale:** the writer can't predict A1's tokenizer. Missing on the strict side costs one figure, and missing on the loose side holds the summary.
 **Alternatives considered:** "writes exactly" (under-claims by-value matches); "however it is written" (over-promises spelled-out and glued figures A1 rejects); teaching A1 to accept ledger figures (rejected, because A1 is the site's "every figure traceable to a source" promise).
 **Revisable:** yes, if A1's accepted set becomes something a sentence can state, e.g. a normalizer that exposes the exact forms it accepts.
