@@ -93,7 +93,7 @@ const ROLE_WORDS: ReadonlySet<string> = new Set(
 
 /** Words an organisation's name ends with or contains, never a street's. */
 const ORG_WORDS: ReadonlySet<string> = new Set(
-	"agency associates association authority bank board bureau chamber church city co college commission committee company construction consulting contractors corp corporation council county department development district engineering fire foundation group hospital inc institute legion library llc llp ltd office partners police school schools services state town township university utilities utility".split(
+	"advisors agency architects associates association authority bank board builders bureau chamber church city co college commission committee company concrete construction consultants consulting contracting contractors corp corporation council county department designers development district electric engineering engineers excavating fire foundation group hospital inc institute legion library llc llp ltd lumber office partners paving plumbing police realty school schools services state supply town township university utilities utility".split(
 		" ",
 	),
 );
@@ -117,24 +117,32 @@ const ORG_AFTER =
 /**
  * Whether `text` writes a role or office beside `name`: a title in the three
  * words before it ("County Commissioner Ada Lovelace"), a clause after it
- * with a title in it ("Ada Lovelace, Highway Director,"), or an organisation
- * after it ("Ada Lovelace of Elm Engineering"). An address is neither.
+ * with a title in it ("Ada Lovelace, Highway Director,"), or "representing".
+ * With `organisations`, an organisation counts too, before or after
+ * ("Ada Lovelace of Elm Engineering", "Ada Lovelace, financial consultants").
+ * An address is neither.
  */
-function hasRoleBeside(name: string, text: string): boolean {
+function hasRoleBeside(
+	name: string,
+	text: string,
+	organisations: boolean,
+): boolean {
 	const flat = text.replace(/\s+/g, " ");
-	const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const occurrence = new RegExp(
-		String.raw`((?:[^\s.;:!?]+ ){0,3})${escaped}(?![\p{L}])`,
+		String.raw`((?:[^\s.;:!?]+ ){0,3})${escaped(name)}(?![\p{L}])`,
 		"gu",
 	);
+	const words = organisations
+		? new Set([...ROLE_WORDS, ...ORG_WORDS])
+		: ROLE_WORDS;
 	return [...flat.matchAll(occurrence)].some((match) => {
 		const after = flat.slice(match.index + match[0].length);
 		const clause = after.match(/^,\s*([^,.;]{1,80})/);
 		return (
-			hasAny(match[1] ?? "", ROLE_WORDS) ||
+			hasAny(match[1] ?? "", words) ||
 			/^,\s*(?:representing|on behalf of)\b/i.test(after) ||
-			(clause !== null && hasAny(clause[1] ?? "", ROLE_WORDS)) ||
-			hasAny(after.match(ORG_AFTER)?.[1] ?? "", ORG_WORDS)
+			(clause !== null && hasAny(clause[1] ?? "", words)) ||
+			(organisations && hasAny(after.match(ORG_AFTER)?.[1] ?? "", ORG_WORDS))
 		);
 	});
 }
@@ -201,10 +209,12 @@ function redacted(
 /**
  * Who a name in the draft is, as far as code can tell. On a meeting whose
  * minutes mark public comment, a name taken from inside that section is a
- * `resident` unless the section writes a role beside it; every other name
- * there is `resolved`. On any other meeting, a name is `resolved` by the
- * officials list or by a role the documents write beside it, and is
- * otherwise `unresolved`: code cannot tell a resident from a presenter.
+ * `resident` unless the section writes a title beside it; an organisation
+ * is not enough there, since a business owner at public comment is a
+ * resident. Every other name on such a meeting is `resolved`. On any other
+ * meeting, a name is `resolved` by the officials list or by a title or
+ * organisation the documents write beside it, and is otherwise
+ * `unresolved`: code cannot tell a resident from a presenter.
  */
 type Standing = "resident" | "resolved" | "unresolved";
 
@@ -217,11 +227,11 @@ function standingOf(name: string, ctx: CheckContext): Standing {
 	if (writtenAsPlace(name, documents)) return "resolved";
 	const section = publicCommentOf(ctx);
 	if (section !== null) {
-		return namedIn(name, section) && !hasRoleBeside(name, section)
+		return namedIn(name, section) && !hasRoleBeside(name, section, false)
 			? "resident"
 			: "resolved";
 	}
-	return hasRoleBeside(name, documents) ? "resolved" : "unresolved";
+	return hasRoleBeside(name, documents, true) ? "resolved" : "unresolved";
 }
 
 /** Each name in each passage of the draft, with its standing. */

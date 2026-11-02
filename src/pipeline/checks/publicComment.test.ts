@@ -76,8 +76,6 @@ describe("publicCommentCheck on minutes that mark public comment", () => {
 	it.each([
 		"County Commissioner Ada Lovelace spoke about the bridge.",
 		"Ada Lovelace, Monroe County Highway Director, spoke about the bridge.",
-		"Ada Lovelace of Elm Engineering Inc. spoke about the bridge.",
-		"Ada Lovelace with the Richland Township Board spoke about the bridge.",
 		"Ada Lovelace, representing Elm Paving, spoke about the bridge.",
 	])("passes a name the section writes with a role or office beside it: %s", (line) => {
 		const minutes = `Privilege of the Floor\n${line}\nSupervisor Comments`;
@@ -116,6 +114,8 @@ describe("publicCommentCheck on minutes that mark public comment", () => {
 		"Ada Lovelace of Elm Street spoke about the bridge.",
 		"Ada Lovelace asked the Town Manager about the bridge.",
 		"Ada Lovelace, who owns the bar on Main Street, spoke about the fine.",
+		"Ada Lovelace of Elm Builders LLC spoke about her fine.",
+		"Ada Lovelace with the Richland Township Board spoke about the bridge.",
 	])("still fails a resident the section writes as %s", (line) => {
 		const minutes = `Privilege of the Floor\n${line}\nSupervisor Comments`;
 		expect(
@@ -259,6 +259,20 @@ describe("publicCommentCheck on a meeting with no marked public comment", () => 
 			publicCommentCheck.run(
 				draftOf("Engineer Ada Lovelace presented the bridge plans."),
 				contextOf(UNMARKED_MINUTES),
+			).A5,
+		).toEqual({ outcome: "pass" });
+	});
+
+	it.each([
+		"Ada Lovelace with Baker Tilly Municipal Advisors presented a financial outlook.",
+		"Ada Lovelace, financial consultants, presented on reorganization.",
+		"Ada Lovelace from Elm Paving presented the bid.",
+	])("resolves a vendor the documents write as %s", (line) => {
+		const minutes = `Old Business\n${line}\nAdjournment`;
+		expect(
+			publicCommentCheck.run(
+				draftOf("Ada Lovelace presented to the council."),
+				contextOf(minutes),
 			).A5,
 		).toEqual({ outcome: "pass" });
 	});
