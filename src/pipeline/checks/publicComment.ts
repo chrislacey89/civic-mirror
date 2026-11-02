@@ -92,30 +92,66 @@ const ROLE_WORDS: ReadonlySet<string> = new Set(
 );
 
 /**
- * Offices of a government body. Inside the public-comment section one of
- * these beside a name reads as an official of another body speaking.
+ * Offices that name a government body on their own. Inside the public-comment
+ * section one of these beside a name reads as an official of another body
+ * speaking. Any other title (manager, chief, director, chair, member) is
+ * also held by private groups, so it clears only beside a government word.
  */
 const OFFICE_WORDS: ReadonlySet<string> = new Set(
-	"commissioner commissioners councilman councilwoman councilmember councilor councilperson mayor marshal sheriff superintendent trustee clerk treasurer auditor recorder prosecutor judge senator representative deputy chief lieutenant sergeant captain officer administrator planner inspector supervisor director manager chair chairman chairperson chairwoman".split(
+	"commissioner commissioners councilman councilwoman councilmember councilor councilperson mayor marshal sheriff superintendent trustee treasurer auditor recorder prosecutor judge senator representative".split(
 		" ",
 	),
 );
 
-/** Words naming a government body, which make any role title an office. */
+/** Words that name a government body wherever they stand in a run. */
 const GOVERNMENT_WORDS: ReadonlySet<string> = new Set(
-	"county town city township state federal department commission commissioners board council district school schools police fire highway utilities utility parks library court".split(
+	"county town city township state federal department commission commissioners council district police highway utilities utility court".split(
 		" ",
 	),
 );
 
 /**
- * Whether `text` names an office: an office word, or a role title beside a
- * government word. "President" or "member" alone names no office.
+ * Words that name a government body only beside a qualifier or a title: a
+ * private group has a board, a fire auxiliary or a library club too.
+ */
+const SHARED_BODY_WORDS: ReadonlySet<string> = new Set(
+	"fire school schools board parks library".split(" "),
+);
+
+/** Words that make a shared body word a government's: "fire department". */
+const BODY_QUALIFIERS: ReadonlySet<string> = new Set(
+	"department county town township city district corporation".split(" "),
+);
+
+/** Whether `text` names a government body. */
+function hasGovernmentBody(text: string): boolean {
+	const words = wordsOf(text);
+	if (words.some((word) => GOVERNMENT_WORDS.has(word))) return true;
+	const shared = words.flatMap((word, index) =>
+		SHARED_BODY_WORDS.has(word) ? [index] : [],
+	);
+	if (shared.length === 0) return false;
+	// A title right after the body word ("fire chief", "school superintendent")
+	// names that body's officer; "board" is left out, since "board member"
+	// is as common in a private group.
+	return (
+		words.some((word) => BODY_QUALIFIERS.has(word)) ||
+		shared.some(
+			(index) =>
+				words[index] !== "board" && ROLE_WORDS.has(words[index + 1] ?? ""),
+		)
+	);
+}
+
+/**
+ * Whether `text` names an office: an office that names a government body on
+ * its own, or a role title beside a government body. "President", "member"
+ * or "manager" alone names no office.
  */
 function hasOffice(text: string): boolean {
 	return (
 		hasAny(text, OFFICE_WORDS) ||
-		(hasAny(text, ROLE_WORDS) && hasAny(text, GOVERNMENT_WORDS))
+		(hasAny(text, ROLE_WORDS) && hasGovernmentBody(text))
 	);
 }
 
