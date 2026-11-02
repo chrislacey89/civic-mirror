@@ -93,4 +93,55 @@ describe("feedbackFrom", () => {
 			feedbackFrom({ verdicts: { A1: { outcome: "pass" } } }, draft),
 		).toEqual([]);
 	});
+
+	describe("for A5, whose evidence blanks the name", () => {
+		const named: WriteUp = {
+			highlights: [],
+			prose:
+				"The council met. Ada Lovelace asked about flooding on Elm Street. It adjourned.",
+		};
+
+		it("quotes the draft sentence with the name back in it, and names the rule", () => {
+			const items = feedbackFrom(
+				{
+					verdicts: {
+						A5: {
+							outcome: "fail",
+							evidence:
+								'a resident at public comment is named: "[name] asked about flooding on Elm Street." (name at 0)',
+						},
+					},
+				},
+				named,
+			);
+			expect(items).toEqual([
+				{
+					checkId: "A5",
+					quote: "Ada Lovelace asked about flooding on Elm Street.",
+					finding: "names a resident who spoke at public comment",
+				},
+			]);
+		});
+
+		it("does the same for an unresolved name", () => {
+			const items = feedbackFrom(
+				{
+					verdicts: {
+						A5: {
+							outcome: "unchecked",
+							reason:
+								'a name is on no officials list and has no role in the documents: "[name] asked about flooding on Elm Street." (name at 0)',
+						},
+					},
+				},
+				named,
+			);
+			expect(items[0]?.quote).toBe(
+				"Ada Lovelace asked about flooding on Elm Street.",
+			);
+			expect(items[0]?.finding).toBe(
+				"names a person who is on no officials list and has no role in the documents",
+			);
+		});
+	});
 });
