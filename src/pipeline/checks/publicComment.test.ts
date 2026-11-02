@@ -75,6 +75,7 @@ describe("publicCommentCheck on minutes that mark public comment", () => {
 
 	it.each([
 		"County Commissioner Ada Lovelace spoke about the bridge.",
+		"Monroe County Highway Director Ada Lovelace spoke.",
 		"Ada Lovelace, Monroe County Highway Director, spoke about the bridge.",
 		"Ada Lovelace, representing Elm Paving, spoke about the bridge.",
 	])("passes a name the section writes with a role or office beside it: %s", (line) => {
@@ -116,6 +117,8 @@ describe("publicCommentCheck on minutes that mark public comment", () => {
 		"Ada Lovelace, who owns the bar on Main Street, spoke about the fine.",
 		"Ada Lovelace of Elm Builders LLC spoke about her fine.",
 		"Ada Lovelace with the Richland Township Board spoke about the bridge.",
+		"Chairman Smith recognized Ada Lovelace, 12 Elm Street, who asked about flooding.",
+		"The Mayor thanked Ada Lovelace for her comments on flooding.",
 	])("still fails a resident the section writes as %s", (line) => {
 		const minutes = `Privilege of the Floor\n${line}\nSupervisor Comments`;
 		expect(
@@ -275,6 +278,17 @@ describe("publicCommentCheck on a meeting with no marked public comment", () => 
 				contextOf(minutes),
 			).A5,
 		).toEqual({ outcome: "pass" });
+	});
+
+	it("does not resolve a person by an organisation word that is not beside the name", () => {
+		const minutes =
+			"Old Business\nCouncil heard Ada Lovelace on flooding.\nAdjournment";
+		expect(
+			publicCommentCheck.run(
+				draftOf("Ada Lovelace spoke on flooding."),
+				contextOf(minutes),
+			).A5?.outcome,
+		).toBe("unchecked");
 	});
 
 	it("is unchecked on a transcript-only meeting for anyone not on the list", () => {

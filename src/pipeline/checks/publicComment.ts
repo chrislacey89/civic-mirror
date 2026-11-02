@@ -115,8 +115,18 @@ const ORG_AFTER =
 	/^,?\s*(?:of|with|from|for|representing|on behalf of)\s+((?:the\s+)?(?:\p{Lu}[\p{L}&.'’-]*\s*){1,6})/u;
 
 /**
- * Whether `text` writes a role or office beside `name`: a title in the three
- * words before it ("County Commissioner Ada Lovelace"), a clause after it
+ * The capitalised words written directly before a name, with nothing else
+ * between: "County Commissioner " in "met County Commissioner Ada Lovelace".
+ * A lowercase word, or punctuation after a word, ends the run.
+ */
+function capitalisedRunBefore(before: string): string {
+	return before.match(/(?:\p{Lu}[\p{L}'’.-]* )+$/u)?.[0] ?? "";
+}
+
+/**
+ * Whether `text` writes a role or office beside `name`: a title in the
+ * capitalised run of up to three words right before it ("County
+ * Commissioner Ada Lovelace"), a clause after it
  * with a title in it ("Ada Lovelace, Highway Director,"), or "representing".
  * With `organisations`, an organisation counts too, before or after
  * ("Ada Lovelace of Elm Engineering", "Ada Lovelace, financial consultants").
@@ -139,7 +149,7 @@ function hasRoleBeside(
 		const after = flat.slice(match.index + match[0].length);
 		const clause = after.match(/^,\s*([^,.;]{1,80})/);
 		return (
-			hasAny(match[1] ?? "", words) ||
+			hasAny(capitalisedRunBefore(match[1] ?? ""), words) ||
 			/^,\s*(?:representing|on behalf of)\b/i.test(after) ||
 			(clause !== null && hasAny(clause[1] ?? "", words)) ||
 			(organisations && hasAny(after.match(ORG_AFTER)?.[1] ?? "", ORG_WORDS))
