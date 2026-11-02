@@ -188,7 +188,7 @@ const ORG_AFTER =
 function capitalisedRunBefore(before: string): string {
 	return (
 		before.match(
-			/(?:\p{Lu}[\p{L}'’.-]* (?:(?:of|for)(?: the)? (?=\p{Lu}))?)+$/u,
+			/(?:\p{Lu}[\p{L}'’-]* (?:(?:of|for)(?: the)? (?=\p{Lu}))?)+$/u,
 		)?.[0] ?? ""
 	);
 }
