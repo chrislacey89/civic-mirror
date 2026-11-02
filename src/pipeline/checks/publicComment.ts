@@ -91,6 +91,34 @@ const ROLE_WORDS: ReadonlySet<string> = new Set(
 	),
 );
 
+/**
+ * Offices of a government body. Inside the public-comment section one of
+ * these beside a name reads as an official of another body speaking.
+ */
+const OFFICE_WORDS: ReadonlySet<string> = new Set(
+	"commissioner commissioners councilman councilwoman councilmember councilor councilperson mayor marshal sheriff superintendent trustee clerk treasurer auditor recorder prosecutor judge senator representative deputy chief lieutenant sergeant captain officer administrator planner inspector supervisor director manager chair chairman chairperson chairwoman".split(
+		" ",
+	),
+);
+
+/** Words naming a government body, which make any role title an office. */
+const GOVERNMENT_WORDS: ReadonlySet<string> = new Set(
+	"county town city township state federal department commission commissioners board council district school schools police fire highway utilities utility parks library court".split(
+		" ",
+	),
+);
+
+/**
+ * Whether `text` names an office: an office word, or a role title beside a
+ * government word. "President" or "member" alone names no office.
+ */
+function hasOffice(text: string): boolean {
+	return (
+		hasAny(text, OFFICE_WORDS) ||
+		(hasAny(text, ROLE_WORDS) && hasAny(text, GOVERNMENT_WORDS))
+	);
+}
+
 /** Words an organisation's name ends with or contains, never a street's. */
 const ORG_WORDS: ReadonlySet<string> = new Set(
 	"advisors agency architects associates association authority bank board builders bureau chamber church city co college commission committee company concrete construction consultants consulting contracting contractors corp corporation council county department designers development district electric engineering engineers excavating fire foundation group hospital inc institute legion library llc llp ltd lumber office partners paving plumbing police realty school schools services state supply town township university utilities utility".split(
@@ -128,6 +156,9 @@ function capitalisedRunBefore(before: string): string {
  * capitalised run of up to three words right before it ("County
  * Commissioner Ada Lovelace"), a clause after it
  * with a title in it ("Ada Lovelace, Highway Director,"), or "representing".
+ * Without `organisations` (inside a marked section) a title clears a name
+ * only as an office or beside a government word, so "president" or "member"
+ * alone does not.
  * With `organisations`, an organisation counts too, before or after
  * ("Ada Lovelace of Elm Engineering", "Ada Lovelace, financial consultants").
  * An address is neither.
@@ -142,16 +173,16 @@ function hasRoleBeside(
 		String.raw`((?:[^\s.;:!?]+ ){0,3})${escaped(name)}(?![\p{L}])`,
 		"gu",
 	);
-	const words = organisations
-		? new Set([...ROLE_WORDS, ...ORG_WORDS])
-		: ROLE_WORDS;
+	const words = new Set([...ROLE_WORDS, ...ORG_WORDS]);
+	const clears = (run: string) =>
+		organisations ? hasAny(run, words) : hasOffice(run);
 	return [...flat.matchAll(occurrence)].some((match) => {
 		const after = flat.slice(match.index + match[0].length);
 		const clause = after.match(/^,\s*([^,.;]{1,80})/);
 		return (
-			hasAny(capitalisedRunBefore(match[1] ?? ""), words) ||
+			clears(capitalisedRunBefore(match[1] ?? "")) ||
 			/^,\s*(?:representing|on behalf of)\b/i.test(after) ||
-			(clause !== null && hasAny(clause[1] ?? "", words)) ||
+			(clause !== null && clears(clause[1] ?? "")) ||
 			(organisations && hasAny(after.match(ORG_AFTER)?.[1] ?? "", ORG_WORDS))
 		);
 	});

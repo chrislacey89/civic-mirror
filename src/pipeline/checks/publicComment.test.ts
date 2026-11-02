@@ -130,6 +130,35 @@ describe("publicCommentCheck on minutes that mark public comment", () => {
 	});
 });
 
+describe("publicCommentCheck on a role written beside a name in the section", () => {
+	const a5 = (line: string) => {
+		const minutes = `Privilege of the Floor\n${line}\nSupervisor Comments`;
+		return publicCommentCheck.run(
+			draftOf("Ada Lovelace spoke about the bar."),
+			contextOf(minutes),
+		).A5?.outcome;
+	};
+
+	it.each([
+		"Ada Lovelace, president of the Oak Hills HOA, spoke about the bar.",
+		"Ada Lovelace, a member of the Elm Street neighbors, spoke about the bar.",
+		"Attorney Ada Lovelace spoke for the neighbors.",
+		"Engineer Ada Lovelace spoke about the drainage.",
+	])("fails A5 when a role with no office or government body clears %j", (line) => {
+		expect(a5(line)).toBe("fail");
+	});
+
+	it.each([
+		"County Commissioner Ada Lovelace spoke about the bridge.",
+		"Ada Lovelace, Monroe County Highway Director, spoke about the bridge.",
+		"Town Attorney Ada Lovelace spoke about the fine.",
+		"Council President Ada Lovelace spoke about the budget.",
+		"Ada Lovelace, representing Elm Paving, spoke about the bridge.",
+	])("passes A5 when an office or government body is beside %j", (line) => {
+		expect(a5(line)).toBe("pass");
+	});
+});
+
 describe("publicCommentSection", () => {
 	it("gives the lines between a Privilege of the Floor heading and the next heading", () => {
 		const minutes = [
