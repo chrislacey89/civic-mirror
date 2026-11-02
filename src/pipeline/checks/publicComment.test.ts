@@ -130,6 +130,45 @@ describe("publicCommentCheck on minutes that mark public comment", () => {
 	});
 });
 
+describe("publicCommentCheck on a resident the section writes by surname", () => {
+	const a5 = (line: string, prose = "Ada Lovelace asked about flooding.") =>
+		publicCommentCheck.run(
+			draftOf(prose),
+			contextOf(`Privilege of the Floor\n${line}\nSupervisor Comments`),
+		).A5;
+
+	it("fails a name whose surname the section writes after an honorific", () => {
+		expect(
+			a5("Mr. Lovelace, 12 Elm Street, asked about flooding.")?.outcome,
+		).toBe("fail");
+	});
+
+	it("passes a name when the honorific in the section goes with a different surname", () => {
+		expect(a5("Mr. Reed, 12 Elm Street, asked about flooding.")).toEqual({
+			outcome: "pass",
+		});
+	});
+
+	// A name the prose takes from outside the marked section is resolved, so a
+	// speaker label in the transcript does not fail A5. The judge in #205
+	// covers this case.
+	it("passes a resident named only in a transcript speaker label, by the issue's rule that names outside the section are resolved", () => {
+		const context = contextOf(
+			"Privilege of the Floor\nThree residents spoke.\nSupervisor Comments",
+		);
+		context.input.sources.push({
+			kind: "transcript",
+			text: "ada lovelace my basement floods",
+		});
+		expect(
+			publicCommentCheck.run(
+				draftOf("Ada Lovelace asked about flooding."),
+				context,
+			).A5,
+		).toEqual({ outcome: "pass" });
+	});
+});
+
 describe("publicCommentCheck on a role written beside a name in the section", () => {
 	const a5 = (line: string) => {
 		const minutes = `Privilege of the Floor\n${line}\nSupervisor Comments`;
@@ -343,6 +382,19 @@ describe("publicCommentCheck on a meeting with no marked public comment", () => 
 				contextOf(UNMARKED_MINUTES),
 			).A5,
 		).toEqual({ outcome: "pass" });
+	});
+});
+
+describe("publicCommentCheck on a name written after the word from", () => {
+	it("is unchecked for a person with a street surname whom the documents write after from", () => {
+		const minutes =
+			"Old Business\nA letter from Denise Lane was read.\nAdjournment";
+		expect(
+			publicCommentCheck.run(
+				draftOf("Denise Lane asked about flooding."),
+				contextOf(minutes),
+			).A5?.outcome,
+		).toBe("unchecked");
 	});
 });
 

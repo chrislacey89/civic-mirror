@@ -217,7 +217,7 @@ function writtenAsPlace(name: string, text: string): boolean {
 	const last = name.split(" ").at(-1)?.toLowerCase() ?? "";
 	if (!STREET_WORDS.has(last)) return false;
 	const afterPlaceWord = new RegExp(
-		String.raw`\b(?:on|at|along|near|off|onto|of|from)\s+(?:\d+[\p{L}]?\s+)?${escaped(name)}(?![\p{L}\d])`,
+		String.raw`\b(?:on|at|along|near|off|onto|of)\s+(?:\d+[\p{L}]?\s+)?${escaped(name)}(?![\p{L}\d])`,
 		"iu",
 	);
 	return afterPlaceWord.test(text.replace(/\s+/g, " "));
@@ -259,6 +259,20 @@ function redacted(
  */
 type Standing = "resident" | "resolved" | "unresolved";
 
+/**
+ * Whether `text` writes the last word of a full `name` right after an
+ * honorific ("Mr. Lovelace" for "Ada Lovelace").
+ */
+function surnameAfterHonorific(name: string, text: string): boolean {
+	const words = name.split(" ");
+	const surname = words.at(-1);
+	if (words.length < 2 || surname === undefined) return false;
+	return new RegExp(
+		String.raw`(?<![\p{L}])(?:mr|mrs|ms|dr)\.?\s+${escaped(surname)}(?![\p{L}\d])`,
+		"iu",
+	).test(text.replace(/\s+/g, " "));
+}
+
 function standingOf(name: string, ctx: CheckContext): Standing {
 	if (onOfficialsList(name, ctx.officials)) return "resolved";
 	const documents = ctx.input.sources
@@ -268,7 +282,9 @@ function standingOf(name: string, ctx: CheckContext): Standing {
 	if (writtenAsPlace(name, documents)) return "resolved";
 	const section = publicCommentOf(ctx);
 	if (section !== null) {
-		return namedIn(name, section) && !hasRoleBeside(name, section, false)
+		const inSection =
+			namedIn(name, section) || surnameAfterHonorific(name, section);
+		return inSection && !hasRoleBeside(name, section, false)
 			? "resident"
 			: "resolved";
 	}
