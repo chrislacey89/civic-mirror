@@ -140,15 +140,23 @@ function hasRoleBeside(name: string, text: string): boolean {
 }
 
 /**
- * The sentence of `passage` that names `name`, with the name replaced by
- * "[name]" and the offset the name had, so the evidence shows which sentence
- * without repeating who.
+ * The sentence of `passage` that names `name`, with every one of `names`
+ * replaced by "[name]" and the offset `name` had, so the evidence shows
+ * which sentence without repeating who. The longest name goes first, so a
+ * surname alone cannot leave a first name behind.
  */
-function redacted(name: string, passage: string): string {
+function redacted(
+	name: string,
+	passage: string,
+	names: readonly string[],
+): string {
 	const sentence =
 		sentencesOf(passage).find((s) => s.includes(name)) ?? passage;
 	const at = sentence.indexOf(name);
-	return `"${sentence.replaceAll(name, "[name]")}" (name at ${at})`;
+	const blanked = [...names]
+		.sort((a, b) => b.length - a.length)
+		.reduce((text, each) => text.replaceAll(each, "[name]"), sentence);
+	return `"${blanked}" (name at ${at})`;
 }
 
 /**
@@ -217,17 +225,20 @@ export const publicCommentCheck: CodeCheck = {
 	owns: ["A5"],
 	run: (draft, ctx) => {
 		const names = namesOf(draft, ctx);
+		const flagged = names
+			.filter(({ standing }) => standing !== "resolved")
+			.map(({ name }) => name);
 		const failures = names
 			.filter(({ standing }) => standing === "resident")
 			.map(
 				({ name, passage }) =>
-					`a resident at public comment is named: ${redacted(name, passage)}`,
+					`a resident at public comment is named: ${redacted(name, passage, flagged)}`,
 			);
 		const unresolved = names
 			.filter(({ standing }) => standing === "unresolved")
 			.map(
 				({ name, passage }) =>
-					`a name is on no officials list and has no role in the documents: ${redacted(name, passage)}`,
+					`a name is on no officials list and has no role in the documents: ${redacted(name, passage, flagged)}`,
 			);
 		return { A5: failOrPass(failures, unresolved) };
 	},

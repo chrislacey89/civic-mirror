@@ -286,3 +286,45 @@ describe("unresolvedNames", () => {
 		).toEqual([]);
 	});
 });
+
+describe("A5 evidence", () => {
+	const minutes = [
+		"Privilege of the Floor",
+		"Ada Lovelace and Bo Reed asked about flooding.",
+		"Adjournment",
+	].join("\n");
+
+	it("replaces every flagged name in the sentence, each line at its own offset", () => {
+		const verdict = publicCommentCheck.run(
+			draftOf("Ada Lovelace and Bo Reed asked about flooding on Elm Street."),
+			contextOf(minutes),
+		).A5;
+		expect(verdict).toEqual({
+			outcome: "fail",
+			evidence: [
+				'a resident at public comment is named: "[name] and [name] asked about flooding on Elm Street." (name at 0)',
+				'a resident at public comment is named: "[name] and [name] asked about flooding on Elm Street." (name at 17)',
+			].join("\n"),
+		});
+	});
+
+	it("leaves no part of a name behind when the prose also uses the surname alone, in a highlight or the prose", () => {
+		const draft = draftOf(
+			"Ada Lovelace asked about flooding. Lovelace said the creek rose.",
+			["Ada Lovelace asks council to fix flooding"],
+		);
+		const unmarked = "Old Business\nAda Lovelace asked about flooding.";
+		for (const ctx of [contextOf(minutes), contextOf(unmarked)]) {
+			const verdict = publicCommentCheck.run(draft, ctx).A5;
+			const text =
+				verdict?.outcome === "fail"
+					? verdict.evidence
+					: verdict?.outcome === "unchecked"
+						? verdict.reason
+						: "";
+			expect(text).not.toBe("");
+			expect(text).not.toMatch(/Ada|Lovelace/);
+			expect(text).toContain("[name] asks council to fix flooding");
+		}
+	});
+});
