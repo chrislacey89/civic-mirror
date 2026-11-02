@@ -1,5 +1,105 @@
 import { describe, expect, it } from "vitest";
-import { publicCommentSection } from "./publicComment.ts";
+import type { Official } from "#/pipeline/officials/types.ts";
+import { publicCommentCheck, publicCommentSection } from "./publicComment.ts";
+import type { CheckContext, WriteUp } from "./types.ts";
+
+/** Minutes whose public-comment section names an invented resident. */
+const MARKED_MINUTES = [
+	"Old Business",
+	"The council approved the bid from Elm Paving.",
+	"Privilege of the Floor",
+	"Ada Lovelace, 12 Elm Street, asked about flooding on Elm Street.",
+	"Supervisor Comments",
+	"Town Manager Bo Reed reported on the move.",
+].join("\n");
+
+function contextOf(
+	documents: string | null,
+	officials: readonly Official[] = [],
+): CheckContext {
+	return {
+		input: {
+			sources:
+				documents === null ? [] : [{ kind: "documents", text: documents }],
+			meetingContext: "Town Council, May 27, 2025",
+		},
+		ledger: [],
+		officials,
+	};
+}
+
+function draftOf(prose: string, highlights: string[] = []): WriteUp {
+	return { highlights, prose };
+}
+
+describe("publicCommentCheck on minutes that mark public comment", () => {
+	it("fails A5 when the prose names a non-official who spoke there, without repeating the name", () => {
+		const verdict = publicCommentCheck.run(
+			draftOf("Ada Lovelace asked the council about flooding on Elm Street."),
+			contextOf(MARKED_MINUTES),
+		).A5;
+		expect(verdict).toEqual({
+			outcome: "fail",
+			evidence:
+				'a resident at public comment is named: "[name] asked the council about flooding on Elm Street." (name at 0)',
+		});
+	});
+
+	it("passes a name the prose takes from outside the section", () => {
+		expect(
+			publicCommentCheck.run(
+				draftOf("Town Manager Bo Reed reported on the move."),
+				contextOf(MARKED_MINUTES),
+			).A5,
+		).toEqual({ outcome: "pass" });
+	});
+
+	it("passes an official on the list who spoke there", () => {
+		const lovelace: Official = {
+			name: "Ada Lovelace",
+			variants: [],
+			role: "Town Council member",
+			served: { from: "2024-01-01", to: null },
+		};
+		expect(
+			publicCommentCheck.run(
+				draftOf("Ada Lovelace asked about flooding."),
+				contextOf(MARKED_MINUTES, [lovelace]),
+			).A5,
+		).toEqual({ outcome: "pass" });
+	});
+
+	it.each([
+		"County Commissioner Ada Lovelace spoke about the bridge.",
+		"Ada Lovelace, Monroe County Highway Director, spoke about the bridge.",
+		"Ada Lovelace of Elm Engineering Inc. spoke about the bridge.",
+		"Ada Lovelace with the Richland Township Board spoke about the bridge.",
+		"Ada Lovelace, representing Elm Paving, spoke about the bridge.",
+	])("passes a name the section writes with a role or office beside it: %s", (line) => {
+		const minutes = `Privilege of the Floor\n${line}\nSupervisor Comments`;
+		expect(
+			publicCommentCheck.run(
+				draftOf("Ada Lovelace spoke about the bridge."),
+				contextOf(minutes),
+			).A5,
+		).toEqual({ outcome: "pass" });
+	});
+
+	it.each([
+		"Ada Lovelace, 12 Elm Street, spoke about the bridge.",
+		"Ada Lovelace of Elm Street spoke about the bridge.",
+		"Ada Lovelace asked the Town Manager about the bridge.",
+		"Ada Lovelace, who owns the bar on Main Street, spoke about the fine.",
+	])("still fails a resident the section writes as %s", (line) => {
+		const minutes = `Privilege of the Floor\n${line}\nSupervisor Comments`;
+		expect(
+			publicCommentCheck.run(
+				draftOf("Ada Lovelace spoke about the bridge."),
+				contextOf(minutes),
+			).A5?.outcome,
+		).toBe("fail");
+	});
+});
 
 describe("publicCommentSection", () => {
 	it("gives the lines between a Privilege of the Floor heading and the next heading", () => {
