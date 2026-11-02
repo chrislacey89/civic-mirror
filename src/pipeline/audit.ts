@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { runCodeChecks } from "#/pipeline/checks/index.ts";
 import type { CheckId, Verdict } from "#/pipeline/checks/types.ts";
 import type { DatabaseError } from "#/pipeline/errors.ts";
+import { officialsFor } from "#/pipeline/officials/index.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import { readableSources } from "#/pipeline/sources.ts";
 
@@ -41,6 +42,7 @@ function auditSummaries(input: {
 					meetingContext: `${input.bodySlug}, ${meeting.date}`,
 				},
 				ledger: stored.ledger,
+				officials: officialsFor(input.bodySlug, meeting.date),
 			});
 			for (const [checkId, verdict] of Object.entries(report.verdicts) as [
 				CheckId,

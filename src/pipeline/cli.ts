@@ -3,6 +3,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { config as loadDotenv } from "dotenv";
 import { Console, Effect, Option } from "effect";
 import { Command, Flag } from "effect/cli";
+import { officialsFor } from "#/pipeline/officials/index.ts";
 
 loadDotenv({ path: [".env.local", ".env"] });
 
@@ -387,6 +388,7 @@ const documentDetachCommand = Command.make(
 					sourceUrl: url,
 					meetingContext: `${body.name}, ${date}`,
 					glossary: body.glossary,
+					officials: officialsFor(body.slug, date),
 				});
 				if (result.outcome === "last-source") {
 					return yield* Effect.fail(

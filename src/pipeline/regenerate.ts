@@ -2,6 +2,8 @@ import { Effect } from "effect";
 import { newPublication } from "#/pipeline/checks/prePublish.ts";
 import type { GateId, PrePublishOutcome } from "#/pipeline/checks/types.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
+import { officialsFor } from "#/pipeline/officials/index.ts";
+import type { Official } from "#/pipeline/officials/types.ts";
 import {
 	StorageService,
 	type SummaryScope,
@@ -39,6 +41,7 @@ function regenerateMeetingSummary(input: {
 	meetingId: number;
 	meetingContext: string;
 	glossary: readonly string[] | undefined;
+	officials: readonly Official[];
 	force?: boolean;
 	evenUnfingerprinted?: boolean;
 }): Effect.Effect<
@@ -70,6 +73,7 @@ function regenerateMeetingSummary(input: {
 			sources,
 			meetingContext: input.meetingContext,
 			glossary: input.glossary,
+			officials: input.officials,
 		});
 
 		const { newlyHeld } = yield* storage.replaceMeetingSummary({
@@ -139,6 +143,7 @@ function regenerateBodySummaries(input: {
 				meetingId: meeting.meetingId,
 				meetingContext: `${input.body.name}, ${meeting.date}`,
 				glossary: input.body.glossary,
+				officials: officialsFor(input.body.slug, meeting.date),
 				force: true,
 				evenUnfingerprinted: input.scope === "all",
 			}).pipe(

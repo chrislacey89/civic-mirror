@@ -146,6 +146,7 @@ async function setup(options: {
 				meetingId: meeting.id,
 				meetingContext: "Town Council, 2025-05-27",
 				glossary: undefined,
+				officials: [],
 				...options,
 			}).pipe(Effect.provide(layers)),
 		);
@@ -211,6 +212,7 @@ describe("regenerateMeetingSummary", () => {
 					{ kind: "documents", text: MINUTES.rawText },
 				],
 				meetingContext: "Town Council, 2025-05-27",
+				officials: [],
 			},
 		]);
 
@@ -444,6 +446,7 @@ describe("regenerateBodySummaries", () => {
 					{ kind: "transcript", text: TRANSCRIPT_TEXT },
 				],
 				meetingContext: "Town Council, 2025-05-27",
+				officials: [],
 			},
 		]);
 	});

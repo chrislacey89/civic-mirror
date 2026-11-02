@@ -85,7 +85,7 @@ function wholeFigures(text: string): WrittenFigure[] {
 }
 
 /** A passage's sentences. A period after a common abbreviation ends none. */
-function sentencesOf(passage: string): string[] {
+export function sentencesOf(passage: string): string[] {
 	return passage
 		.split(/(?<!\b(?:No|Nos|Mr|Mrs|Ms|Dr|St|Ord|Res|Inc|Co|vs)\.)(?<=[.!?])\s+/)
 		.map((sentence) => sentence.trim())
@@ -93,7 +93,7 @@ function sentencesOf(passage: string): string[] {
 }
 
 /** Each highlight and each prose paragraph. */
-function passagesOf(draft: WriteUp): string[] {
+export function passagesOf(draft: WriteUp): string[] {
 	return [...draft.highlights, ...draft.prose.split(/\n\s*\n/)]
 		.map((passage) => passage.trim())
 		.filter((passage) => passage !== "");
@@ -474,7 +474,7 @@ function unstatedSums(
 	});
 }
 
-function failOrPass(
+export function failOrPass(
 	failures: readonly string[],
 	unchecked: readonly string[] = [],
 ): Verdict {

@@ -12,6 +12,7 @@ import {
 	figureIsIn,
 	statesFigure,
 } from "#/pipeline/figureMatch.ts";
+import type { Official } from "#/pipeline/officials/types.ts";
 import {
 	hasSourceKind,
 	type LabelledSource,
@@ -364,9 +365,15 @@ type SummarizationResult = Omit<SummarizationOutput, "sourceDisagreements"> & {
 	prePublish: PrePublishOutcome;
 };
 
+/** What the pre-publish check needs on top of what the model calls read. */
+type SummarizeRequest = SummarizationInput & {
+	/** The body's officials serving on the meeting's date. */
+	officials: readonly Official[];
+};
+
 interface SummarizationServiceInterface {
 	summarize(
-		input: SummarizationInput,
+		input: SummarizeRequest,
 	): Effect.Effect<SummarizationResult, LlmError>;
 }
 
@@ -525,7 +532,7 @@ function SummarizationServiceLive(
 					// A revision rewrites only the text, so the ledger call is never re-run.
 					const checked = await prePublish({
 						draft,
-						context: { input, ledger: verified },
+						context: { input, ledger: verified, officials: input.officials },
 						revise: (revision) =>
 							Effect.runPromise(
 								Effect.tryPromise(() =>
@@ -591,6 +598,7 @@ export type {
 	LabelledSource,
 	SummarizationGenerateFn,
 	SummarizationInput,
+	SummarizeRequest,
 	SummarizationOutput,
 	SummarizationResult,
 	SummarizationServiceConfig,

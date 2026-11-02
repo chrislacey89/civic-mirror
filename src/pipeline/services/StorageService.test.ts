@@ -2123,6 +2123,7 @@ describe("StorageService", () => {
 					context: {
 						input: { sources: [], meetingContext: "" },
 						ledger: [],
+						officials: [],
 					},
 				}),
 				runId,

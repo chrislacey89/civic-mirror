@@ -22,6 +22,7 @@ export function summarized(
 			context: {
 				input: { sources: [], meetingContext: "" },
 				ledger: result.fiscalDecisions,
+				officials: [],
 			},
 		}),
 	};
@@ -39,7 +40,11 @@ export function publicationOf(
 	return toPublication(
 		checkDraft({
 			draft: { ...text, finishReason: "stop", usage: null },
-			context: { input: { sources, meetingContext: "" }, ledger: [] },
+			context: {
+				input: { sources, meetingContext: "" },
+				ledger: [],
+				officials: [],
+			},
 		}),
 		runId,
 	);

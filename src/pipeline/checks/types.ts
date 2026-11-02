@@ -1,3 +1,4 @@
+import type { Official } from "#/pipeline/officials/types.ts";
 import type {
 	SummarizationInput,
 	SummarizationOutput,
@@ -155,6 +156,8 @@ export type PrePublishOutcome =
 export interface CheckContext {
 	readonly input: SummarizationInput;
 	readonly ledger: SummarizationOutput["fiscalDecisions"];
+	/** Those serving on the meeting's date; their names are grounded. */
+	readonly officials: readonly Official[];
 }
 
 export interface CodeCheck {

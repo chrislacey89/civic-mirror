@@ -18,6 +18,8 @@ import {
 	type ParseError,
 	TranscriptionError,
 } from "#/pipeline/errors.ts";
+import { officialsFor } from "#/pipeline/officials/index.ts";
+import type { Official } from "#/pipeline/officials/types.ts";
 import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
 import {
 	type AlertScope,
@@ -537,6 +539,7 @@ function attachDocumentsAndRegenerate(input: {
 	>;
 	meetingContext: string;
 	glossary: readonly string[] | undefined;
+	officials: readonly Official[];
 	config: ResolvedConfig;
 }): Effect.Effect<
 	void,
@@ -572,6 +575,7 @@ function attachDocumentsAndRegenerate(input: {
 			meetingDate: input.meeting.date,
 			meetingContext: input.meetingContext,
 			glossary: input.glossary,
+			officials: input.officials,
 			config: input.config,
 		}).pipe(Effect.annotateLogs({ bringsNewDocument }));
 	});
@@ -587,6 +591,7 @@ function regenerateWithRetry(input: {
 	meetingDate: string;
 	meetingContext: string;
 	glossary: readonly string[] | undefined;
+	officials: readonly Official[];
 	config: ResolvedConfig;
 }): Effect.Effect<
 	void,
@@ -601,6 +606,7 @@ function regenerateWithRetry(input: {
 			meetingId: input.meetingId,
 			meetingContext: input.meetingContext,
 			glossary: input.glossary,
+			officials: input.officials,
 		}).pipe(
 			Effect.retry({
 				schedule: input.config.llmSchedule,
@@ -677,6 +683,7 @@ function matchDocumentsToMeeting(input: {
 				meeting: input.documents,
 				meetingContext: input.meetingContext,
 				glossary: body.glossary,
+				officials: officialsFor(body.slug, meeting.date),
 				config,
 			});
 			return { settled: true };
@@ -853,6 +860,7 @@ function processEgovListing(
 					meetingDate,
 					meetingContext: `${body.name}, ${meetingDate}`,
 					glossary: body.glossary,
+					officials: officialsFor(body.slug, meetingDate),
 					config,
 				});
 				return SETTLED_WITHOUT_REQUEST;
@@ -916,6 +924,7 @@ function processEgovListing(
 				},
 				meetingContext: `${body.name}, ${meetingDate}`,
 				glossary: body.glossary,
+				officials: officialsFor(body.slug, meetingDate),
 				config,
 			});
 			return { processed: 1, errors: 0 };
@@ -968,6 +977,7 @@ function processEgovListing(
 				sources: [{ kind: "documents", text: extraction.text }],
 				meetingContext: `${body.name}, ${meetingDate}`,
 				glossary: body.glossary,
+				officials: officialsFor(body.slug, meetingDate),
 			})
 			.pipe(Effect.retry(config.llmSchedule));
 		yield* Effect.log("egov.summarize.finish");
@@ -1189,6 +1199,7 @@ function processFinalsiteListing(
 				},
 				meetingContext: `${body.name}, ${listing.date}`,
 				glossary: body.glossary,
+				officials: officialsFor(body.slug, meetingDate),
 				config,
 			});
 			return { processed: 1, errors: 0 };
@@ -1239,6 +1250,7 @@ function processFinalsiteListing(
 				sources: readableSources,
 				meetingContext: `${body.name}, ${listing.date}`,
 				glossary: body.glossary,
+				officials: officialsFor(body.slug, meetingDate),
 			})
 			.pipe(Effect.retry(config.llmSchedule));
 		yield* Effect.log("finalsite.summarize.finish");
@@ -1432,6 +1444,7 @@ function processPlaylistVideo(
 					meetingDate: existing.date,
 					meetingContext: `${body.name}, ${video.title}`,
 					glossary: body.glossary,
+					officials: officialsFor(body.slug, existing.date),
 					config,
 				});
 			}
@@ -1628,6 +1641,7 @@ function processYouTubeVideo(
 		const { transcript, summary } = yield* transcribeAndSummarize(
 			body,
 			video,
+			videoMeeting.date,
 			config,
 		);
 
@@ -1686,6 +1700,7 @@ function processYouTubeVideo(
 function transcribeAndSummarize(
 	body: BodyConfig,
 	video: VideoRef,
+	meetingDate: string,
 	config: ResolvedConfig,
 ): Effect.Effect<
 	{ transcript: TranscriptResult; summary: SummarizationResult },
@@ -1715,6 +1730,7 @@ function transcribeAndSummarize(
 				sources: [{ kind: "transcript", text: transcript.rawText }],
 				meetingContext: `${body.name}, ${video.title}`,
 				glossary: body.glossary,
+				officials: officialsFor(body.slug, meetingDate),
 			})
 			.pipe(Effect.retry(config.llmSchedule));
 		yield* Effect.log("youtube.summarize.finish");
@@ -1757,6 +1773,7 @@ function matchVideoToMeeting(input: {
 		const { transcript, summary } = yield* transcribeAndSummarize(
 			body,
 			video,
+			meeting.date,
 			config,
 		);
 
@@ -1818,6 +1835,7 @@ function matchVideoToMeeting(input: {
 			meetingDate: meeting.date,
 			meetingContext: `${body.name}, ${video.title}`,
 			glossary: body.glossary,
+			officials: officialsFor(body.slug, meeting.date),
 			config,
 		});
 

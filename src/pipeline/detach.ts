@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
+import type { Official } from "#/pipeline/officials/types.ts";
 import { regenerateMeetingSummary } from "#/pipeline/regenerate.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import type { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
@@ -28,6 +29,7 @@ function detachDocumentAndRegenerate(input: {
 	sourceUrl: string;
 	meetingContext: string;
 	glossary: readonly string[] | undefined;
+	officials: readonly Official[];
 }): Effect.Effect<
 	DetachOutcome,
 	DatabaseError | LlmError,
@@ -65,6 +67,7 @@ function detachDocumentAndRegenerate(input: {
 			meetingId: input.meetingId,
 			meetingContext: input.meetingContext,
 			glossary: input.glossary,
+			officials: input.officials,
 		});
 		return { outcome: isHeld ? "detached" : "not-held", regenerated };
 	});

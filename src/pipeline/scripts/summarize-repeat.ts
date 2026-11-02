@@ -19,6 +19,7 @@
  *   3  a model or database call failed, so the runs could not all be compared;
  *      the failed runs are printed and nothing is compared
  */
+
 import { writeFileSync } from "node:fs";
 import { createClient } from "@libsql/client";
 import { config } from "dotenv";
@@ -27,6 +28,7 @@ import { Effect, Layer, Result } from "effect";
 import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
 import { DEFAULT_BODIES } from "#/pipeline/composition.ts";
+import { officialsFor } from "#/pipeline/officials/index.ts";
 import {
 	createGeminiSummarizer,
 	createGeminiWriter,
@@ -108,6 +110,7 @@ const attempt = await Effect.runPromise(
 						sources,
 						meetingContext: `${body.name}, ${date}`,
 						glossary: body.glossary,
+						officials: officialsFor(body.slug, date),
 					})
 					.pipe(Effect.result),
 			{ concurrency: runs },
