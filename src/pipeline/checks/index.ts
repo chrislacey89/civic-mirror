@@ -1,5 +1,6 @@
 import { figuresCheck } from "./figures.ts";
 import { namesCheck } from "./names.ts";
+import { publicCommentCheck } from "./publicComment.ts";
 import { truncationCheck } from "./truncation.ts";
 import type {
 	CheckContext,
@@ -15,6 +16,7 @@ export const CODE_CHECKS: readonly CodeCheck[] = [
 	truncationCheck,
 	figuresCheck,
 	namesCheck,
+	publicCommentCheck,
 ];
 
 /**

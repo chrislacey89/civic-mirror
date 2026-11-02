@@ -2273,6 +2273,7 @@ describe("StorageService", () => {
 						A1: { outcome: "pass" },
 						G1: { outcome: "pass" },
 						G4: { outcome: "pass" },
+						A5: { outcome: "pass" },
 					},
 				},
 				judge: "skipped",
