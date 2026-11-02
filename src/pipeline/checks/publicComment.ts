@@ -292,11 +292,11 @@ function redacted(
 /**
  * Who a name in the draft is, as far as code can tell. On a meeting whose
  * minutes mark public comment, a name taken from inside that section is a
- * `resident` unless the section writes a title beside it; an organisation
+ * `resident` unless `hasRoleBeside` clears it; an organisation
  * is not enough there, since a business owner at public comment is a
  * resident. Every other name on such a meeting is `resolved`. On any other
- * meeting, a name is `resolved` by the officials list or by a title or
- * organisation the documents write beside it, and is otherwise
+ * meeting, a name is `resolved` by the officials list or by what
+ * `hasRoleBeside` finds in the documents, and is otherwise
  * `unresolved`: code cannot tell a resident from a presenter.
  */
 type Standing = "resident" | "resolved" | "unresolved";
