@@ -139,11 +139,46 @@ function hasRoleBeside(name: string, text: string): boolean {
 	});
 }
 
+function escaped(text: string): string {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** `name` as whole words: "Reed" is not in "Reedsville" or "Headdy". */
+function wholeWords(name: string): RegExp {
+	return new RegExp(
+		String.raw`(?<![\p{L}\d])${escaped(name)}(?![\p{L}\d])`,
+		"gu",
+	);
+}
+
+/** Words a street's name ends with that are also surnames. */
+const STREET_WORDS: ReadonlySet<string> = new Set(
+	"avenue ave boulevard blvd circle court ct drive dr highway lane ln parkway pike place pl road rd street st trail way".split(
+		" ",
+	),
+);
+
+/**
+ * Whether `name` is a street rather than a person: it ends in a street word
+ * and `text` writes it after a place word ("on Lantern Lane"). A person with
+ * such a surname is written after neither.
+ */
+function writtenAsPlace(name: string, text: string): boolean {
+	const last = name.split(" ").at(-1)?.toLowerCase() ?? "";
+	if (!STREET_WORDS.has(last)) return false;
+	const afterPlaceWord = new RegExp(
+		String.raw`\b(?:on|at|along|near|off|onto)\s+${escaped(name)}(?![\p{L}\d])`,
+		"iu",
+	);
+	return afterPlaceWord.test(text.replace(/\s+/g, " "));
+}
+
 /**
  * The sentence of `passage` that names `name`, with every one of `names`
  * replaced by "[name]" and the offset `name` had, so the evidence shows
- * which sentence without repeating who. The longest name goes first, so a
- * surname alone cannot leave a first name behind.
+ * which sentence without repeating who. Whole names go first, longest
+ * first, then each word of a full name on its own, so a surname alone or a
+ * first name alone cannot be left behind.
  */
 function redacted(
 	name: string,
@@ -151,11 +186,14 @@ function redacted(
 	names: readonly string[],
 ): string {
 	const sentence =
-		sentencesOf(passage).find((s) => s.includes(name)) ?? passage;
-	const at = sentence.indexOf(name);
-	const blanked = [...names]
+		sentencesOf(passage).find((s) => wholeWords(name).test(s)) ?? passage;
+	const at = sentence.search(wholeWords(name));
+	const words = names.flatMap((each) =>
+		each.includes(" ") ? each.split(" ").filter((w) => w.length > 1) : [],
+	);
+	const blanked = [...new Set([...names, ...words])]
 		.sort((a, b) => b.length - a.length)
-		.reduce((text, each) => text.replaceAll(each, "[name]"), sentence);
+		.reduce((text, each) => text.replace(wholeWords(each), "[name]"), sentence);
 	return `"${blanked}" (name at ${at})`;
 }
 
@@ -171,16 +209,17 @@ type Standing = "resident" | "resolved" | "unresolved";
 
 function standingOf(name: string, ctx: CheckContext): Standing {
 	if (onOfficialsList(name, ctx.officials)) return "resolved";
+	const documents = ctx.input.sources
+		.filter((source) => source.kind === "documents")
+		.map((source) => source.text)
+		.join("\n");
+	if (writtenAsPlace(name, documents)) return "resolved";
 	const section = publicCommentOf(ctx);
 	if (section !== null) {
 		return namedIn(name, section) && !hasRoleBeside(name, section)
 			? "resident"
 			: "resolved";
 	}
-	const documents = ctx.input.sources
-		.filter((source) => source.kind === "documents")
-		.map((source) => source.text)
-		.join("\n");
 	return hasRoleBeside(name, documents) ? "resolved" : "unresolved";
 }
 

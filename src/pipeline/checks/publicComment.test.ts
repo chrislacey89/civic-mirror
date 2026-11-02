@@ -89,6 +89,28 @@ describe("publicCommentCheck on minutes that mark public comment", () => {
 		).toEqual({ outcome: "pass" });
 	});
 
+	it("passes a street the extractor reads as a person when the record writes it after a place word", () => {
+		const minutes =
+			"Privilege of the Floor\nA resident asked about speed limits on Lantern Lane.\nSupervisor Comments";
+		expect(
+			publicCommentCheck.run(
+				draftOf("A resident asked for solutions to speeding on Lantern Lane."),
+				contextOf(minutes),
+			).A5,
+		).toEqual({ outcome: "pass" });
+	});
+
+	it("still fails a person whose surname is a street word", () => {
+		const minutes =
+			"Privilege of the Floor\nDenise Lane, 12 Elm Street, asked about speeding.\nSupervisor Comments";
+		expect(
+			publicCommentCheck.run(
+				draftOf("Denise Lane asked about speeding on Elm Street."),
+				contextOf(minutes),
+			).A5?.outcome,
+		).toBe("fail");
+	});
+
 	it.each([
 		"Ada Lovelace, 12 Elm Street, spoke about the bridge.",
 		"Ada Lovelace of Elm Street spoke about the bridge.",
@@ -306,6 +328,27 @@ describe("A5 evidence", () => {
 				'a resident at public comment is named: "[name] and [name] asked about flooding on Elm Street." (name at 17)',
 			].join("\n"),
 		});
+	});
+
+	it("blanks whole words only, and each word of a full name on its own", () => {
+		const section = [
+			"Privilege of the Floor",
+			"Ada Lovelace and her spouse Ada spoke. Bo Reed spoke.",
+			"Adjournment",
+		].join("\n");
+		const verdict = publicCommentCheck.run(
+			draftOf(
+				"Ada Lovelace, whose spouse Ada owns the Lovelaceville bar, spoke. Reed said the Reedsville road is bad.",
+			),
+			contextOf(section),
+		).A5;
+		expect(verdict?.outcome).toBe("fail");
+		expect(verdict?.outcome === "fail" ? verdict.evidence : "").toBe(
+			[
+				'a resident at public comment is named: "[name], whose spouse [name] owns the Lovelaceville bar, spoke." (name at 0)',
+				'a resident at public comment is named: "[name] said the Reedsville road is bad." (name at 0)',
+			].join("\n"),
+		);
 	});
 
 	it("leaves no part of a name behind when the prose also uses the surname alone, in a highlight or the prose", () => {
