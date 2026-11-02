@@ -1,6 +1,6 @@
 import { failOrPass, passagesOf, sentencesOf } from "./figures.ts";
 import { extractNames, namedIn, onOfficialsList, TITLES } from "./names.ts";
-import type { CheckContext, CodeCheck } from "./types.ts";
+import type { CheckContext, CodeCheck, WriteUp } from "./types.ts";
 
 /**
  * What may sit on a heading line beside its words: OCR noise before it
@@ -152,28 +152,83 @@ function redacted(name: string, passage: string): string {
 }
 
 /**
- * A5. On a meeting whose minutes mark public comment, a name the prose takes
- * from inside that section is a resident's, unless it is on the officials
- * list or the section writes a role or office beside it.
+ * Who a name in the draft is, as far as code can tell. On a meeting whose
+ * minutes mark public comment, a name taken from inside that section is a
+ * `resident` unless the section writes a role beside it; every other name
+ * there is `resolved`. On any other meeting, a name is `resolved` by the
+ * officials list or by a role the documents write beside it, and is
+ * otherwise `unresolved`: code cannot tell a resident from a presenter.
+ */
+type Standing = "resident" | "resolved" | "unresolved";
+
+function standingOf(name: string, ctx: CheckContext): Standing {
+	if (onOfficialsList(name, ctx.officials)) return "resolved";
+	const section = publicCommentOf(ctx);
+	if (section !== null) {
+		return namedIn(name, section) && !hasRoleBeside(name, section)
+			? "resident"
+			: "resolved";
+	}
+	const documents = ctx.input.sources
+		.filter((source) => source.kind === "documents")
+		.map((source) => source.text)
+		.join("\n");
+	return hasRoleBeside(name, documents) ? "resolved" : "unresolved";
+}
+
+/** Each name in each passage of the draft, with its standing. */
+function namesOf(
+	draft: WriteUp,
+	ctx: CheckContext,
+): { name: string; passage: string; standing: Standing }[] {
+	return passagesOf(draft).flatMap((passage) =>
+		extractNames(passage).map((name) => ({
+			name,
+			passage,
+			standing: standingOf(name, ctx),
+		})),
+	);
+}
+
+/**
+ * The names the draft writes that code can neither clear nor fail for A5:
+ * on no officials list, with no role in the documents, on a meeting whose
+ * minutes do not mark public comment. The judge decides A5 for these.
+ */
+export function unresolvedNames(
+	draft: WriteUp,
+	ctx: CheckContext,
+): readonly string[] {
+	return [
+		...new Set(
+			namesOf(draft, ctx)
+				.filter(({ standing }) => standing === "unresolved")
+				.map(({ name }) => name),
+		),
+	];
+}
+
+/**
+ * A5. Officials by name and role; the public by count. A resident named
+ * from the public-comment section fails; a name code cannot resolve leaves
+ * A5 unchecked, which holds the draft until a judge resolves it.
  */
 export const publicCommentCheck: CodeCheck = {
 	owns: ["A5"],
 	run: (draft, ctx) => {
-		const section = publicCommentOf(ctx);
-		const failures = passagesOf(draft).flatMap((passage) =>
-			extractNames(passage)
-				.filter(
-					(name) =>
-						!onOfficialsList(name, ctx.officials) &&
-						section !== null &&
-						namedIn(name, section) &&
-						!hasRoleBeside(name, section),
-				)
-				.map(
-					(name) =>
-						`a resident at public comment is named: ${redacted(name, passage)}`,
-				),
-		);
-		return { A5: failOrPass(failures) };
+		const names = namesOf(draft, ctx);
+		const failures = names
+			.filter(({ standing }) => standing === "resident")
+			.map(
+				({ name, passage }) =>
+					`a resident at public comment is named: ${redacted(name, passage)}`,
+			);
+		const unresolved = names
+			.filter(({ standing }) => standing === "unresolved")
+			.map(
+				({ name, passage }) =>
+					`a name is on no officials list and has no role in the documents: ${redacted(name, passage)}`,
+			);
+		return { A5: failOrPass(failures, unresolved) };
 	},
 };

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { Official } from "#/pipeline/officials/types.ts";
-import { publicCommentCheck, publicCommentSection } from "./publicComment.ts";
+import {
+	publicCommentCheck,
+	publicCommentSection,
+	unresolvedNames,
+} from "./publicComment.ts";
 import type { CheckContext, WriteUp } from "./types.ts";
 
 /** Minutes whose public-comment section names an invented resident. */
@@ -187,5 +191,98 @@ describe("publicCommentSection", () => {
 				"Privilege of the Floor\nAda Lovelace spoke.\nCarries\nBo Reed spoke.\nAdjournment",
 			),
 		).toBe("Ada Lovelace spoke.\nCarries\nBo Reed spoke.");
+	});
+});
+
+/** Minutes with no public-comment heading, naming an invented presenter. */
+const UNMARKED_MINUTES = [
+	"Old Business",
+	"Ada Lovelace of Elm Engineering Inc. presented the bridge plans.",
+	"Bo Reed asked about flooding on Elm Street.",
+	"Adjournment",
+].join("\n");
+
+const CLERK: Official = {
+	name: "Bo Reed",
+	variants: [],
+	role: "Clerk-Treasurer",
+	served: { from: "2024-01-01", to: null },
+};
+
+describe("publicCommentCheck on a meeting with no marked public comment", () => {
+	it("is unchecked for A5 when the prose names a person it cannot resolve, without repeating the name", () => {
+		expect(
+			publicCommentCheck.run(
+				draftOf("Bo Reed asked about flooding on Elm Street."),
+				contextOf(UNMARKED_MINUTES),
+			).A5,
+		).toEqual({
+			outcome: "unchecked",
+			reason:
+				'a name is on no officials list and has no role in the documents: "[name] asked about flooding on Elm Street." (name at 0)',
+		});
+	});
+
+	it("resolves an official on the list", () => {
+		expect(
+			publicCommentCheck.run(
+				draftOf("Bo Reed asked about flooding on Elm Street."),
+				contextOf(UNMARKED_MINUTES, [CLERK]),
+			).A5,
+		).toEqual({ outcome: "pass" });
+	});
+
+	it("resolves a person the documents write with a role or organisation beside", () => {
+		expect(
+			publicCommentCheck.run(
+				draftOf("Engineer Ada Lovelace presented the bridge plans."),
+				contextOf(UNMARKED_MINUTES),
+			).A5,
+		).toEqual({ outcome: "pass" });
+	});
+
+	it("is unchecked on a transcript-only meeting for anyone not on the list", () => {
+		const ctx: CheckContext = {
+			...contextOf(null, [CLERK]),
+			input: {
+				sources: [{ kind: "transcript", text: "ada lovelace said the bridge" }],
+				meetingContext: "Town Council, May 27, 2025",
+			},
+		};
+		expect(
+			publicCommentCheck.run(
+				draftOf("Bo Reed and Ada Lovelace discussed the bridge."),
+				ctx,
+			).A5?.outcome,
+		).toBe("unchecked");
+	});
+
+	it("passes when every name is resolved or there is none", () => {
+		expect(
+			publicCommentCheck.run(
+				draftOf("The council approved the bridge plans."),
+				contextOf(UNMARKED_MINUTES),
+			).A5,
+		).toEqual({ outcome: "pass" });
+	});
+});
+
+describe("unresolvedNames", () => {
+	it("lists the names the check could not resolve, as the draft writes them", () => {
+		expect(
+			unresolvedNames(
+				draftOf("Bo Reed and Ada Lovelace discussed the bridge. Reed said no."),
+				contextOf(UNMARKED_MINUTES),
+			),
+		).toEqual(["Bo Reed", "Reed"]);
+	});
+
+	it("is empty when the minutes mark public comment", () => {
+		expect(
+			unresolvedNames(
+				draftOf("Ada Lovelace asked about flooding."),
+				contextOf(MARKED_MINUTES),
+			),
+		).toEqual([]);
 	});
 });
