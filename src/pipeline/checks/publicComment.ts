@@ -181,10 +181,16 @@ const ORG_AFTER =
 /**
  * The capitalised words written directly before a name, with nothing else
  * between: "County Commissioner " in "met County Commissioner Ada Lovelace".
- * A lowercase word, or punctuation after a word, ends the run.
+ * A lowercase "of" or "for" (with an optional "the") between two capitalised
+ * words is part of the run: "Chief of Police ". Any other lowercase word, or
+ * punctuation after a word, ends it.
  */
 function capitalisedRunBefore(before: string): string {
-	return before.match(/(?:\p{Lu}[\p{L}'’.-]* )+$/u)?.[0] ?? "";
+	return (
+		before.match(
+			/(?:\p{Lu}[\p{L}'’.-]* (?:(?:of|for)(?: the)? (?=\p{Lu}))?)+$/u,
+		)?.[0] ?? ""
+	);
 }
 
 /**

@@ -188,6 +188,7 @@ describe("publicCommentCheck on a role written beside a name in the section", ()
 		"Chief Ada Lovelace spoke about the bar.",
 		"Ada Lovelace, a member of the fire auxiliary, spoke about the bar.",
 		"Ada Lovelace, chair of the Elm neighbors, spoke about the bar.",
+		"Friend of Ada Lovelace spoke about the bar.",
 	])("fails A5 when a role with no office or government body clears %j", (line) => {
 		expect(a5(line)).toBe("fail");
 	});
@@ -200,6 +201,8 @@ describe("publicCommentCheck on a role written beside a name in the section", ()
 		"Ada Lovelace, representing Elm Paving, spoke about the bridge.",
 		"Mayor Ada Lovelace of Stinesville spoke.",
 		"Fire Chief Ada Lovelace of Richland Township spoke.",
+		"Chief of Police Ada Lovelace spoke about the bar.",
+		"Superintendent of Schools Ada Lovelace spoke about the bar.",
 	])("passes A5 when an office or government body is beside %j", (line) => {
 		expect(a5(line)).toBe("pass");
 	});
