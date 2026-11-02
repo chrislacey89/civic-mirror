@@ -19,9 +19,12 @@ const CAPITALISED_RUN = new RegExp(
 	"gu",
 );
 
-/** Words that open a sentence and are no part of a name. */
+/**
+ * Words that open a sentence and are no part of a name. A pronoun is here
+ * so "He explained" names no one.
+ */
 const OPENERS: ReadonlySet<string> = new Set(
-	"a about after also although an and as at attendees because before both but by despite during each everyone finally following for from further here however if in instead last later many meanwhile moreover next now of officials on once others over per residents several since some speakers staff than that the their then there these they this those through to under until when where while with within without yet".split(
+	"a about after also although an and as at attendees because before both but by despite during each everyone finally following for from further he her here him his however if in instead it its last later many meanwhile moreover next now of officials on once others our over per residents several she since some speakers staff than that the their them then there these they this those through to under until we when where while with within without yet you your".split(
 		" ",
 	),
 );
