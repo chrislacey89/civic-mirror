@@ -160,14 +160,15 @@ const STREET_WORDS: ReadonlySet<string> = new Set(
 
 /**
  * Whether `name` is a street rather than a person: it ends in a street word
- * and `text` writes it after a place word ("on Lantern Lane"). A person with
- * such a surname is written after neither.
+ * and `text` writes it after a place word, with or without a house number
+ * ("on Lantern Lane", "of 792 Lantern Lane"). A person with such a surname
+ * is written after neither.
  */
 function writtenAsPlace(name: string, text: string): boolean {
 	const last = name.split(" ").at(-1)?.toLowerCase() ?? "";
 	if (!STREET_WORDS.has(last)) return false;
 	const afterPlaceWord = new RegExp(
-		String.raw`\b(?:on|at|along|near|off|onto)\s+${escaped(name)}(?![\p{L}\d])`,
+		String.raw`\b(?:on|at|along|near|off|onto|of|from)\s+(?:\d+[\p{L}]?\s+)?${escaped(name)}(?![\p{L}\d])`,
 		"iu",
 	);
 	return afterPlaceWord.test(text.replace(/\s+/g, " "));

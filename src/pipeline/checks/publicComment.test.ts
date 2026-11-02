@@ -91,7 +91,7 @@ describe("publicCommentCheck on minutes that mark public comment", () => {
 
 	it("passes a street the extractor reads as a person when the record writes it after a place word", () => {
 		const minutes =
-			"Privilege of the Floor\nA resident asked about speed limits on Lantern Lane.\nSupervisor Comments";
+			"Privilege of the Floor\nA resident on 792 Lantern Lane asked about speed limits.\nSupervisor Comments";
 		expect(
 			publicCommentCheck.run(
 				draftOf("A resident asked for solutions to speeding on Lantern Lane."),
