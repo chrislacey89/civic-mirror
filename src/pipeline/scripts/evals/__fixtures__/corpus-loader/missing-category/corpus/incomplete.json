@@ -1,0 +1,21 @@
+{
+	"schema_version": 1,
+	"id": "incomplete",
+	"transcript_path": "transcripts/incomplete.txt",
+	"meeting_context": "Fixture missing post_hoc_corrections category",
+	"graded_at": "2026-05-02",
+	"graded_by": "fixture",
+	"ground_truth": {
+		"category_scores": {
+			"procedural_breakdown": { "score": 0, "evidence_quotes": [] },
+			"question_looping": { "score": 0, "evidence_quotes": [] },
+			"defensive_hedging": { "score": 0, "evidence_quotes": [] },
+			"timeline_pressure": { "score": 0, "evidence_quotes": [] },
+			"improvised_workarounds": { "score": 0, "evidence_quotes": [] },
+			"visible_dissent": { "score": 0, "evidence_quotes": [] }
+		},
+		"level": "routine",
+		"headline": "x",
+		"narrative": "x"
+	}
+}
