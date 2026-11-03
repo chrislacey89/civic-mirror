@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Official } from "#/pipeline/officials/types.ts";
+import { TITLES } from "./names.ts";
 import {
 	publicCommentCheck,
 	publicCommentSection,
@@ -489,6 +490,41 @@ describe("A5 evidence", () => {
 			expect(text).not.toBe("");
 			expect(text).not.toMatch(/Ada|Lovelace/);
 			expect(text).toContain("[name] asks council to fix flooding");
+		}
+	});
+});
+
+/**
+ * Titles that clear a name beside a private group inside the public-comment
+ * section, because each names a government office on its own. Every other
+ * title the extractor knows must hold there: a business owner, an HOA
+ * president or a club treasurer at public comment is a resident. A title
+ * added to the office list in code goes red here until it is added to this
+ * list on purpose.
+ */
+const OFFICES_THAT_CLEAR_BESIDE_A_PRIVATE_GROUP = new Set(
+	"auditor commissioner commissioners councilman councilmember councilor councilperson councilwoman judge marshal mayor prosecutor recorder representative senator sheriff superintendent treasurer trustee".split(
+		" ",
+	),
+);
+
+describe("every title the extractor knows, beside a private group in the section", () => {
+	const minutes = (word: string) =>
+		`Privilege of the Floor\nAda Lovelace, ${word} of the Oak Hills HOA, spoke about the bar.\nSupervisor Comments`;
+	const draft = draftOf("Ada Lovelace spoke about the bar.");
+
+	it.each([...TITLES].sort())("decides %j on purpose", (word) => {
+		const expected = OFFICES_THAT_CLEAR_BESIDE_A_PRIVATE_GROUP.has(word)
+			? "pass"
+			: "fail";
+		expect(
+			publicCommentCheck.run(draft, contextOf(minutes(word))).A5?.outcome,
+		).toBe(expected);
+	});
+
+	it("lists only words the extractor knows", () => {
+		for (const word of OFFICES_THAT_CLEAR_BESIDE_A_PRIVATE_GROUP) {
+			expect(TITLES.has(word)).toBe(true);
 		}
 	});
 });
