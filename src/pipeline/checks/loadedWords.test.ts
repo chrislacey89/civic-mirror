@@ -60,6 +60,44 @@ const POSITIVE_FIXTURES = [
 	"The clerk pointed out the fund is overspent.",
 ];
 
+/**
+ * Headlines are written in the present tense, and a list that stores one
+ * tense per entry lets them through. One fixture per extra form of an entry.
+ */
+const HEADLINE_FIXTURES = [
+	"Resident slams park plan",
+	"Residents slam park plan",
+	"Rezoning sparks debate",
+	"Rezoning spark debate",
+	"Rezoning sparking debate",
+	"Ordinance 2025-13 sparks controversy",
+	"Rezoning spark controversy",
+	"Rezoning sparking controversy",
+	"Heated debates over the rezoning",
+	"Heated discussions over the budget",
+	"Heated exchanges at the meeting",
+	"Council finally approves sewer rates",
+	"Council finally approve sewer rates",
+	"Council finally approving sewer rates",
+	"Council finally passes budget",
+	"Council finally pass budget",
+	"Council finally passing budget",
+	"Council finally adopts budget",
+	"Council finally adopt budget",
+	"Council finally adopting budget",
+	"Manager admits project ran late",
+	"Managers admit project ran late",
+	"Manager admitting project ran late",
+	"Contractor claiming the delay was the weather",
+	"Chief insists the department needs two officers",
+	"Chiefs insist the department needs two officers",
+	"Chief insisting the department needs two officers",
+	"Clerk points out the fund is overspent",
+	"Clerks point out the fund is overspent",
+	"Clerk pointing out the fund is overspent",
+	"Slamming the plan for the park",
+];
+
 /** Sentences that share a word with a listed entry and carry no judgment. */
 const NEGATIVE_FIXTURES = [
 	"The council approved repairs to the heated pool.",
@@ -75,6 +113,12 @@ describe("LOADED_WORDS", () => {
 		expect(a2(sentence)).toMatchObject({ outcome: "fail" });
 	});
 
+	it.each(HEADLINE_FIXTURES)("fails A2 on the headline %j", (headline) => {
+		expect(a2("The council met.", [headline])).toMatchObject({
+			outcome: "fail",
+		});
+	});
+
 	it.each(NEGATIVE_FIXTURES)("passes %j", (sentence) => {
 		expect(a2(sentence)).toEqual({ outcome: "pass" });
 	});
@@ -82,7 +126,7 @@ describe("LOADED_WORDS", () => {
 	it("gives every entry a positive fixture", () => {
 		const unmatched = LOADED_WORDS.filter(
 			(phrase) =>
-				!POSITIVE_FIXTURES.some((sentence) =>
+				![...POSITIVE_FIXTURES, ...HEADLINE_FIXTURES].some((sentence) =>
 					sentence.toLowerCase().includes(phrase),
 				),
 		);
