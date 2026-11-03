@@ -25,7 +25,7 @@ describe("artifactsCheck", () => {
 		).toEqual({
 			outcome: "fail",
 			evidence:
-				'source artifact "the transcript": "According to the transcript, the vote was 4-1."',
+				'source artifact "According to the transcript": "According to the transcript, the vote was 4-1."',
 		});
 	});
 
@@ -48,6 +48,8 @@ describe("artifactsCheck", () => {
 const POSITIVE_FIXTURES = [
 	"The transcript records a 4-1 vote.",
 	"The captions show the motion carried.",
+	"According to the captions, the motion carried.",
+	"The vote was 4-1 in the transcript.",
 	"The minutes state the bid was the lowest.",
 	"According to the minutes, the bid was the lowest.",
 	"The documents say the bid was the lowest.",
@@ -68,6 +70,10 @@ const NEGATIVE_FIXTURES = [
 	"The mayor signed the documents for the loan.",
 	"The town set a record for paving miles.",
 	"The board turned the page on the dispute.",
+	"The council approved the closed captions contract for the meeting video.",
+	"The council approved the transcript service contract.",
+	"The council approved the video contract, and the captions will start in May.",
+	"The fee is capped at 5 percent, stated as a percentage of revenue.",
 ];
 
 describe("ARTIFACT_PATTERNS", () => {
