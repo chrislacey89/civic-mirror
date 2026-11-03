@@ -18,7 +18,7 @@ The A5 check (#199) holds a summary that names a resident who spoke at public co
 
 The slice cleared a name inside the public-comment section when the section wrote "a role or office beside it", the exception the #194 spike asked for after a county official presenting at public comment was held. The first implementation took any title word within three words of the name, or any title in the clause after it, or an organisation. The audit on the 36 reported 3 marked-section failures, all genuine, so the acceptance bar ("≤ 1 false hold, hand-reviewed") was met on the first run.
 
-Two independent review sub-agents and five breaker passes then found, by probing with invented residents, that each of these cleared a resident:
+Two independent review sub-agents, one breaker pass and the author's own re-read then found that each of these cleared a resident (the last column says who found which):
 
 | Rule as first shipped | False pass it opened | Found by |
 |---|---|---|
@@ -60,7 +60,7 @@ A clearing rule is an exclusion from a privacy gate, and the two errors are not 
 
 **Take the title from the name's own run.** A title clears a name only from the capitalised run immediately before it ("County Commissioner Ada Lovelace"), bridging "of" or "for" between capitalised words ("Chief of Police Ada Lovelace"). A lowercase verb between the title and the name ends the run, so the chair's title does not clear the speaker the chair recognises.
 
-**Probe with invented residents in the shapes minutes actually use.** "The Mayor thanked …", "Chairman recognized …", "president of the HOA", "a school teacher", "of 792 Lantern Lane", "Mr. Lovelace". Each probe that passes is a must-fail fixture to add. Two reviewers and five breakers each found at least one; the author found none by reading.
+**Probe with invented residents in the shapes minutes actually use.** "The Mayor thanked …", "Chairman recognized …", "president of the HOA", "a school teacher", "of 792 Lantern Lane", "Mr. Lovelace". Each probe that passes is a must-fail fixture to add. The review sub-agents and a breaker found false passes this way; the author's re-read found one (the organisation word).
 
 ## Prevention
 
@@ -73,7 +73,7 @@ A clearing rule is an exclusion from a privacy gate, and the two errors are not 
 ## Planning / Calibration Notes
 
 - **What widened the work:** two `/fix-findings` rounds and two `/pre-merge` re-runs after a green first review, each opening a narrower class of the same false pass. The thread's one-line exception ("a role or office beside it") took three definitions of "office" to land.
-- **What tightened the work:** the read-only `summaries:audit` run during `/execute` found the pronoun artifact and the street-as-person hold on the first pass, before review. Breakers that probe with invented sentences found every false pass; the suite found none.
+- **What tightened the work:** the read-only `summaries:audit` run during `/execute` found the pronoun artifact and the street-as-person hold on the first pass, before review. Probes with invented sentences found most of the false passes; the suite found none.
 - **Future planning adjustment:** the assumption "16 of 36 meetings mark public comment" was 15 of 35 by heading line, with 3 of those agendas; the officials list covers only the town council, so every name on the other three bodies holds until the judge. Write the hold count the judge inherits into the slice's acceptance criteria, not only the false-hold count.
 
 ## Actuals Worth Reusing
