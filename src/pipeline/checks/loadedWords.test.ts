@@ -67,6 +67,7 @@ const NEGATIVE_FIXTURES = [
 	"The council paid its claims.",
 	"This is the only call for projects in 2026.",
 	"The board debated the rezoning for an hour.",
+	"The town reclaimed the lot for parking.",
 ];
 
 describe("LOADED_WORDS", () => {
