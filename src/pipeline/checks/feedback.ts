@@ -50,9 +50,21 @@ export const RULES: Readonly<Record<CheckId, string>> = {
 /**
  * What a check's evidence line reports, by the wording the check writes it
  * in. The source side of a finding (the figure it rounds, the roll call's
- * counts, the ledger title) is left out.
+ * counts, the ledger title) is left out. A finding is read after the quoted
+ * subject, or whole when the line quotes no subject (`whole`).
  */
-const FINDINGS: readonly { says: RegExp; finding: string }[] = [
+const FINDINGS: readonly { says: RegExp; finding: string; whole?: true }[] = [
+	{
+		says: /^a resident at public comment is named: "/,
+		finding: "names a resident who spoke at public comment",
+		whole: true,
+	},
+	{
+		says: /^a name is on no officials list and has no role in the documents: "/,
+		finding:
+			"names a person who is on no officials list and has no role in the documents",
+		whole: true,
+	},
 	{ says: /" is in no source: "/, finding: "is in no document or transcript" },
 	{ says: /" rounds "/, finding: "rounds a figure the record writes exactly" },
 	{
@@ -73,22 +85,51 @@ const FINDINGS: readonly { says: RegExp; finding: string }[] = [
 	},
 ];
 
-function quotedSpans(line: string): string[] {
-	return [...line.matchAll(/"([^"]+)"/g)].map((match) => match[1] ?? "");
+/** The blank an evidence line puts where it will not repeat a name. */
+const BLANK = "[name]";
+
+/**
+ * What a blank stands for in the draft: one to four words that do not end
+ * a sentence, a middle initial among them ("Ada B. Lovelace").
+ */
+const NAME_SHAPED = String.raw`(?:\p{Lu}\.|[^\s.!?]+)(?: (?:\p{Lu}\.|[^\s.!?]+)){0,3}?`;
+
+/**
+ * The quoted spans of an evidence line as the draft writes them. A span
+ * with a name blanked out is read back from the draft, with the name in;
+ * the writing call sees the draft anyway, and needs the sentence to revise.
+ */
+function quotedSpans(line: string, draftText: string): string[] {
+	return [...line.matchAll(/"([^"]+)"/g)].flatMap((match) => {
+		const span = match[1] ?? "";
+		if (!span.includes(BLANK)) return [span];
+		const pattern = span
+			.split(BLANK)
+			.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+			.join(NAME_SHAPED);
+		const found = draftText.match(new RegExp(pattern, "u"));
+		return found === null ? [] : [found[0]];
+	});
 }
 
 /** One evidence line as feedback: the draft text it quotes, and its finding. */
 function feedbackOf(id: CheckId, line: string, draftText: string): Feedback {
-	const inDraft = quotedSpans(line).filter((span) => draftText.includes(span));
+	const inDraft = quotedSpans(line, draftText).filter((span) =>
+		draftText.includes(span),
+	);
 	if (draftText.includes(line)) inDraft.push(line);
 	const byLength = [...inDraft].sort((a, b) => b.length - a.length);
 	const quote = byLength[0] ?? "";
 	const subject = byLength.length > 1 ? byLength.at(-1) : undefined;
 	const known = FINDINGS.find(({ says }) => says.test(line));
 	const finding =
-		known !== undefined && subject !== undefined
-			? `"${subject}" ${known.finding}`
-			: RULES[id];
+		known === undefined
+			? RULES[id]
+			: known.whole
+				? known.finding
+				: subject !== undefined
+					? `"${subject}" ${known.finding}`
+					: RULES[id];
 	return { checkId: id, quote, finding };
 }
 

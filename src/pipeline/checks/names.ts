@@ -19,9 +19,12 @@ const CAPITALISED_RUN = new RegExp(
 	"gu",
 );
 
-/** Words that open a sentence and are no part of a name. */
+/**
+ * Words that open a sentence and are no part of a name. A pronoun is here
+ * so "He explained" names no one.
+ */
 const OPENERS: ReadonlySet<string> = new Set(
-	"a about after also although an and as at attendees because before both but by despite during each everyone finally following for from further here however if in instead last later many meanwhile moreover next now of officials on once others over per residents several since some speakers staff than that the their then there these they this those through to under until when where while with within without yet".split(
+	"a about after also although an and as at attendees because before both but by despite during each everyone finally following for from further he her here him his however if in instead it its last later many meanwhile moreover next now of officials on once others our over per residents several she since some speakers staff than that the their them then there these they this those through to under until we when where while with within without yet you your".split(
 		" ",
 	),
 );
@@ -63,7 +66,7 @@ const ATTRIBUTION =
 /**
  * Words that end a job title or rank.
  */
-const TITLES: ReadonlySet<string> = new Set(
+export const TITLES: ReadonlySet<string> = new Set(
 	"administrator applicant assistant attorney auditor capt captain chair chairman chairperson chairwoman chief clerk coach commissioner commissioners contractor coordinator councilman councilmember councilmembers councilmen councilor councilors councilperson councilpersons councilwoman councilwomen counsel cpl deputy det detective developer director dr engineer firefighter foreman inspector judge lieutenant lt manager marshal mayor member members mr mrs ms officer officers owner petitioner planner president principal prosecutor recorder representative resident reverend rev secretary senator sergeant sgt sheriff specialist superintendent supervisor surveyor teacher tech technician treasurer trustee vice".split(
 		" ",
 	),
@@ -165,7 +168,7 @@ function wordsOf(text: string): string[] {
 }
 
 /** Whether `name`'s words stand next to each other in `text`, in order. */
-function namedIn(name: string, text: string): boolean {
+export function namedIn(name: string, text: string): boolean {
 	const phrase = wordsOf(name).join(" ");
 	return ` ${wordsOf(text).join(" ")} `.includes(` ${phrase} `);
 }
@@ -174,7 +177,7 @@ function namedIn(name: string, text: string): boolean {
  * Whether the list grounds `name`: a form of an official's name, or for a last
  * name alone, the last word of one.
  */
-function onOfficialsList(
+export function onOfficialsList(
 	name: string,
 	officials: readonly Official[],
 ): boolean {

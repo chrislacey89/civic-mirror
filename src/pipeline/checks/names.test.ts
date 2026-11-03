@@ -89,6 +89,14 @@ describe("extractNames", () => {
 		).toEqual(["June Reed", "Adam West", "Hugh Grant", "Eugene Levy"]);
 	});
 
+	it("does not read a pronoun before an attribution verb as a surname", () => {
+		expect(
+			extractNames(
+				"He explained the plan. She also said no. They then voted. It seemed fine. He Reed said so.",
+			),
+		).toEqual(["Reed"]);
+	});
+
 	it("does not read a surname alone, a sentence opener or a date before a name as part of it", () => {
 		expect(
 			extractNames(
