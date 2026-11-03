@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { figuresIn } from "#/pipeline/figureMatch.ts";
+import { artifactsCheck } from "./artifacts.ts";
 import { feedbackFrom } from "./feedback.ts";
 import { runCodeChecks } from "./index.ts";
+import { loadedWordsCheck } from "./loadedWords.ts";
 import type { CheckContext, CheckReport, WriteUp } from "./types.ts";
 
 const MINUTES = `
@@ -142,6 +144,47 @@ describe("feedbackFrom", () => {
 			expect(items[0]?.finding).toBe(
 				"names a person who is on no officials list and has no role in the documents",
 			);
+		});
+	});
+	describe("for A2 and A3, whose evidence quotes a matched word and its sentence", () => {
+		function feedbackOfCheck(
+			check: typeof loadedWordsCheck | typeof artifactsCheck,
+			prose: string,
+		) {
+			const written: WriteUp = { highlights: [], prose };
+			return feedbackFrom({ verdicts: check.run(written, context) }, written);
+		}
+
+		it("names the loaded word as the draft writes it, and quotes the whole sentence around quote marks", () => {
+			const sentence =
+				'The chief called the plan "Controversial" in his report.';
+			expect(feedbackOfCheck(loadedWordsCheck, sentence)).toEqual([
+				{
+					checkId: "A2",
+					quote: sentence,
+					finding:
+						'"Controversial" is a loaded word, a judgment the record does not make',
+				},
+			]);
+		});
+
+		it("names the source artifact the same way", () => {
+			const sentence = "According to the transcript, the vote was 4-1.";
+			expect(feedbackOfCheck(artifactsCheck, sentence)).toEqual([
+				{
+					checkId: "A3",
+					quote: sentence,
+					finding:
+						'"According to the transcript" is a source artifact the write-up leaks',
+				},
+			]);
+		});
+
+		it("reads a matched artifact that ends in a quote mark", () => {
+			const sentence = 'The amount was stated as "five dollars" in the bid.';
+			const items = feedbackOfCheck(artifactsCheck, sentence);
+			expect(items[0]?.quote).toBe(sentence);
+			expect(items[0]?.finding).toContain('"stated as ""');
 		});
 	});
 });

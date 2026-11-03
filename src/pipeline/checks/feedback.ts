@@ -48,12 +48,28 @@ export const RULES: Readonly<Record<CheckId, string>> = {
 };
 
 /**
+ * The A2 and A3 evidence lines: the matched text, then its whole sentence,
+ * which may hold quote marks of its own. The matched text may end in one
+ * (`stated as "`), so it runs to the first `": "`.
+ */
+const LOADED_WORD_LINE = /^loaded word "(.+?)": "(.*)"$/s;
+const ARTIFACT_LINE = /^source artifact "(.+?)": "(.*)"$/s;
+
+/**
  * What a check's evidence line reports, by the wording the check writes it
  * in. The source side of a finding (the figure it rounds, the roll call's
  * counts, the ledger title) is left out. A finding is read after the quoted
  * subject, or whole when the line quotes no subject (`whole`).
  */
 const FINDINGS: readonly { says: RegExp; finding: string; whole?: true }[] = [
+	{
+		says: LOADED_WORD_LINE,
+		finding: "is a loaded word, a judgment the record does not make",
+	},
+	{
+		says: ARTIFACT_LINE,
+		finding: "is a source artifact the write-up leaks",
+	},
 	{
 		says: /^a resident at public comment is named: "/,
 		finding: "names a resident who spoke at public comment",
@@ -100,6 +116,8 @@ const NAME_SHAPED = String.raw`(?:\p{Lu}\.|[^\s.!?]+)(?: (?:\p{Lu}\.|[^\s.!?]+))
  * the writing call sees the draft anyway, and needs the sentence to revise.
  */
 function quotedSpans(line: string, draftText: string): string[] {
+	const matched = line.match(LOADED_WORD_LINE) ?? line.match(ARTIFACT_LINE);
+	if (matched !== null) return [matched[1] ?? "", matched[2] ?? ""];
 	return [...line.matchAll(/"([^"]+)"/g)].flatMap((match) => {
 		const span = match[1] ?? "";
 		if (!span.includes(BLANK)) return [span];
