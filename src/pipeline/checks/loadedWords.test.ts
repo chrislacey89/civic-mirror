@@ -45,6 +45,7 @@ const POSITIVE_FIXTURES = [
 	"A resident slammed the plan for the park.",
 	"The rezoning sparked debate among residents.",
 	"The rezoning sparked controversy.",
+	"Ordinance 2025-13, which sparked extensive debate, passed 4-1.",
 	"The council took up the controversial rezoning.",
 	"After a heated debate, the council voted 3-2.",
 	"A heated discussion followed the report.",
@@ -108,6 +109,8 @@ const NEGATIVE_FIXTURES = [
 	"The town reclaimed the lot for parking.",
 	"The chief pointed outside the hall.",
 	"The clerk admittedly kept the minutes.",
+	"The grinder threw sparks onto the shop floor.",
+	"Staff will inspect the spark arrestors on the mower.",
 ];
 
 describe("LOADED_WORDS", () => {

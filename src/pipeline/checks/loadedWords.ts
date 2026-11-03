@@ -8,7 +8,9 @@ import type { CodeCheck } from "./types.ts";
  * debate"). "Claims" is left out: the noun ("paid its claims") is plain. A word with a plain
  * use is listed only in the phrases where it judges: "heated debate", not
  * the heated pool; "finally approved", not the "Finally," that starts a
- * last item. "Only" judges or counts depending on the sentence, so it is
+ * last item. "Sparked" is listed bare, as the writing prompt bans it; the other
+ * forms stay in their phrases because "sparks" and "spark" are plain nouns
+ * ("sparks from a grinder"). "Only" judges or counts depending on the sentence, so it is
  * left to the judge.
  */
 export const LOADED_WORDS: readonly string[] = [
@@ -16,11 +18,10 @@ export const LOADED_WORDS: readonly string[] = [
 	"slams",
 	"slam",
 	"slamming",
-	"sparked debate",
+	"sparked",
 	"sparks debate",
 	"spark debate",
 	"sparking debate",
-	"sparked controversy",
 	"sparks controversy",
 	"spark controversy",
 	"sparking controversy",
