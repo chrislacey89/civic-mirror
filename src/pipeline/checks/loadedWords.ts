@@ -74,8 +74,8 @@ const MATCHERS = LOADED_WORDS.map((phrase) => ({
 }));
 
 /**
- * A2, the part a list can settle: each listed word fails, quoting its
- * sentence. A pass does not clear motive or judgment the list cannot name.
+ * A2, the part a list can settle: each listed word fails, quoting the word as
+ * the draft writes it and its sentence. A pass does not clear motive or judgment the list cannot name.
  */
 export const loadedWordsCheck: CodeCheck = {
 	owns: ["A2"],
@@ -83,9 +83,12 @@ export const loadedWordsCheck: CodeCheck = {
 		const failures = passagesOf(draft)
 			.flatMap(sentencesOf)
 			.flatMap((sentence) =>
-				MATCHERS.filter(({ pattern }) => pattern.test(sentence)).map(
-					({ phrase }) => `loaded word "${phrase}": "${sentence}"`,
-				),
+				MATCHERS.flatMap(({ pattern }) => {
+					const match = sentence.match(pattern);
+					return match === null
+						? []
+						: [`loaded word "${match[0]}": "${sentence}"`];
+				}),
 			);
 		return { A2: failOrPass(failures) };
 	},
