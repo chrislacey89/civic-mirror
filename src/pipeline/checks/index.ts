@@ -1,5 +1,6 @@
 import { artifactsCheck } from "./artifacts.ts";
 import { figuresCheck } from "./figures.ts";
+import { loadedWordsCheck } from "./loadedWords.ts";
 import { namesCheck } from "./names.ts";
 import { publicCommentCheck } from "./publicComment.ts";
 import { truncationCheck } from "./truncation.ts";
@@ -19,6 +20,7 @@ export const CODE_CHECKS: readonly CodeCheck[] = [
 	namesCheck,
 	publicCommentCheck,
 	artifactsCheck,
+	loadedWordsCheck,
 ];
 
 /**

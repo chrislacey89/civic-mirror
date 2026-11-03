@@ -42,6 +42,12 @@ describe("runCodeChecks", () => {
 		});
 	});
 
+	it("registers the loaded-words check, so A2 gets a verdict", () => {
+		expect(runCodeChecks(draft, context).verdicts.A2).toEqual({
+			outcome: "pass",
+		});
+	});
+
 	it("reports an owned id that got no verdict as unchecked", () => {
 		expect(runCodeChecks(draft, context, [a1(undefined)]).verdicts).toEqual({
 			A1: { outcome: "unchecked", reason: "no verdict" },
