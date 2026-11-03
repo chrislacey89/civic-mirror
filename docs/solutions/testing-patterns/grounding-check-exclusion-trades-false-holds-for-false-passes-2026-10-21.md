@@ -47,7 +47,7 @@ A second, plainer cause sat under the first. The original fixtures for the vote-
 
 - **Applies when:** a check grounds model output against source text and excludes some tokens from checking (dates, identifiers, ranges, garbled tokens, spelled numbers), and a skipped token cannot fail the check.
 - **Inverts or does not apply when:** the rule does not skip anything but routes it elsewhere with its own check. Example: a stated tally is not a figure, but it is checked against the roll call. There a reach that is too wide produces a second verdict, not silence. Also does not apply to rules that widen what *grounds* a figure (spelled-out source numbers), whose risk runs the other way and is covered by `check-on-model-output-passes-or-fails-by-which-output-the-model-gave-2026-10-08.md`.
-- **Sibling docs:** `check-on-model-output-passes-or-fails-by-which-output-the-model-gave-2026-10-08.md` (pick the rule that fails toward the cheap direction), `typescript-only-fixes-hiding-runtime-regressions-2026-05-01.md` (a green suite that never exercised the change).
+- **Sibling docs:** `check-on-model-output-passes-or-fails-by-which-output-the-model-gave-2026-10-08.md` (pick the rule that fails toward the cheap direction), `typescript-only-fixes-hiding-runtime-regressions-2026-05-01.md` (a green suite that never exercised the change), `name-clearing-rules-need-a-must-fail-fixture-per-word-class-2026-11-02.md` (the names side of the same gate, with a table test over the title list as the mechanism this entry could not build).
 
 ## Solution
 
