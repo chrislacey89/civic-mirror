@@ -46,6 +46,13 @@ export const JUDGE_GATED = {
 	Record<"documents" | "transcript", readonly GateId[]>
 >;
 
+/**
+ * Gated checks the judge decides only where code left them unchecked. A5's
+ * code check clears every name it can tie to an officials list or a role,
+ * so the judge decides just the names `unresolvedNames()` returns.
+ */
+export const JUDGE_DECIDES_UNCHECKED_ONLY: readonly GateId[] = ["A5"];
+
 /** Which split of `JUDGE_GATED` a meeting falls in. */
 export function splitOf(input: SummarizationInput): keyof typeof JUDGE_GATED {
 	return hasSourceKind(input.sources, "documents") ? "documents" : "transcript";
