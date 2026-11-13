@@ -1198,6 +1198,7 @@ async function insertSummaryRounds(
 				gateFailures: round.gateFailures,
 				styleScore: round.styleScore,
 				groundedFigures: round.groundedFigures,
+				judgeFingerprint: round.judgeFingerprint,
 				finishReason: round.draft.finishReason,
 				inputTokens: round.draft.usage?.inputTokens ?? null,
 				outputTokens: round.draft.usage?.outputTokens ?? null,
