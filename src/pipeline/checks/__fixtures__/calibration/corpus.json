@@ -1,0 +1,1802 @@
+[
+	{
+		"id": "A2-F-01",
+		"baseKey": "2025-07-14",
+		"check": "A2",
+		"pairId": "A2-01",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member Dan Swafford suggested checking with insurance regarding potential water damage coverage."
+		},
+		"before": "Council member Dan Swafford suggested checking with insurance regarding potential water damage coverage.",
+		"after": "Council member Dan Swafford sensibly suggested checking with insurance regarding potential water damage coverage.",
+		"difficulty": "subtle",
+		"rationale": "'Sensibly' is the writer's judgment of the suggestion; the minutes only record that Swafford mentioned checking with insurance about water damage.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-01",
+		"baseKey": "2025-07-14",
+		"check": "A2",
+		"pairId": "A2-01",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member Dan Swafford suggested checking with insurance regarding potential water damage coverage."
+		},
+		"before": "Council member Dan Swafford suggested checking with insurance regarding potential water damage coverage.",
+		"after": "Vice President Dan Swafford suggested checking with insurance regarding potential water damage coverage.",
+		"difficulty": "subtle",
+		"rationale": "The roll call lists Dan Swafford as Vice President, so the role swap is faithful and the attribution verb is unchanged.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-02",
+		"baseKey": "2025-09-22",
+		"check": "A2",
+		"pairId": "A2-02",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member William Ellis commended everyone involved in the Fall Festival."
+		},
+		"before": "Council member William Ellis commended everyone involved in the Fall Festival.",
+		"after": "Council member William Ellis effusively commended everyone involved in the Fall Festival.",
+		"difficulty": "moderate",
+		"rationale": "'Effusively' characterises the manner of praise; the minutes record only a one-line 'great job' under council comments.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-02",
+		"baseKey": "2025-09-22",
+		"check": "A2",
+		"pairId": "A2-02",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member William Ellis commended everyone involved in the Fall Festival."
+		},
+		"before": "Council member William Ellis commended everyone involved in the Fall Festival.",
+		"after": "Council member William Ellis told everyone involved in the Fall Festival they did a great job.",
+		"difficulty": "moderate",
+		"rationale": "The minutes record Ellis telling all involved 'great job on the Fall Festival'; 'told' is a neutral attribution verb.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-03",
+		"baseKey": "2026-02-02",
+		"check": "A2",
+		"pairId": "A2-03",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member William Ellis expressed concern that the increase might punish renters who consistently pay their bills."
+		},
+		"before": "Council member William Ellis expressed concern that the increase might punish renters who consistently pay their bills.",
+		"after": "Council member William Ellis fretted that the increase might punish renters who consistently pay their bills.",
+		"difficulty": "moderate",
+		"rationale": "'Fretted' is a characterising verb that colours Ellis's objection; the minutes say only that he felt the increase was high and punishing to paying renters.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-03",
+		"baseKey": "2026-02-02",
+		"check": "A2",
+		"pairId": "A2-03",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member William Ellis expressed concern that the increase might punish renters who consistently pay their bills."
+		},
+		"before": "Council member William Ellis expressed concern that the increase might punish renters who consistently pay their bills.",
+		"after": "Council member William Ellis said the increase was a big jump and might punish renters who consistently pay their bills.",
+		"difficulty": "moderate",
+		"rationale": "The minutes record Ellis saying he felt it was a big jump and a little high; 'said' is neutral and the added detail is in the source.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-04",
+		"baseKey": "2026-02-09",
+		"check": "A2",
+		"pairId": "A2-04",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member William Ellis voted against the increase."
+		},
+		"before": "Council member William Ellis voted against the increase.",
+		"after": "Council member William Ellis stubbornly voted against the increase.",
+		"difficulty": "obvious",
+		"rationale": "'Stubbornly' imputes a disposition the roll call does not record; the minutes show only Ellis voting no.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-04",
+		"baseKey": "2026-02-09",
+		"check": "A2",
+		"pairId": "A2-04",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member William Ellis voted against the increase."
+		},
+		"before": "Council member William Ellis voted against the increase.",
+		"after": "Council member William Ellis cast the lone vote against the increase.",
+		"difficulty": "moderate",
+		"rationale": "The roll call shows four yes votes and Ellis the only no, so 'the lone vote' is a count, not a judgment.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-05",
+		"baseKey": "2026-03-23",
+		"check": "A2",
+		"pairId": "A2-05",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Town Manager Michael Farmer noted that the item was brought for a vote after a request at the previous meeting for public input."
+		},
+		"before": "Town Manager Michael Farmer noted that the item was brought for a vote after a request at the previous meeting for public input.",
+		"after": "Town Manager Michael Farmer noted that the item was belatedly brought for a vote after a request at the previous meeting for public input.",
+		"difficulty": "subtle",
+		"rationale": "'Belatedly' judges the timing; the minutes say only that the vote was held at this meeting, as requested last time, so anyone could speak.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-05",
+		"baseKey": "2026-03-23",
+		"check": "A2",
+		"pairId": "A2-05",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Town Manager Michael Farmer noted that the item was brought for a vote after a request at the previous meeting for public input."
+		},
+		"before": "Town Manager Michael Farmer noted that the item was brought for a vote after a request at the previous meeting for public input.",
+		"after": "Town Manager Michael Farmer told the council that the item was brought for a vote after a request at the previous meeting for public input.",
+		"difficulty": "obvious",
+		"rationale": "'Told the council' is a neutral attribution verb; the content is unchanged and matches the minutes on the septic rates item.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-06",
+		"baseKey": "2026-04-13",
+		"check": "A2",
+		"pairId": "A2-06",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The council approved the repair of the 2007 aerial fire truck for $261,209."
+		},
+		"before": "The council approved the repair of the 2007 aerial fire truck for $261,209.",
+		"after": "The council wisely approved the repair of the 2007 aerial fire truck for $261,209.",
+		"difficulty": "obvious",
+		"rationale": "'Wisely' is the writer's verdict on the decision; the minutes record the approval and the chief's reasons, not an editorial assessment.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-06",
+		"baseKey": "2026-04-13",
+		"check": "A2",
+		"pairId": "A2-06",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The council approved the repair of the 2007 aerial fire truck for $261,209."
+		},
+		"before": "The council approved the repair of the 2007 aerial fire truck for $261,209.",
+		"after": "The council approved the six-month repair of the 2007 aerial fire truck for $261,209.",
+		"difficulty": "moderate",
+		"rationale": "The fire chief said repairs will take 6 months at the manufacturer, so 'six-month' is a faithful added detail.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-07",
+		"baseKey": "2026-04-27",
+		"check": "A2",
+		"pairId": "A2-07",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Fire Chief Kevin Patton explained this was a housekeeping measure, as the position was no longer needed after reclassifying Mike Cornman and moving Shane Jarrett to Fire Marshal."
+		},
+		"before": "Fire Chief Kevin Patton explained this was a housekeeping measure, as the position was no longer needed after reclassifying Mike Cornman and moving Shane Jarrett to Fire Marshal.",
+		"after": "Fire Chief Kevin Patton played this down as a housekeeping measure, as the position was no longer needed after reclassifying Mike Cornman and moving Shane Jarrett to Fire Marshal.",
+		"difficulty": "subtle",
+		"rationale": "'Played this down' implies the chief was minimising something; the minutes say plainly he explained it is housekeeping.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-07",
+		"baseKey": "2026-04-27",
+		"check": "A2",
+		"pairId": "A2-07",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Fire Chief Kevin Patton explained this was a housekeeping measure, as the position was no longer needed after reclassifying Mike Cornman and moving Shane Jarrett to Fire Marshal."
+		},
+		"before": "Fire Chief Kevin Patton explained this was a housekeeping measure, as the position was no longer needed after reclassifying Mike Cornman and moving Shane Jarrett to Fire Marshal.",
+		"after": "Fire Chief Kevin Patton told the council this was a housekeeping measure, as the position was no longer needed after reclassifying Mike Cornman and moving Shane Jarrett to Fire Marshal.",
+		"difficulty": "obvious",
+		"rationale": "'Told the council' is a neutral attribution verb for the chief's explanation that the change is housekeeping.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-08",
+		"baseKey": "2026-05-11",
+		"check": "A2",
+		"pairId": "A2-08",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Town Attorney Darla Brown explained that repairing the ladder is more economical than purchasing a new truck, which costs around $3,000,000."
+		},
+		"before": "Town Attorney Darla Brown explained that repairing the ladder is more economical than purchasing a new truck, which costs around $3,000,000.",
+		"after": "Town Attorney Darla Brown insisted that repairing the ladder is more economical than purchasing a new truck, which costs around $3,000,000.",
+		"difficulty": "obvious",
+		"rationale": "'Insisted' is a banned attribution verb (it is on LOADED_WORDS); the minutes say the attorney explained the comparison.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-08",
+		"baseKey": "2026-05-11",
+		"check": "A2",
+		"pairId": "A2-08",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Town Attorney Darla Brown explained that repairing the ladder is more economical than purchasing a new truck, which costs around $3,000,000."
+		},
+		"before": "Town Attorney Darla Brown explained that repairing the ladder is more economical than purchasing a new truck, which costs around $3,000,000.",
+		"after": "Town Attorney Darla Brown told the council that repairing the ladder is more economical than purchasing a new truck, which costs around $3,000,000.",
+		"difficulty": "obvious",
+		"rationale": "'Told the council' is a rubric-approved attribution verb; the claim itself is the attorney's, per the minutes on Resolution 09-2026.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-09",
+		"baseKey": "2026-05-26",
+		"check": "A2",
+		"pairId": "A2-09",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member Dan Swafford questioned spending money before the reorganization passed, but Darla Brown and Planning Director Denise Line stated the process is lengthy."
+		},
+		"before": "Council member Dan Swafford questioned spending money before the reorganization passed, but Darla Brown and Planning Director Denise Line stated the process is lengthy.",
+		"after": "Council member Dan Swafford questioned spending money before the reorganization passed, but Darla Brown and Planning Director Denise Line brushed that aside, saying the process is lengthy.",
+		"difficulty": "moderate",
+		"rationale": "'Brushed that aside' characterises the staff response as dismissive; the minutes record them explaining at length why the update takes time.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-09",
+		"baseKey": "2026-05-26",
+		"check": "A2",
+		"pairId": "A2-09",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member Dan Swafford questioned spending money before the reorganization passed, but Darla Brown and Planning Director Denise Line stated the process is lengthy."
+		},
+		"before": "Council member Dan Swafford questioned spending money before the reorganization passed, but Darla Brown and Planning Director Denise Line stated the process is lengthy.",
+		"after": "Council member Dan Swafford questioned spending money before the reorganization passed, but Town Attorney Darla Brown and Planning Director Denise Line stated the process is lengthy.",
+		"difficulty": "moderate",
+		"rationale": "Adds Darla Brown's role exactly as the minutes give it (Town Attorney); attribution stays neutral.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-10",
+		"baseKey": "2026-06-08",
+		"check": "A2",
+		"pairId": "A2-10",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member Pamela Samples questioned the invoice, asking why the town's attorney was not used."
+		},
+		"before": "Council member Pamela Samples questioned the invoice, asking why the town's attorney was not used.",
+		"after": "Council member Pamela Samples pounced on the invoice, asking why the town's attorney was not used.",
+		"difficulty": "moderate",
+		"rationale": "'Pounced on' characterises the question as aggressive; the minutes say she questioned the invoice.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-10",
+		"baseKey": "2026-06-08",
+		"check": "A2",
+		"pairId": "A2-10",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member Pamela Samples questioned the invoice, asking why the town's attorney was not used."
+		},
+		"before": "Council member Pamela Samples questioned the invoice, asking why the town's attorney was not used.",
+		"after": "Council member Pamela Samples questioned the $8,000 invoice, asking why the town's attorney was not used.",
+		"difficulty": "moderate",
+		"rationale": "The minutes say she questioned an $8,000 invoice for a lawyer; the figure is copied from the record and already appears in the draft.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-11",
+		"baseKey": "2026-07-13",
+		"check": "A2",
+		"pairId": "A2-11",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Town Marshal Jimmie Durnil requested that police employees who work a holiday receive their normal rate of pay for hours worked, and their unused holiday hours convert to floating holidays."
+		},
+		"before": "Town Marshal Jimmie Durnil requested that police employees who work a holiday receive their normal rate of pay for hours worked, and their unused holiday hours convert to floating holidays.",
+		"after": "Town Marshal Jimmie Durnil, in a bid to keep his officers happy, requested that police employees who work a holiday receive their normal rate of pay for hours worked, and their unused holiday hours convert to floating holidays.",
+		"difficulty": "moderate",
+		"rationale": "The motive clause is invented; the marshal gave operational needs as his reason, and only the town manager spoke of keeping employees happy.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-11",
+		"baseKey": "2026-07-13",
+		"check": "A2",
+		"pairId": "A2-11",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Town Marshal Jimmie Durnil requested that police employees who work a holiday receive their normal rate of pay for hours worked, and their unused holiday hours convert to floating holidays."
+		},
+		"before": "Town Marshal Jimmie Durnil requested that police employees who work a holiday receive their normal rate of pay for hours worked, and their unused holiday hours convert to floating holidays.",
+		"after": "Town Marshal Jimmie Durnil, citing operational needs, requested that police employees who work a holiday receive their normal rate of pay for hours worked, and their unused holiday hours convert to floating holidays.",
+		"difficulty": "moderate",
+		"rationale": "The minutes record the marshal saying that with operational needs his officers sometimes must work holidays; the reason is his own.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-12",
+		"baseKey": "2026-08-24",
+		"check": "A2",
+		"pairId": "A2-12",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The council stated its intention for Deputy Chief Bunger to become Chief after the new council takes office."
+		},
+		"before": "The council stated its intention for Deputy Chief Bunger to become Chief after the new council takes office.",
+		"after": "The council made no secret of its intention for Deputy Chief Bunger to become Chief after the new council takes office.",
+		"difficulty": "subtle",
+		"rationale": "'Made no secret of' implies the council was flaunting something it might have hidden; the minutes simply state the intention.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-P-12",
+		"baseKey": "2026-08-24",
+		"check": "A2",
+		"pairId": "A2-12",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The council stated its intention for Deputy Chief Bunger to become Chief after the new council takes office."
+		},
+		"before": "The council stated its intention for Deputy Chief Bunger to become Chief after the new council takes office.",
+		"after": "The council stated its intention for Deputy Chief Shannon Bunger to become Chief after the new council takes office.",
+		"difficulty": "subtle",
+		"rationale": "Adds the officer's first name as the minutes spell it (Officer Shannon Bunger); the attribution is unchanged.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A2-F-13",
+		"baseKey": "2025-08-25-budget-work-session",
+		"check": "A2",
+		"pairId": "A2-13",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council members expressed concerns about the financial projections and their impact on town services."
+		},
+		"before": "Council members expressed concerns about the financial projections and their impact on town services.",
+		"after": "Council members expressed concerns about the bleak 2028 financial projections and their impact on town services.",
+		"difficulty": "obvious",
+		"rationale": "'Bleak' is an adjective of judgment from the writer; the consultant presented figures and the council discussed them.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A2-P-13",
+		"baseKey": "2025-08-25-budget-work-session",
+		"check": "A2",
+		"pairId": "A2-13",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council members expressed concerns about the financial projections and their impact on town services."
+		},
+		"before": "Council members expressed concerns about the financial projections and their impact on town services.",
+		"after": "Council members expressed concerns about the 2028 financial projections and their impact on town services.",
+		"difficulty": "moderate",
+		"rationale": "The presentation projected the imbalance for 2028, as the draft's own lede and headline say; the year is a faithful detail.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A2-F-14",
+		"baseKey": "2025-11-14-work-session",
+		"check": "A2",
+		"pairId": "A2-14",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The consultants provided an illustrative example of the fiscal impact, noting that actual numbers would depend on the final reorganization plan."
+		},
+		"before": "The consultants provided an illustrative example of the fiscal impact, noting that actual numbers would depend on the final reorganization plan.",
+		"after": "The consultants provided an illustrative example of the fiscal impact, hedging that actual numbers would depend on the final reorganization plan.",
+		"difficulty": "subtle",
+		"rationale": "'Hedging' casts the consultants' caveat as evasive; on the recording they say they are only trying to illustrate what it might look like.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A2-P-14",
+		"baseKey": "2025-11-14-work-session",
+		"check": "A2",
+		"pairId": "A2-14",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The consultants provided an illustrative example of the fiscal impact, noting that actual numbers would depend on the final reorganization plan."
+		},
+		"before": "The consultants provided an illustrative example of the fiscal impact, noting that actual numbers would depend on the final reorganization plan.",
+		"after": "The consultants provided an illustrative example of the fiscal impact, saying that actual numbers would depend on the final reorganization plan.",
+		"difficulty": "obvious",
+		"rationale": "'Saying' is the plainest attribution verb; the caveat is the consultants' own on the recording.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A2-F-15",
+		"baseKey": "2026-09-28",
+		"check": "A2",
+		"pairId": "A2-15",
+		"labels": {
+			"A2": "fail",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A council member noted the town's previous attempts to secure county funding for rural transit were unsuccessful."
+		},
+		"before": "A council member noted the town's previous attempts to secure county funding for rural transit were unsuccessful.",
+		"after": "A council member noted the town's previous attempts to secure county funding for rural transit were sadly unsuccessful.",
+		"difficulty": "obvious",
+		"rationale": "'Sadly' is on LOADED_WORDS and the rubric's A2 list; it adds the writer's feeling to the council member's remark.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A2-P-15",
+		"baseKey": "2026-09-28",
+		"check": "A2",
+		"pairId": "A2-15",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A council member noted the town's previous attempts to secure county funding for rural transit were unsuccessful."
+		},
+		"before": "A council member noted the town's previous attempts to secure county funding for rural transit were unsuccessful.",
+		"after": "A council member noted the town's previous attempts to secure county tax funding for rural transit were unsuccessful.",
+		"difficulty": "moderate",
+		"rationale": "On the recording the council member says the county fought the town on using a county-collected tax for rural transit, so 'tax funding' is faithful.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A4-F-01",
+		"baseKey": "2025-07-14",
+		"check": "A4",
+		"pairId": "A4-01",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 0
+		},
+		"before": "Fox Construction bid $541,363 for Heritage Trail Pedestrian Bridge.",
+		"after": "Fox Construction wins $541,363 bid for Heritage Trail Pedestrian Bridge.",
+		"difficulty": "moderate",
+		"rationale": "The minutes record the bids taken under advisement, with the winner to be announced July 28; no bid was awarded at this meeting.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-01",
+		"baseKey": "2025-07-14",
+		"check": "A4",
+		"pairId": "A4-01",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 0
+		},
+		"before": "Fox Construction bid $541,363 for Heritage Trail Pedestrian Bridge.",
+		"after": "Fox Construction bid $541,363, the lowest, for Heritage Trail Pedestrian Bridge.",
+		"difficulty": "moderate",
+		"rationale": "Of the three bids read (CLR, Crider & Crider, Fox), Fox's was the lowest; the highlight still reports a bid, not an award.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-02",
+		"baseKey": "2025-12-08",
+		"check": "A4",
+		"pairId": "A4-02",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The Council approved Ordinance 2025-26, the salary ordinance for budget year 2026."
+		},
+		"before": "The Council approved Ordinance 2025-26, the salary ordinance for budget year 2026.",
+		"after": "The Council introduced Ordinance 2025-26, the salary ordinance for budget year 2026.",
+		"difficulty": "moderate",
+		"rationale": "The ordinance was on second reading and the motion to approve it carried; 'introduced' states a first reading that happened at the previous meeting.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-02",
+		"baseKey": "2025-12-08",
+		"check": "A4",
+		"pairId": "A4-02",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The Council approved Ordinance 2025-26, the salary ordinance for budget year 2026."
+		},
+		"before": "The Council approved Ordinance 2025-26, the salary ordinance for budget year 2026.",
+		"after": "The Council adopted Ordinance 2025-26, the salary ordinance for budget year 2026.",
+		"difficulty": "subtle",
+		"rationale": "An ordinance approved on second reading is adopted; the minutes show the motion to approve Ordinance 2025-26 carried.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-03",
+		"baseKey": "2025-10-27",
+		"check": "A4",
+		"pairId": "A4-03",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 2
+		},
+		"before": "Council introduces ordinance to create a Stormwater Utility vehicle replacement fund.",
+		"after": "Council adopts ordinance to create a separate Stormwater Utility vehicle replacement fund.",
+		"difficulty": "obvious",
+		"rationale": "Ordinance 2025-25 sits under 'Ordinance on First Reading' with no vote; first reading is not adoption.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-03",
+		"baseKey": "2025-10-27",
+		"check": "A4",
+		"pairId": "A4-03",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 2
+		},
+		"before": "Council introduces ordinance to create a Stormwater Utility vehicle replacement fund.",
+		"after": "Council introduces Ordinance 2025-25 for a Stormwater Utility vehicle replacement fund.",
+		"difficulty": "obvious",
+		"rationale": "The minutes list Ordinance 2025-25 under first reading; the number is copied from the record and 'introduces' is kept.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-04",
+		"baseKey": "2026-02-02",
+		"check": "A4",
+		"pairId": "A4-04",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The council took bids for the Community Crossings Grant road work under advisement."
+		},
+		"before": "The council took bids for the Community Crossings Grant road work under advisement.",
+		"after": "The council accepted the low bid from Milestone Contractors for the Community Crossings Grant road work.",
+		"difficulty": "moderate",
+		"rationale": "Milestone Contractors was the low bidder, but the motion took all bids under advisement; the street commissioner said none would be awarded until INDOT confirmed the funding.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-04",
+		"baseKey": "2026-02-02",
+		"check": "A4",
+		"pairId": "A4-04",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The council took bids for the Community Crossings Grant road work under advisement."
+		},
+		"before": "The council took bids for the Community Crossings Grant road work under advisement.",
+		"after": "The council took the four bids for the Community Crossings Grant road work under advisement.",
+		"difficulty": "moderate",
+		"rationale": "The attorney read four bids (E&B, DC Construction, Milestone, Lentz) and the council took them under advisement.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-05",
+		"baseKey": "2026-02-09",
+		"check": "A4",
+		"pairId": "A4-05",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The organization requested a property tax exemption through a tax-increment financing district (TIF), noting that as a 501(c)(3) non-profit, the property is currently tax-exempt."
+		},
+		"before": "The organization requested a property tax exemption through a tax-increment financing district (TIF), noting that as a 501(c)(3) non-profit, the property is currently tax-exempt.",
+		"after": "The organization was granted a property tax exemption through a tax-increment financing district (TIF), noting that as a 501(c)(3) non-profit, the property is currently tax-exempt.",
+		"difficulty": "subtle",
+		"rationale": "The pilot agreement ordinance was only on first reading; the presenter asked the council to grant the exemption, and nothing was granted at this meeting.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-05",
+		"baseKey": "2026-02-09",
+		"check": "A4",
+		"pairId": "A4-05",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The organization requested a property tax exemption through a tax-increment financing district (TIF), noting that as a 501(c)(3) non-profit, the property is currently tax-exempt."
+		},
+		"before": "The organization requested a property tax exemption through a tax-increment financing district (TIF), noting that as a 501(c)(3) non-profit, the property is currently tax-exempt.",
+		"after": "The organization sought a property tax exemption through a tax-increment financing district (TIF), noting that as a 501(c)(3) non-profit, the property is currently tax-exempt.",
+		"difficulty": "subtle",
+		"rationale": "The presenter asked the town to grant the exemption ('we would ask that you grant us'); 'sought' restates 'requested'.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-06",
+		"baseKey": "2026-03-23",
+		"check": "A4",
+		"pairId": "A4-06",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 0
+		},
+		"before": "Council approves intent to purchase a $383,072 street sweeper.",
+		"after": "Council approves purchase of a $383,072 street sweeper.",
+		"difficulty": "subtle",
+		"rationale": "The minutes say the council gave approval to give intent to purchase so a stock unit could be held; the purchase itself was approved later.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-06",
+		"baseKey": "2026-03-23",
+		"check": "A4",
+		"pairId": "A4-06",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 0
+		},
+		"before": "Council approves intent to purchase a $383,072 street sweeper.",
+		"after": "Council gives intent to purchase a $383,072 street sweeper.",
+		"difficulty": "subtle",
+		"rationale": "The minutes' own words are that the council gave approval to give intent to purchase; the intent is kept.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-07",
+		"baseKey": "2026-04-13",
+		"check": "A4",
+		"pairId": "A4-07",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 3
+		},
+		"before": "Council conditionally hires a full-time police officer.",
+		"after": "Council formally hires a full-time police officer.",
+		"difficulty": "subtle",
+		"rationale": "The motion extended a conditional offer pending tests and PERF 77 acceptance; 'formally hires' drops the condition the motion stated.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-07",
+		"baseKey": "2026-04-13",
+		"check": "A4",
+		"pairId": "A4-07",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 3
+		},
+		"before": "Council conditionally hires a full-time police officer.",
+		"after": "Council conditionally hires a replacement police officer.",
+		"difficulty": "moderate",
+		"rationale": "The marshal said it is a replacement, not a new hire, and the condition is kept.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-08",
+		"baseKey": "2026-04-27",
+		"check": "A4",
+		"pairId": "A4-08",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 1
+		},
+		"before": "Public Works discussed future purchases of a street sweeper, dump truck, and F-550.",
+		"after": "Public Works got approval for future purchases of a street sweeper, dump truck, and F-550.",
+		"difficulty": "moderate",
+		"rationale": "No vote was taken; the DPW director described the equipment under consideration, and the loan resolutions were left for a later meeting.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-08",
+		"baseKey": "2026-04-27",
+		"check": "A4",
+		"pairId": "A4-08",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 1
+		},
+		"before": "Public Works discussed future purchases of a street sweeper, dump truck, and F-550.",
+		"after": "Public Works presented plans to buy a street sweeper, dump truck, and F-550.",
+		"difficulty": "moderate",
+		"rationale": "The DPW director laid out the three purchases and how each would be funded; 'presented plans' asserts no decision.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-09",
+		"baseKey": "2026-05-11",
+		"check": "A4",
+		"pairId": "A4-09",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 2
+		},
+		"before": "Bids for street resurfacing on five streets were tabled for legal review.",
+		"after": "Bids for street resurfacing on five streets were rejected after legal review.",
+		"difficulty": "obvious",
+		"rationale": "The motion was to table until the due-diligence legal review is complete; tabled is not rejected, and no review had been done yet.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-09",
+		"baseKey": "2026-05-11",
+		"check": "A4",
+		"pairId": "A4-09",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 2
+		},
+		"before": "Bids for street resurfacing on five streets were tabled for legal review.",
+		"after": "Bids for street resurfacing on five streets were held over for legal review.",
+		"difficulty": "subtle",
+		"rationale": "The motion was to table until the due-diligence legal review is complete; 'held over' is the plain-English form of tabled.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-10",
+		"baseKey": "2026-05-26",
+		"check": "A4",
+		"pairId": "A4-10",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The council approved the proposal, pending approval from both the Ellettsville Town Council and the Richland Township Board for reorganization, with the motion passing unanimously."
+		},
+		"before": "The council approved the proposal, pending approval from both the Ellettsville Town Council and the Richland Township Board for reorganization, with the motion passing unanimously.",
+		"after": "The council approved the proposal, after approval from both the Ellettsville Town Council and the Richland Township Board for reorganization, with the motion passing unanimously.",
+		"difficulty": "subtle",
+		"rationale": "The motion approved the proposal pending both boards' approval for reorganization; 'after approval' drops the condition and says the boards had already approved.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-10",
+		"baseKey": "2026-05-26",
+		"check": "A4",
+		"pairId": "A4-10",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The council approved the proposal, pending approval from both the Ellettsville Town Council and the Richland Township Board for reorganization, with the motion passing unanimously."
+		},
+		"before": "The council approved the proposal, pending approval from both the Ellettsville Town Council and the Richland Township Board for reorganization, with the motion passing unanimously.",
+		"after": "The council approved the proposal, contingent on approval from both the Ellettsville Town Council and the Richland Township Board for reorganization, with the motion passing unanimously.",
+		"difficulty": "subtle",
+		"rationale": "'Contingent on' restates the motion's 'pending approval from' both boards.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-11",
+		"baseKey": "2026-07-13",
+		"check": "A4",
+		"pairId": "A4-11",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 3
+		},
+		"before": "Council introduces ordinance to add stop signs at Harman Farms Subdivision.",
+		"after": "Council adopts Ordinance 26-10 to add all-way stop signs at Harman Farms Subdivision.",
+		"difficulty": "obvious",
+		"rationale": "Ordinance 26-10 is listed under 'Ordinance on First Reading' with no vote; it was not adopted.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-11",
+		"baseKey": "2026-07-13",
+		"check": "A4",
+		"pairId": "A4-11",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 3
+		},
+		"before": "Council introduces ordinance to add stop signs at Harman Farms Subdivision.",
+		"after": "Council introduces Ordinance 26-10 to add stop signs at Harman Farms Subdivision.",
+		"difficulty": "obvious",
+		"rationale": "The ordinance number is copied from the minutes and the term 'introduces' is kept.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-12",
+		"baseKey": "2026-07-27",
+		"check": "A4",
+		"pairId": "A4-12",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The approval is conditional upon the township board also approving the annexation."
+		},
+		"before": "The approval is conditional upon the township board also approving the annexation.",
+		"after": "The approval came after the township board also approved the annexation.",
+		"difficulty": "subtle",
+		"rationale": "On the recording the attorney advises passing it conditioned on township approval, with the township board not meeting until August; the condition is dropped and a township vote invented.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A4-P-12",
+		"baseKey": "2026-07-27",
+		"check": "A4",
+		"pairId": "A4-12",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The approval is conditional upon the township board also approving the annexation."
+		},
+		"before": "The approval is conditional upon the township board also approving the annexation.",
+		"after": "The approval depends on the township board also approving the annexation.",
+		"difficulty": "moderate",
+		"rationale": "'Depends on' restates the condition the attorney proposed: the approval is conditioned on the township approving the annexation.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A4-F-13",
+		"baseKey": "2026-08-24",
+		"check": "A4",
+		"pairId": "A4-13",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 0
+		},
+		"before": "Council introduces ordinance to allow Utility Task Vehicles on most town roads.",
+		"after": "Council passes Ordinance 2026-15 to allow Utility Task Vehicles on most town roads.",
+		"difficulty": "obvious",
+		"rationale": "Ordinance 2026-15 was on first reading only; nothing was passed.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-P-13",
+		"baseKey": "2026-08-24",
+		"check": "A4",
+		"pairId": "A4-13",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 0
+		},
+		"before": "Council introduces ordinance to allow Utility Task Vehicles on most town roads.",
+		"after": "Council introduces ordinance to allow UTVs on all town roads except State Road 46.",
+		"difficulty": "obvious",
+		"rationale": "The attorney said the ordinance would allow UTVs on all town roads except State Road 46; 'introduces' is kept.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A4-F-14",
+		"baseKey": "2026-09-28",
+		"check": "A4",
+		"pairId": "A4-14",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council members expressed support for the idea but directed Mr. Frank to present the proposal to the Parks Board."
+		},
+		"before": "Council members expressed support for the idea but directed Mr. Frank to present the proposal to the Parks Board.",
+		"after": "Council members voted to approve the idea but directed Mr. Frank to present the proposal to the Parks Board.",
+		"difficulty": "moderate",
+		"rationale": "On the recording the attorney says no council vote is needed and it goes to the Parks Board; no vote was taken.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A4-P-14",
+		"baseKey": "2026-09-28",
+		"check": "A4",
+		"pairId": "A4-14",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council members expressed support for the idea but directed Mr. Frank to present the proposal to the Parks Board."
+		},
+		"before": "Council members expressed support for the idea but directed Mr. Frank to present the proposal to the Parks Board.",
+		"after": "Council members agreed by consensus with the idea but directed Mr. Frank to present the proposal to the Parks Board.",
+		"difficulty": "subtle",
+		"rationale": "The attorney says no vote is needed and that the council's consensus is that it is good with it; consensus is not a vote.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A4-F-15",
+		"baseKey": "2025-08-25-budget-work-session",
+		"check": "A4",
+		"pairId": "A4-15",
+		"labels": {
+			"A2": "pass",
+			"A4": "fail",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 4
+		},
+		"before": "The council will consider a one-time employee bonus in mid-2026.",
+		"after": "The council approved a one-time employee bonus, to be paid in mid-2026.",
+		"difficulty": "obvious",
+		"rationale": "The work session takes no votes, as the president says at the start; members agreed to wait until mid-year to see if a bonus is affordable.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A4-P-15",
+		"baseKey": "2025-08-25-budget-work-session",
+		"check": "A4",
+		"pairId": "A4-15",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 4
+		},
+		"before": "The council will consider a one-time employee bonus in mid-2026.",
+		"after": "The council deferred a decision on a one-time employee bonus to mid-2026.",
+		"difficulty": "moderate",
+		"rationale": "Members agreed to come back at mid-year to see whether a bonus can be afforded, which the draft's prose also calls deferring the decision.",
+		"sourceKind": "transcript-only"
+	},
+	{
+		"id": "A5-F-01",
+		"baseKey": "2025-08-25",
+		"check": "A5",
+		"pairId": "A5-01",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff."
+		},
+		"before": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff.",
+		"after": "Resident Gordon Pruitt asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff.",
+		"difficulty": "obvious",
+		"rationale": "A member of the public spoke at the wheel-tax public hearing; naming that resident (invented name) breaks the public-by-count rule.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-01",
+		"baseKey": "2025-08-25",
+		"check": "A5",
+		"pairId": "A5-01",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff."
+		},
+		"before": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff.",
+		"after": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and Clerk Treasurer Noelle Conyer.",
+		"difficulty": "subtle",
+		"rationale": "The attorney said the BMV collects the tax and Noelle Conyer tracks and appropriates it internally; she is the Clerk Treasurer, named with her role, and the resident stays unnamed.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-02",
+		"baseKey": "2025-08-25",
+		"check": "A5",
+		"pairId": "A5-02",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff."
+		},
+		"before": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff.",
+		"after": "A resident, Mr. Halvorsen, asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff.",
+		"difficulty": "moderate",
+		"rationale": "An honorific and surname (invented) still names the resident who spoke at the public hearing.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-02",
+		"baseKey": "2025-08-25",
+		"check": "A5",
+		"pairId": "A5-02",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff."
+		},
+		"before": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff.",
+		"after": "A resident asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with Town Attorney Darla Brown saying the BMV and internal staff would largely handle those costs.",
+		"difficulty": "moderate",
+		"rationale": "The minutes record the town attorney explaining that the administrative costs fall largely on the BMV and are internal; she is an official named with her role.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-03",
+		"baseKey": "2025-08-25",
+		"check": "A5",
+		"pairId": "A5-03",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The new taxes will generate an estimated $89,000 annually to help fund road projects."
+		},
+		"before": "The new taxes will generate an estimated $89,000 annually to help fund road projects.",
+		"after": "The new taxes, questioned by resident Ned Calloway, will generate an estimated $89,000 annually to help fund road projects.",
+		"difficulty": "obvious",
+		"rationale": "One member of the public questioned the tax at the hearing; the lede names that resident (invented name).",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-03",
+		"baseKey": "2025-08-25",
+		"check": "A5",
+		"pairId": "A5-03",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "The new taxes will generate an estimated $89,000 annually to help fund road projects."
+		},
+		"before": "The new taxes will generate an estimated $89,000 annually to help fund road projects.",
+		"after": "The new taxes, which Council member William Ellis backed, will generate an estimated $89,000 annually to help fund road projects.",
+		"difficulty": "moderate",
+		"rationale": "William Ellis argued the tax was needed for Community Crossings grants and moved its approval; he is a council member named with his role.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-04",
+		"baseKey": "2025-08-25",
+		"check": "A5",
+		"pairId": "A5-04",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 0
+		},
+		"before": "Council approves new wheel tax and motor vehicle license excise tax.",
+		"after": "Council approves new wheel tax and excise tax over Gene Ostrowski's objection.",
+		"difficulty": "subtle",
+		"rationale": "The only objector on the record was the member of the public at the hearing, so the invented name names a resident; the highlight never says 'resident', which makes it easy to read as an official.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-04",
+		"baseKey": "2025-08-25",
+		"check": "A5",
+		"pairId": "A5-04",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 0
+		},
+		"before": "Council approves new wheel tax and motor vehicle license excise tax.",
+		"after": "Council approves William Ellis's motion for new wheel tax and excise tax.",
+		"difficulty": "moderate",
+		"rationale": "The minutes record William Ellis moving to approve Ordinance 2025-18 imposing the wheel tax and excise surtax; he is a council member, spelled as the minutes spell him.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-05",
+		"baseKey": "2026-02-09",
+		"check": "A5",
+		"pairId": "A5-05",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach."
+		},
+		"before": "A resident thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
+		"after": "Resident Joanne Pettibone thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
+		"difficulty": "obvious",
+		"rationale": "The speaker spoke under Privilege of the Floor; naming her (invented name) breaks the public-by-count rule.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-05",
+		"baseKey": "2026-02-09",
+		"check": "A5",
+		"pairId": "A5-05",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach."
+		},
+		"before": "A resident thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
+		"after": "A resident thanked Street Commissioner Kip Headdy's department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
+		"difficulty": "moderate",
+		"rationale": "Kip Headdy is the Street Commissioner in the minutes, so he is an official named with his role; the speaker stays unnamed.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-06",
+		"baseKey": "2026-02-09",
+		"check": "A5",
+		"pairId": "A5-06",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach."
+		},
+		"before": "A resident thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
+		"after": "A resident, Wendell Teague, thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
+		"difficulty": "moderate",
+		"rationale": "An appositive name (invented) for the Privilege of the Floor speaker is still a named resident.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-06",
+		"baseKey": "2026-02-09",
+		"check": "A5",
+		"pairId": "A5-06",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach."
+		},
+		"before": "A resident thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
+		"after": "A resident from a local church thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
+		"difficulty": "moderate",
+		"rationale": "The speaker came from a local church, per the minutes; she stays unnamed and described, as the rubric allows.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-07",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-07",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 3
+		},
+		"before": "A resident asked the council to address speed issues on local streets.",
+		"after": "Resident Hal Brannigan asked the council to address speed issues on local streets.",
+		"difficulty": "obvious",
+		"rationale": "The speed complaint came from a member of the public under Privilege of the Floor; the highlight names him (invented name).",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-07",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-07",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 3
+		},
+		"before": "A resident asked the council to address speed issues on local streets.",
+		"after": "A resident asked the council and Chief Durnil to address speed issues on local streets.",
+		"difficulty": "moderate",
+		"rationale": "The speaker's memo went to the council and to Chief Durnil, an official spelled as the minutes spell him.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-08",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-08",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets."
+		},
+		"before": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"after": "A resident, Earl Whitcomb, expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"difficulty": "moderate",
+		"rationale": "The Privilege of the Floor speaker is named (invented name) in an appositive.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-08",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-08",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets."
+		},
+		"before": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"after": "A resident, writing to the Town Manager, expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"difficulty": "obvious",
+		"rationale": "The speaker sent his memo to council members, the Town Manager and the chief, per the minutes; he stays unnamed.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-09",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-09",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets."
+		},
+		"before": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"after": "Mr. Lindgren expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"difficulty": "subtle",
+		"rationale": "The Privilege of the Floor speaker is replaced by an invented honorific and surname with no 'resident' marker, so a skimmer may take him for staff.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-09",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-09",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets."
+		},
+		"before": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"after": "One resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"difficulty": "moderate",
+		"rationale": "One member of the public spoke under Privilege of the Floor; 'one resident' is the count form.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-10",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-10",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets."
+		},
+		"before": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"after": "Ostrander, a resident, expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"difficulty": "subtle",
+		"rationale": "The Privilege of the Floor speaker is named by an invented surname alone; who spoke and what he asked are unchanged.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-10",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-10",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets."
+		},
+		"before": "A resident expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"after": "A resident expressed concern to Chief Durnil about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
+		"difficulty": "moderate",
+		"rationale": "The minutes say the speaker sent a memo expressing his concerns to council members, the town manager and Police Chief Jimmie Durnil; the chief is an official spelled as the minutes spell him.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-11",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-11",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member Dan Swafford suggested considering permanent electronic \"Slow Down\" signs during future budget discussions."
+		},
+		"before": "Council member Dan Swafford suggested considering permanent electronic \"Slow Down\" signs during future budget discussions.",
+		"after": "Council member Dan Swafford, addressing the speed concern Bev Kowalczyk raised, suggested considering permanent electronic \"Slow Down\" signs during future budget discussions.",
+		"difficulty": "subtle",
+		"rationale": "The speed concern came from the Privilege of the Floor speaker; the invented name names that resident inside a council member's sentence.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-11",
+		"baseKey": "2026-05-11",
+		"check": "A5",
+		"pairId": "A5-11",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council member Dan Swafford suggested considering permanent electronic \"Slow Down\" signs during future budget discussions."
+		},
+		"before": "Council member Dan Swafford suggested considering permanent electronic \"Slow Down\" signs during future budget discussions.",
+		"after": "Council member Dan Swafford, speaking after Town Marshal Jimmie Durnil, suggested considering permanent electronic \"Slow Down\" signs during future budget discussions.",
+		"difficulty": "subtle",
+		"rationale": "Under council comments Swafford's sign remark follows Chief Durnil's answer on the radar monitor; both are officials spelled as the minutes spell them.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-12",
+		"baseKey": "2026-07-13",
+		"check": "A5",
+		"pairId": "A5-12",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 4
+		},
+		"before": "Residents ask Council to consider a Utility Vehicle ordinance.",
+		"after": "Resident Curt Lindqvist asks Council to consider a Utility Vehicle ordinance.",
+		"difficulty": "obvious",
+		"rationale": "The UTV request came from members of the public under Privilege of the Floor; the highlight names one (invented name).",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-12",
+		"baseKey": "2026-07-13",
+		"check": "A5",
+		"pairId": "A5-12",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "highlights",
+			"index": 4
+		},
+		"before": "Residents ask Council to consider a Utility Vehicle ordinance.",
+		"after": "Three residents ask Council to consider a Utility Vehicle ordinance like Monroe County's.",
+		"difficulty": "moderate",
+		"rationale": "Three members of the public spoke for a UTV ordinance, the first saying he and two others got one passed in Monroe County; the count form is the rubric's own.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-13",
+		"baseKey": "2026-07-13",
+		"check": "A5",
+		"pairId": "A5-13",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "During public comment, three residents spoke in support of a Utility Vehicle (UTV) ordinance."
+		},
+		"before": "During public comment, three residents spoke in support of a Utility Vehicle (UTV) ordinance.",
+		"after": "During public comment, Lyle Haverkamp and two other residents spoke in support of a Utility Vehicle (UTV) ordinance.",
+		"difficulty": "moderate",
+		"rationale": "One of the three public-comment speakers is named (invented name); the count is kept, so it reads as faithful at a glance.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-13",
+		"baseKey": "2026-07-13",
+		"check": "A5",
+		"pairId": "A5-13",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "During public comment, three residents spoke in support of a Utility Vehicle (UTV) ordinance."
+		},
+		"before": "During public comment, three residents spoke in support of a Utility Vehicle (UTV) ordinance.",
+		"after": "During public comment, three residents, one citing Monroe County's rules, spoke in support of a Utility Vehicle (UTV) ordinance.",
+		"difficulty": "moderate",
+		"rationale": "The first speaker said he and two others got a UTV ordinance passed in Monroe County; all three stay unnamed.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-14",
+		"baseKey": "2026-07-13",
+		"check": "A5",
+		"pairId": "A5-14",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "They explained that UTVs are safe, beneficial for the community, and could generate revenue for the town."
+		},
+		"before": "They explained that UTVs are safe, beneficial for the community, and could generate revenue for the town.",
+		"after": "Ross Dettweiler and the others explained that UTVs are safe, beneficial for the community, and could generate revenue for the town.",
+		"difficulty": "moderate",
+		"rationale": "The pronoun for the public-comment speakers becomes an invented resident's name.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-14",
+		"baseKey": "2026-07-13",
+		"check": "A5",
+		"pairId": "A5-14",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "They explained that UTVs are safe, beneficial for the community, and could generate revenue for the town."
+		},
+		"before": "They explained that UTVs are safe, beneficial for the community, and could generate revenue for the town.",
+		"after": "All three residents told the council that UTVs are safe, beneficial for the community, and could generate revenue for the town.",
+		"difficulty": "obvious",
+		"rationale": "Restates 'they' by count; 'told the council' is neutral.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-F-15",
+		"baseKey": "2026-07-13",
+		"check": "A5",
+		"pairId": "A5-15",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "fail"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council members William Ellis, Trevor Sager, Town Manager Mike Farmer, and Street Commissioner Kip Headdy expressed support for some type of ordinance, though Trevor Sager raised concerns about State Road 46."
+		},
+		"before": "Council members William Ellis, Trevor Sager, Town Manager Mike Farmer, and Street Commissioner Kip Headdy expressed support for some type of ordinance, though Trevor Sager raised concerns about State Road 46.",
+		"after": "Council members William Ellis, Trevor Sager, Town Manager Mike Farmer, and Street Commissioner Kip Headdy expressed support for some type of ordinance, though Trevor Sager and resident Nell Abernathy raised concerns about State Road 46.",
+		"difficulty": "subtle",
+		"rationale": "The first public-comment speaker said Highway 46 is not the place for UTVs, so a named resident (invented name) at the end of a list of officials has a referent.",
+		"sourceKind": "documents"
+	},
+	{
+		"id": "A5-P-15",
+		"baseKey": "2026-07-13",
+		"check": "A5",
+		"pairId": "A5-15",
+		"labels": {
+			"A2": "pass",
+			"A4": "pass",
+			"A5": "pass"
+		},
+		"target": {
+			"field": "prose",
+			"sentence": "Council members William Ellis, Trevor Sager, Town Manager Mike Farmer, and Street Commissioner Kip Headdy expressed support for some type of ordinance, though Trevor Sager raised concerns about State Road 46."
+		},
+		"before": "Council members William Ellis, Trevor Sager, Town Manager Mike Farmer, and Street Commissioner Kip Headdy expressed support for some type of ordinance, though Trevor Sager raised concerns about State Road 46.",
+		"after": "Council members William Ellis, Trevor Sager, Town Manager Mike Farmer, and Street Commissioner Kip Headdy expressed support for some type of ordinance, though Council member Trevor Sager raised concerns about State Road 46.",
+		"difficulty": "subtle",
+		"rationale": "Adds Trevor Sager's role; he is a council member, and the minutes record his State Road 46 concern.",
+		"sourceKind": "documents"
+	}
+]
