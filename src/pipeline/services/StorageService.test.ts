@@ -1478,6 +1478,7 @@ describe("StorageService", () => {
 				summary: {
 					sourceKinds: ["documents", "transcript"],
 					sourceFingerprint: "fingerprint-1",
+					heldReason: null,
 				},
 			});
 		});
@@ -1495,6 +1496,7 @@ describe("StorageService", () => {
 			expect(sources.summary).toEqual({
 				sourceKinds: [],
 				sourceFingerprint: "",
+				heldReason: null,
 			});
 		});
 
@@ -1881,6 +1883,7 @@ describe("StorageService", () => {
 			expect(sources.summary).toEqual({
 				sourceKinds: ["documents", "transcript"],
 				sourceFingerprint: "fingerprint-1",
+				heldReason: null,
 			});
 		});
 

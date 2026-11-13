@@ -2205,7 +2205,11 @@ describe("runPipeline video path", () => {
 					},
 				],
 				transcript: { sourceUrl: url("regular"), rawText: "transcript text" },
-				summary: { sourceKinds: ["documents"], sourceFingerprint: "stale" },
+				summary: {
+					sourceKinds: ["documents"],
+					sourceFingerprint: "stale",
+					heldReason: null,
+				},
 			},
 		});
 

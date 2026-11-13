@@ -1,5 +1,6 @@
-import { Effect, Schedule } from "effect";
+import { Duration, Effect, Schedule } from "effect";
 import { describe, expect, it, vi } from "vitest";
+import type { Judge } from "#/pipeline/checks/judge.ts";
 import type { Revision } from "#/pipeline/checks/types.ts";
 import type { Official } from "#/pipeline/officials/types.ts";
 import {
@@ -79,6 +80,81 @@ describe("SummarizationService", () => {
 			},
 		]);
 		expect(listed.prePublish.kind).not.toBe("held");
+	});
+
+	describe("with a judge", () => {
+		const output = {
+			highlights: ["Council approves paving bid"],
+			prose: "The council approved the paving bid.",
+			fiscalDecisions: [],
+			budgetDiscussions: [],
+			sourceDisagreements: [],
+		};
+
+		/** Summarizes a meeting with documents, checked by `judge`. */
+		function summarizeJudgedBy(
+			judge: Judge,
+			timing: { judgeTimeout?: Duration.Duration } = {},
+		) {
+			return Effect.runPromise(
+				Effect.gen(function* () {
+					const service = yield* SummarizationService;
+					return yield* service.summarize({
+						officials: [],
+						sources: [{ kind: "documents", text: "The council met." }],
+						meetingContext: "Town Council, May 11, 2026",
+					});
+				}).pipe(
+					Effect.provide(
+						SummarizationServiceLive({
+							model: "gemini-2.5-flash",
+							writeFn: writes(output),
+							generateFn: async () => output,
+							judge,
+							judgeRetry: Schedule.recurs(1),
+							...timing,
+						}),
+					),
+				),
+			);
+		}
+
+		it("if the judge keeps throwing, retries it, then returns the summary held critic-unavailable instead of failing", async () => {
+			let calls = 0;
+			const result = await summarizeJudgedBy({
+				fingerprint: "fp",
+				run: async () => {
+					calls++;
+					throw new Error("503");
+				},
+			});
+			expect(calls).toBe(2);
+			expect(result.prePublish).toMatchObject({
+				kind: "held",
+				reason: "critic-unavailable",
+			});
+		});
+
+		it("if the judge does not answer within its timeout, holds the summary critic-unavailable", async () => {
+			const result = await summarizeJudgedBy(
+				{ fingerprint: "fp", run: () => new Promise(() => {}) },
+				{ judgeTimeout: Duration.millis(5) },
+			);
+			expect(result.prePublish).toMatchObject({
+				kind: "held",
+				reason: "critic-unavailable",
+			});
+		});
+
+		it("publishes a draft the judge passes, recording its fingerprint", async () => {
+			const pass = { outcome: "pass" } as const;
+			const result = await summarizeJudgedBy({
+				fingerprint: "fp-ok",
+				run: async () => ({ verdicts: { A2: pass, A4: pass, A5: pass } }),
+			});
+			expect(result.prePublish.kind).toBe("publish");
+			expect(result.prePublish.rounds[0]?.judgeFingerprint).toBe("fp-ok");
+		});
 	});
 
 	describe("figureIsIn", () => {

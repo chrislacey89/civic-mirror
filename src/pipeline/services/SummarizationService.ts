@@ -1,5 +1,6 @@
 import { Context, Duration, Effect, Layer, Schedule } from "effect";
 import { z } from "zod";
+import type { Judge } from "#/pipeline/checks/judge.ts";
 import { prePublish } from "#/pipeline/checks/prePublish.ts";
 import type {
 	PrePublishOutcome,
@@ -423,6 +424,15 @@ type SummarizationServiceConfig = {
 	roundCap?: number;
 	/** How a failed revision call is retried before the loop ends with the best draft. */
 	revisionRetry?: Schedule.Schedule<unknown>;
+	/**
+	 * The model judge for the checks code cannot decide. Without one, only
+	 * code checks run.
+	 */
+	judge?: Judge;
+	/** How a judge call that throws or times out is retried before it counts as unavailable. */
+	judgeRetry?: Schedule.Schedule<unknown>;
+	/** How long one judge call may take. */
+	judgeTimeout?: Duration.Duration;
 };
 
 /** As the orchestrator retries a model call. */
@@ -430,6 +440,26 @@ const REVISION_RETRY = Schedule.max([
 	Schedule.exponential(Duration.millis(1000)),
 	Schedule.recurs(2),
 ]);
+
+/** A judge call reads the whole meeting, so it may take minutes, but not forever. */
+const JUDGE_TIMEOUT = Duration.minutes(5);
+
+/**
+ * `judge` with each call timed out and retried. A call that still fails
+ * rejects, which the pre-publish check treats as the judge being unavailable.
+ */
+function retried(judge: Judge, config: SummarizationServiceConfig): Judge {
+	return {
+		fingerprint: judge.fingerprint,
+		run: (input) =>
+			Effect.runPromise(
+				Effect.tryPromise(() => judge.run(input)).pipe(
+					Effect.timeout(config.judgeTimeout ?? JUDGE_TIMEOUT),
+					Effect.retry(config.judgeRetry ?? REVISION_RETRY),
+				),
+			),
+	};
+}
 
 /**
  * Effect teaching note: This service follows the same dependency-injection
@@ -540,6 +570,10 @@ function SummarizationServiceLive(
 								).pipe(Effect.retry(config.revisionRetry ?? REVISION_RETRY)),
 							),
 						cap: config.roundCap ?? 1,
+						judge:
+							config.judge === undefined
+								? undefined
+								: retried(config.judge, config),
 					});
 					const highlights = [...checked.best.highlights];
 					const prose = checked.best.prose;
