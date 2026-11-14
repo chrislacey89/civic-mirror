@@ -10,10 +10,13 @@ import {
 	mapSumToLevel,
 	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
-import type {
-	SummaryHeldReason,
-	SummaryPublication,
-	WriteUp,
+import {
+	type CheckReport,
+	GATE_IDS,
+	type GateId,
+	type SummaryHeldReason,
+	type SummaryPublication,
+	type WriteUp,
 } from "#/pipeline/checks/types.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
@@ -142,6 +145,32 @@ type HeldVideoInput = {
 };
 
 type HeldVideo = HeldVideoInput & { createdAt: Date | null };
+
+/** What the hold rate is computed from: one stored check round. */
+interface SummaryRoundRow {
+	readonly meetingId: number;
+	readonly runId: string;
+	readonly gateFailures: number;
+	readonly createdAt: Date | null;
+}
+
+/**
+ * A meeting whose summary the pre-publish check held, and the gates its
+ * latest check run's best round failed. Evidence is as the check stored it,
+ * so a resident's name is already redacted.
+ */
+interface HeldSummary {
+	readonly meetingId: number;
+	readonly bodySlug: string;
+	readonly meetingDate: string;
+	/** Null for the meeting stored without a session. */
+	readonly session: string | null;
+	readonly heldReason: SummaryHeldReason;
+	readonly gateFails: readonly {
+		readonly id: GateId;
+		readonly evidence: string;
+	}[];
+}
 
 /** Every source a stored meeting holds, and what its current summary was built from. */
 type MeetingSources = {
@@ -304,6 +333,24 @@ interface StorageServiceInterface {
 	listHeldVideos(input?: {
 		bodySlug?: string;
 	}): Effect.Effect<HeldVideo[], DatabaseError>;
+	/**
+	 * Publish a held summary: status `published`, `released_at` and the
+	 * operator's note. With `edited`, its text replaces the summary's and its
+	 * check run is stored as rounds. A summary that is not held is left as it
+	 * is, and `released` is false.
+	 */
+	releaseSummary(input: {
+		meetingId: number;
+		note: string;
+		edited: { writeUp: WriteUp; publication: SummaryPublication } | null;
+		releasedAt?: Date;
+	}): Effect.Effect<{ released: boolean }, DatabaseError>;
+	/** Every check round stored at or after `since`, oldest first. */
+	listSummaryRoundsSince(
+		since: Date,
+	): Effect.Effect<readonly SummaryRoundRow[], DatabaseError>;
+	/** Meetings whose summary is held, oldest meeting first. */
+	listHeldSummaries(): Effect.Effect<readonly HeldSummary[], DatabaseError>;
 	/**
 	 * A body's meetings that have a summary, oldest first; the one on `date`
 	 * when it is given. The `combined` scope keeps only a summary built from
@@ -645,6 +692,44 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		releaseSummary: (input) =>
+			Effect.tryPromise({
+				try: () => releaseSummaryTransaction(db, input),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "releaseSummary",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		listSummaryRoundsSince: (since) =>
+			Effect.tryPromise({
+				try: () =>
+					db
+						.select({
+							meetingId: schema.summaryRounds.meetingId,
+							runId: schema.summaryRounds.runId,
+							gateFailures: schema.summaryRounds.gateFailures,
+							createdAt: schema.summaryRounds.createdAt,
+						})
+						.from(schema.summaryRounds)
+						.where(gte(schema.summaryRounds.createdAt, since))
+						.orderBy(schema.summaryRounds.id)
+						.all(),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "listSummaryRoundsSince",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		listHeldSummaries: () =>
+			Effect.tryPromise({
+				try: () => listHeldSummariesQuery(db),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "listHeldSummaries",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 		listSummaryMeetings: (input) =>
 			Effect.tryPromise({
 				try: async () => {
@@ -955,6 +1040,127 @@ async function getStoredWriteUpQuery(
 			isRecurring: decision.isRecurring,
 		})),
 	};
+}
+
+async function releaseSummaryTransaction(
+	db: LibSQLDatabase<typeof schema>,
+	input: Parameters<StorageServiceInterface["releaseSummary"]>[0],
+): Promise<{ released: boolean }> {
+	return await db.transaction(async (tx) => {
+		const result = await tx
+			.update(schema.summaries)
+			.set({
+				status: "published",
+				heldReason: null,
+				releasedAt: input.releasedAt ?? new Date(),
+				releaseNote: input.note,
+				...(input.edited === null
+					? {}
+					: {
+							highlights: [...input.edited.writeUp.highlights],
+							prose: input.edited.writeUp.prose,
+						}),
+			})
+			.where(
+				and(
+					eq(schema.summaries.meetingId, input.meetingId),
+					eq(schema.summaries.status, "held"),
+				),
+			)
+			.run();
+		if (result.rowsAffected === 0) return { released: false };
+		if (input.edited !== null) {
+			await insertSummaryRounds(tx, input.meetingId, input.edited.publication);
+		}
+		return { released: true };
+	});
+}
+
+async function listHeldSummariesQuery(
+	db: LibSQLDatabase<typeof schema>,
+): Promise<HeldSummary[]> {
+	const held = await db
+		.select({
+			meetingId: schema.meetings.id,
+			bodySlug: schema.governingBodies.slug,
+			meetingDate: schema.meetings.date,
+			session: schema.meetings.session,
+			heldReason: schema.summaries.heldReason,
+			highlights: schema.summaries.highlights,
+			prose: schema.summaries.prose,
+		})
+		.from(schema.summaries)
+		.innerJoin(
+			schema.meetings,
+			eq(schema.summaries.meetingId, schema.meetings.id),
+		)
+		.innerJoin(
+			schema.governingBodies,
+			eq(schema.meetings.bodyId, schema.governingBodies.id),
+		)
+		.where(eq(schema.summaries.status, "held"))
+		.orderBy(schema.meetings.date, schema.meetings.id)
+		.all();
+
+	const result: HeldSummary[] = [];
+	for (const row of held) {
+		const rounds = await db
+			.select()
+			.from(schema.summaryRounds)
+			.where(eq(schema.summaryRounds.meetingId, row.meetingId))
+			.orderBy(schema.summaryRounds.id)
+			.all();
+		result.push({
+			meetingId: row.meetingId,
+			bodySlug: row.bodySlug,
+			meetingDate: row.meetingDate,
+			session: row.session === "" ? null : row.session,
+			heldReason: row.heldReason ?? "gate-failed",
+			gateFails: gateFailsOfBestRound(rounds, {
+				highlights: row.highlights as string[],
+				prose: row.prose,
+			}),
+		});
+	}
+	return result;
+}
+
+/**
+ * The gates the latest run's best round failed. Rounds do not record which
+ * one was best: it is the round whose text the summary holds, else the one
+ * with the fewest gate failures.
+ */
+function gateFailsOfBestRound(
+	rounds: (typeof schema.summaryRounds.$inferSelect)[],
+	stored: WriteUp,
+): HeldSummary["gateFails"] {
+	const last = rounds.at(-1);
+	if (last === undefined) return [];
+	const run = rounds.filter((round) => round.runId === last.runId);
+	const best =
+		run.find(
+			(round) =>
+				round.prose === stored.prose &&
+				JSON.stringify(round.highlights) === JSON.stringify(stored.highlights),
+		) ?? run.reduce((a, b) => (b.gateFailures < a.gateFailures ? b : a));
+	const reports: CheckReport[] = [best.verdicts.code];
+	if (typeof best.verdicts.judge === "object")
+		reports.push(best.verdicts.judge);
+	return GATE_IDS.flatMap((id) => {
+		const verdict = reports
+			.map((report) => report.verdicts[id])
+			.find((v) => v !== undefined && v.outcome !== "pass");
+		if (verdict === undefined) return [];
+		return [
+			{
+				id,
+				evidence:
+					verdict.outcome === "fail"
+						? verdict.evidence
+						: `unchecked (${verdict.reason})`,
+			},
+		];
+	});
 }
 
 async function getMatchableSummaryQuery(
@@ -1502,7 +1708,9 @@ export { StorageService, StorageServiceLive, OCR_CONFIDENCE_MULTIPLIER };
 export type {
 	DramaCategoryScoreInput,
 	ExtractionMethod,
+	HeldSummary,
 	HeldVideo,
+	SummaryRoundRow,
 	HeldVideoInput,
 	Meeting,
 	MeetingInput,
