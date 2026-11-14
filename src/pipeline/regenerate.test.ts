@@ -246,6 +246,23 @@ describe("regenerateMeetingSummary", () => {
 		expect(await rows()).toEqual(afterFirst);
 	});
 
+	it("summarizes again a summary held because the judge was unavailable, though the sources' fingerprint equals the stored one", async () => {
+		const { calls, db, meeting, regenerate } = await setup({
+			documents: [AGENDA, MINUTES],
+		});
+		await regenerate();
+		await db
+			.update(schema.summaries)
+			.set({ status: "held", heldReason: "critic-unavailable" })
+			.where(eq(schema.summaries.meetingId, meeting.id))
+			.run();
+
+		const result = await regenerate();
+
+		expect(result).toMatchObject({ regenerated: true });
+		expect(calls).toHaveLength(2);
+	});
+
 	it("summarizes again when forced, though the sources' fingerprint equals the stored one", async () => {
 		const { calls, regenerate } = await setup({
 			documents: [AGENDA, MINUTES],

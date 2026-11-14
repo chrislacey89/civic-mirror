@@ -1478,6 +1478,7 @@ describe("StorageService", () => {
 				summary: {
 					sourceKinds: ["documents", "transcript"],
 					sourceFingerprint: "fingerprint-1",
+					heldReason: null,
 				},
 			});
 		});
@@ -1495,6 +1496,7 @@ describe("StorageService", () => {
 			expect(sources.summary).toEqual({
 				sourceKinds: [],
 				sourceFingerprint: "",
+				heldReason: null,
 			});
 		});
 
@@ -1881,6 +1883,7 @@ describe("StorageService", () => {
 			expect(sources.summary).toEqual({
 				sourceKinds: ["documents", "transcript"],
 				sourceFingerprint: "fingerprint-1",
+				heldReason: null,
 			});
 		});
 
@@ -2280,6 +2283,27 @@ describe("StorageService", () => {
 				},
 				judge: "skipped",
 			});
+		});
+
+		it("stores the fingerprint of the judge a round was checked by", async () => {
+			const db = await createTestDb();
+			const publication = held("run-judged");
+			const judged = {
+				...publication,
+				rounds: publication.rounds.map((round) => ({
+					...round,
+					judge: "unavailable" as const,
+					judgeFingerprint: "judge-fp-1",
+				})),
+			};
+			await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: { ...testMeetingInput.summary, publication: judged },
+				}),
+			);
+			const rounds = await db.select().from(schema.summaryRounds).all();
+			expect(rounds.map((r) => r.judgeFingerprint)).toEqual(["judge-fp-1"]);
 		});
 
 		it("stores a published summary as published", async () => {

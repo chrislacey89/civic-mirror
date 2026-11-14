@@ -181,7 +181,12 @@ type MeetingSources = {
 		extractionMethod: string;
 	}[];
 	transcript: { sourceUrl: string | null; rawText: string } | null;
-	summary: { sourceKinds: SourceKind[]; sourceFingerprint: string } | null;
+	summary: {
+		sourceKinds: SourceKind[];
+		sourceFingerprint: string;
+		/** Why the summary is held; null when it is published. */
+		heldReason: SummaryHeldReason | null;
+	} | null;
 };
 
 /**
@@ -1226,6 +1231,7 @@ async function getMeetingSourcesQuery(
 		.select({
 			sourceKinds: schema.summaries.sourceKinds,
 			sourceFingerprint: schema.summaries.sourceFingerprint,
+			heldReason: schema.summaries.heldReason,
 		})
 		.from(schema.summaries)
 		.where(eq(schema.summaries.meetingId, meetingId))
@@ -1234,7 +1240,13 @@ async function getMeetingSourcesQuery(
 	return {
 		documents,
 		transcript: transcript ?? null,
-		summary: summary ?? null,
+		summary:
+			summary === undefined
+				? null
+				: {
+						...summary,
+						heldReason: summary.heldReason as SummaryHeldReason | null,
+					},
 	};
 }
 
@@ -1408,6 +1420,7 @@ async function insertSummaryRounds(
 				gateFailures: round.gateFailures,
 				styleScore: round.styleScore,
 				groundedFigures: round.groundedFigures,
+				judgeFingerprint: round.judgeFingerprint,
 				finishReason: round.draft.finishReason,
 				inputTokens: round.draft.usage?.inputTokens ?? null,
 				outputTokens: round.draft.usage?.outputTokens ?? null,

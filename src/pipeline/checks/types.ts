@@ -127,6 +127,9 @@ export interface Round {
 	readonly draft: WrittenDraft;
 	readonly code: CheckReport;
 	readonly judge: CheckReport | "unavailable" | "skipped";
+	/** The judge's fingerprint when it was asked; null when it was not. */
+	readonly judgeFingerprint: string | null;
+	/** Gates failed or unchecked, by code and by the judge's gated verdicts. */
 	readonly gateFailures: number;
 	/** 0–26. */
 	readonly styleScore: number;
@@ -142,7 +145,8 @@ export type PrePublishOutcome =
 	| {
 			readonly kind: "publish-flagged";
 			readonly best: WriteUp;
-			readonly styleFails: readonly StyleId[];
+			/** Failed style checks, and judge fails on checks it may not gate. */
+			readonly styleFails: readonly CheckId[];
 			readonly rounds: readonly Round[];
 	  }
 	| {

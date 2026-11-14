@@ -62,7 +62,13 @@ function regenerateMeetingSummary(input: {
 		if (!input.evenUnfingerprinted && held.summary?.sourceFingerprint === "") {
 			return { regenerated: false };
 		}
-		if (!input.force && held.summary?.sourceFingerprint === sourceFingerprint) {
+		// A summary the judge could not check is due again whatever its sources.
+		const unjudged = held.summary?.heldReason === "critic-unavailable";
+		if (
+			!input.force &&
+			!unjudged &&
+			held.summary?.sourceFingerprint === sourceFingerprint
+		) {
 			return { regenerated: false };
 		}
 

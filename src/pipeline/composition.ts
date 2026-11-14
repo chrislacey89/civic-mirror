@@ -13,6 +13,10 @@ import { AlertServiceLive } from "#/pipeline/services/AlertService.ts";
 import { DramaDetectionServiceLive } from "#/pipeline/services/DramaDetectionService.ts";
 import { FinalsiteScraperLive } from "#/pipeline/services/FinalsiteScraper.ts";
 import { createGeminiDramaDetector } from "#/pipeline/services/GeminiDramaDetector.ts";
+import {
+	createGeminiJudge,
+	JUDGE_MODEL_ID,
+} from "#/pipeline/services/GeminiJudge.ts";
 import { createGeminiMeetingMatcher } from "#/pipeline/services/GeminiMeetingMatcher.ts";
 import {
 	createGeminiSummarizer,
@@ -220,6 +224,8 @@ function buildProductionLayers(input: BuildLayersInput) {
 		generateFn: geminiGenerator,
 		writeFn: createGeminiWriter({ modelId: geminiModelId }),
 		roundCap: DEFAULT_ROUND_CAP,
+		// The judge runs the model it was calibrated with, whatever the writer runs.
+		judge: createGeminiJudge({ modelId: JUDGE_MODEL_ID }),
 	});
 
 	const meetingMatch = MeetingMatchServiceLive({
