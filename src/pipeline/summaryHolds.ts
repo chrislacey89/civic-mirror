@@ -38,17 +38,23 @@ export function parseReleaseFile(text: string): WriteUp | null {
  * One line of `summaries:held`: the date, the body and session, why it is
  * held, then each failing gate with its evidence. Evidence that spans lines
  * is joined with " / " so a meeting stays one line.
+ *
+ * Only A5 blanks resident names in its evidence; the other gates quote the
+ * draft as written. So when A5 is among the failures, no evidence is printed
+ * and the line shows the gate ids alone, so a list never un-redacts a name.
  */
 export function formatHeldSummaryLine(held: HeldSummary): string {
 	const where =
 		held.session === null ? held.bodySlug : `${held.bodySlug}/${held.session}`;
+	const namesResident = held.gateFails.some((fail) => fail.id === "A5");
 	const fails =
 		held.gateFails.length === 0
 			? "-"
 			: held.gateFails
-					.map(
-						(fail) =>
-							`${fail.id}: ${fail.evidence.replace(/\s*\n\s*/g, " / ")}`,
+					.map((fail) =>
+						namesResident
+							? fail.id
+							: `${fail.id}: ${fail.evidence.replace(/\s*\n\s*/g, " / ")}`,
 					)
 					.join("  |  ");
 	return [held.meetingDate, where, held.heldReason.padEnd(18), fails].join(

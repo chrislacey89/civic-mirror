@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { holdStats, parseReleaseFile } from "#/pipeline/summaryHolds.ts";
+import {
+	formatHeldSummaryLine,
+	holdStats,
+	parseReleaseFile,
+} from "#/pipeline/summaryHolds.ts";
 
 describe("parseReleaseFile", () => {
 	it("reads the highlights list, then the prose after a blank line", () => {
@@ -58,5 +62,34 @@ describe("holdStats", () => {
 			),
 		).toEqual({ meetings: 1, held: 1, rate: 1 });
 		expect(holdStats([], now)).toEqual({ meetings: 0, held: 0, rate: 0 });
+	});
+});
+
+describe("formatHeldSummaryLine", () => {
+	const base = {
+		meetingDate: "2026-11-03",
+		bodySlug: "city-council",
+		session: null,
+		heldReason: "gate_failed",
+	};
+
+	it("prints each failing gate with its evidence", () => {
+		const line = formatHeldSummaryLine({
+			...base,
+			gateFails: [{ id: "A1", evidence: '"$90,000 was\nnot in the sources"' }],
+		} as never);
+		expect(line).toContain('A1: "$90,000 was / not in the sources"');
+	});
+
+	it("prints gate ids only when A5 fails, so no gate quotes a resident's name", () => {
+		const line = formatHeldSummaryLine({
+			...base,
+			gateFails: [
+				{ id: "A1", evidence: '"Resident Gordon Pruitt asked about $90,000"' },
+				{ id: "A5", evidence: '"[name] asked about $90,000"' },
+			],
+		} as never);
+		expect(line).not.toContain("Pruitt");
+		expect(line).toContain("A1  |  A5");
 	});
 });
