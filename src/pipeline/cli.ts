@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { config as loadDotenv } from "dotenv";
@@ -29,6 +30,15 @@ import {
 	regenerateBodySummaries,
 } from "#/pipeline/regenerate.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
+import {
+	describeRelease,
+	formatHeldSummaryLine,
+	formatHoldStats,
+	HOLD_STATS_DAYS,
+	holdStats,
+	planRelease,
+	ReleaseRefused,
+} from "#/pipeline/summaryHolds.ts";
 
 /**
  * Effect teaching note: This file owns the CLI surface — `effect/cli` Command
@@ -277,6 +287,183 @@ const heldListCommand = Command.make(
 			for (const video of held) {
 				yield* Console.log(formatHeldVideoLine(video));
 			}
+		}),
+);
+
+// ---------------------------------------------------------------------------
+// `summaries:held` subcommand — prints the meetings whose summary the
+// pre-publish check held, one per line, with each failing gate and its
+// quoted evidence. Read-only.
+// ---------------------------------------------------------------------------
+
+const heldStats = Flag.Boolean("stats").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
+		"Report the hold rate over the last 8 weeks instead of listing.",
+	),
+);
+
+const summariesHeldCommand = Command.make(
+	"summaries:held",
+	{ stats: heldStats },
+	({ stats }) =>
+		Effect.gen(function* () {
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			if (stats) {
+				const now = new Date();
+				const rounds = yield* Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.listSummaryRoundsSince(
+						new Date(now.getTime() - HOLD_STATS_DAYS * 24 * 60 * 60 * 1000),
+					);
+				}).pipe(Effect.provide(layers));
+				yield* Console.log(formatHoldStats(holdStats(rounds, now)));
+				return;
+			}
+
+			const held = yield* Effect.gen(function* () {
+				const storage = yield* StorageService;
+				return yield* storage.listHeldSummaries();
+			}).pipe(Effect.provide(layers));
+
+			if (held.length === 0) {
+				yield* Console.error("No held summaries.");
+				return;
+			}
+			for (const summary of held) {
+				yield* Console.log(formatHeldSummaryLine(summary));
+			}
+		}),
+);
+
+// ---------------------------------------------------------------------------
+// `summaries:release` subcommand — publishes one meeting's held summary.
+// Reports what it would change until `--confirm` is passed, because the
+// local .env points at production.
+// ---------------------------------------------------------------------------
+
+const releaseBodySlug = Flag.String("body").pipe(
+	Flag.withDescription("Slug of the body whose meeting is held."),
+);
+
+const releaseMeetingDate = Flag.String("date").pipe(
+	Flag.withDescription("ISO date (YYYY-MM-DD) of the meeting."),
+);
+
+const releaseSession = Flag.String("session").pipe(
+	Flag.withDefault(""),
+	Flag.withDescription(
+		"Session slug of the meeting (defaults to the meeting stored without one).",
+	),
+);
+
+const releaseNote = Flag.String("note").pipe(
+	Flag.withDescription("Why the summary is released; stored with it."),
+);
+
+const releaseFile = Flag.String("file").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		'An edited draft to publish instead: highlights as a "- " list, a blank line, then the prose. It must pass every gate.',
+	),
+);
+
+const releaseConfirm = Flag.Boolean("confirm").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription("Publish the summary. Without it, nothing is written."),
+);
+
+const summariesReleaseCommand = Command.make(
+	"summaries:release",
+	{
+		bodySlug: releaseBodySlug,
+		date: releaseMeetingDate,
+		session: releaseSession,
+		note: releaseNote,
+		file: releaseFile,
+		confirm: releaseConfirm,
+	},
+	({ bodySlug, date, session, note, file, confirm }) =>
+		Effect.gen(function* () {
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			yield* Effect.gen(function* () {
+				yield* Console.log(
+					`[summaries:release] target=${(resolveDatabaseUrl() ?? "").replace(/\?.*$/, "")}`,
+				);
+				const editedText = yield* Option.match(file, {
+					onNone: () => Effect.succeed(undefined),
+					onSome: (path) =>
+						Effect.try({
+							try: () => readFileSync(path, "utf8"),
+							catch: (error) =>
+								new ReleaseRefused({
+									message: `Cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+									details: [],
+								}),
+						}),
+				});
+				const plan = yield* planRelease({
+					bodySlug,
+					date,
+					session,
+					note,
+					...(editedText === undefined ? {} : { editedText }),
+				});
+				const now = new Date();
+				yield* Console.log(
+					`[summaries:release] meeting id=${plan.held.meetingId} body=${bodySlug} date=${date} session=${JSON.stringify(session)}`,
+				);
+				for (const line of describeRelease(plan, note, now)) {
+					yield* Console.log(line);
+				}
+				if (!confirm) {
+					yield* Console.log(
+						"[summaries:release] dry run. Re-run with --confirm to publish the summary.",
+					);
+					return;
+				}
+				const storage = yield* StorageService;
+				const { released } = yield* storage.releaseSummary({
+					meetingId: plan.held.meetingId,
+					note,
+					edited: plan.edited,
+					releasedAt: now,
+				});
+				if (!released) {
+					return yield* new ReleaseRefused({
+						message: "The summary was no longer held; nothing was written.",
+						details: [],
+					});
+				}
+				yield* Console.log("[summaries:release] released.");
+			}).pipe(
+				Effect.provide(layers),
+				Effect.catchTag("ReleaseRefused", (refused) =>
+					Effect.gen(function* () {
+						yield* Console.error(
+							`[summaries:release] refused: ${refused.message}`,
+						);
+						for (const line of refused.details) {
+							yield* Console.error(`  ${line}`);
+						}
+						return yield* Effect.fail(new Error(refused.message));
+					}),
+				),
+			);
 		}),
 );
 
@@ -593,6 +780,8 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		listBodiesCommand,
 		dramaDetectCommand,
 		heldListCommand,
+		summariesHeldCommand,
+		summariesReleaseCommand,
 		summariesRegenerateCommand,
 		summariesAuditCommand,
 		documentDetachCommand,
