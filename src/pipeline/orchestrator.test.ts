@@ -243,6 +243,7 @@ function buildStubLayers(config: StubConfig) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		rewrite: () => Effect.die("rewrite is not used by the orchestrator"),
 	});
 
 	const isHeld = (videoId: string) =>
@@ -327,6 +328,10 @@ function buildStubLayers(config: StubConfig) {
 			}),
 		detachTranscript: () => Effect.succeed(null),
 		detachDocument: () => Effect.succeed(false),
+		getStoredLedger: () =>
+			Effect.die("getStoredLedger is not used by the orchestrator"),
+		replaceSummaryText: () =>
+			Effect.die("replaceSummaryText is not used by the orchestrator"),
 	});
 
 	const meetingMatch = Layer.succeed(MeetingMatchService, {

@@ -83,6 +83,7 @@ async function setup(options: {
 						)
 					: Effect.succeed(REGENERATED);
 			}),
+		rewrite: () => Effect.die("rewrite is not used by detach"),
 	});
 	const layers = Layer.mergeAll(StorageServiceLive(db), summarization);
 
