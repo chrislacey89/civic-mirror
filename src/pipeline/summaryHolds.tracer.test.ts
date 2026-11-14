@@ -23,6 +23,7 @@ import {
 	StorageService,
 	StorageServiceLive,
 } from "#/pipeline/services/StorageService.ts";
+import { readableSources } from "#/pipeline/sources.ts";
 
 const run = promisify(execFile);
 const BODY = { slug: "town-council", name: "Town Council" };
@@ -52,7 +53,8 @@ async function tracerDb() {
 	const store = (input: {
 		date: string;
 		text: { highlights: string[]; prose: string };
-		held: boolean;
+		/** Put the text through the pre-publish check; else store it as published. */
+		checked: boolean;
 	}) =>
 		Effect.runPromise(
 			Effect.gen(function* () {
@@ -73,8 +75,12 @@ async function tracerDb() {
 					summary: {
 						...input.text,
 						model: "m",
-						publication: input.held
-							? publicationOf(input.text, `run-${input.date}`)
+						publication: input.checked
+							? publicationOf(
+									input.text,
+									`run-${input.date}`,
+									readableSources({ documents }),
+								)
 							: PUBLISHED,
 					},
 					fiscalDecisions: [],
@@ -149,11 +155,11 @@ class Transcript {
 describe("summaries CLI (tracer)", () => {
 	it("slice 1: summaries:held lists each held meeting with its failing gates and evidence", async () => {
 		const { url, store } = await tracerDb();
-		await store({ date: "2025-05-27", text: TRUNCATED, held: true });
+		await store({ date: "2025-05-27", text: TRUNCATED, checked: true });
 		await store({
 			date: "2025-06-09",
 			text: { highlights: ["Paving"], prose: "The council approved the bid." },
-			held: false,
+			checked: false,
 		});
 		const t = new Transcript("slice-1");
 
@@ -173,7 +179,7 @@ describe("summaries CLI (tracer)", () => {
 
 	it("slice 2: summaries:release previews without --confirm, and with it publishes the held draft", async () => {
 		const { url, db, store } = await tracerDb();
-		await store({ date: "2025-05-27", text: TRUNCATED, held: true });
+		await store({ date: "2025-05-27", text: TRUNCATED, checked: true });
 		const t = new Transcript("slice-2");
 		const release = [
 			"summaries:release",
@@ -228,7 +234,7 @@ describe("summaries CLI (tracer)", () => {
 
 	it("slice 3: summaries:release --file refuses a draft that fails a gate, and publishes one that passes as a new round", async () => {
 		const { url, db, store } = await tracerDb();
-		await store({ date: "2025-05-27", text: TRUNCATED, held: true });
+		await store({ date: "2025-05-27", text: TRUNCATED, checked: true });
 		const t = new Transcript("slice-3");
 		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "civic-mirror-release-"));
 		onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
@@ -298,5 +304,27 @@ describe("summaries CLI (tracer)", () => {
 			"The council approved the paving bid of $12,000.",
 		);
 		t.save();
+	}, 60_000);
+
+	it("slice 4: summaries:held --stats reports the hold rate over the last 8 weeks", async () => {
+		const { url, store } = await tracerDb();
+		await store({ date: "2025-05-27", text: TRUNCATED, checked: true });
+		await store({
+			date: "2025-06-09",
+			text: {
+				highlights: ["Council approves paving bid"],
+				prose: "The council approved the paving bid of $12,000.",
+			},
+			checked: true,
+		});
+		const t = new Transcript("slice-4");
+
+		const result = await t.run(url, ["summaries:held", "--stats"]);
+		t.save();
+
+		expect(result.code).toBe(0);
+		expect(result.stdout.trim()).toBe(
+			"last 8 weeks: 1 of 2 meetings held (50.0%)",
+		);
 	}, 60_000);
 });

@@ -302,6 +302,7 @@ function buildStubLayers(config: StubConfig) {
 		listHeldVideos: () => Effect.succeed([]),
 		listHeldSummaries: () => Effect.succeed([]),
 		releaseSummary: () => Effect.succeed({ released: false }),
+		listSummaryRoundsSince: () => Effect.succeed([]),
 		listSummaryMeetings: () => Effect.succeed([]),
 		getMeetingSources: () =>
 			Effect.sync(

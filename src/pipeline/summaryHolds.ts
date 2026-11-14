@@ -10,6 +10,7 @@ import { officialsFor } from "#/pipeline/officials/index.ts";
 import {
 	type HeldSummary,
 	StorageService,
+	type SummaryRoundRow,
 } from "#/pipeline/services/StorageService.ts";
 import { readableSources } from "#/pipeline/sources.ts";
 
@@ -165,4 +166,46 @@ export function describeRelease(
 			? "  text:          the held best draft, as it is"
 			: `  text:          the edited draft (${plan.edited.writeUp.highlights.length} highlights, ${plan.edited.writeUp.prose.length} chars of prose), which passes every gate`,
 	];
+}
+
+/** The window `summaries:held --stats` reports on. */
+export const HOLD_STATS_DAYS = 56;
+
+/**
+ * The hold rate over the last 8 weeks: of the meetings checked in the
+ * window, how many had their latest check run end held, which is every round
+ * of that run failing a gate. A run written by `summaries:release --file` is
+ * the operator's, not the check's, so it is left out.
+ */
+export function holdStats(
+	rounds: readonly SummaryRoundRow[],
+	now: Date,
+): { meetings: number; held: number; rate: number } {
+	const since = now.getTime() - HOLD_STATS_DAYS * 24 * 60 * 60 * 1000;
+	const byMeeting = new Map<number, SummaryRoundRow[]>();
+	for (const round of rounds) {
+		if (round.runId.startsWith("release-")) continue;
+		if (round.createdAt === null || round.createdAt.getTime() < since) continue;
+		byMeeting.set(round.meetingId, [
+			...(byMeeting.get(round.meetingId) ?? []),
+			round,
+		]);
+	}
+	let held = 0;
+	for (const meetingRounds of byMeeting.values()) {
+		const lastRun = meetingRounds.at(-1)?.runId;
+		const run = meetingRounds.filter((round) => round.runId === lastRun);
+		if (run.every((round) => round.gateFailures > 0)) held++;
+	}
+	const meetings = byMeeting.size;
+	return { meetings, held, rate: meetings === 0 ? 0 : held / meetings };
+}
+
+/** The line `summaries:held --stats` prints. */
+export function formatHoldStats(stats: {
+	meetings: number;
+	held: number;
+	rate: number;
+}): string {
+	return `last ${HOLD_STATS_DAYS / 7} weeks: ${stats.held} of ${stats.meetings} meetings held (${(stats.rate * 100).toFixed(1)}%)`;
 }

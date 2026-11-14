@@ -33,6 +33,9 @@ import { StorageService } from "#/pipeline/services/StorageService.ts";
 import {
 	describeRelease,
 	formatHeldSummaryLine,
+	formatHoldStats,
+	HOLD_STATS_DAYS,
+	holdStats,
 	planRelease,
 	ReleaseRefused,
 } from "#/pipeline/summaryHolds.ts";
@@ -293,29 +296,51 @@ const heldListCommand = Command.make(
 // quoted evidence. Read-only.
 // ---------------------------------------------------------------------------
 
-const summariesHeldCommand = Command.make("summaries:held", {}, () =>
-	Effect.gen(function* () {
-		const layers = yield* Effect.try({
-			try: () => buildProductionLayers({ dryRun: false }),
-			catch: (error) =>
-				new Error(
-					`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
-				),
-		});
+const heldStats = Flag.Boolean("stats").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
+		"Report the hold rate over the last 8 weeks instead of listing.",
+	),
+);
 
-		const held = yield* Effect.gen(function* () {
-			const storage = yield* StorageService;
-			return yield* storage.listHeldSummaries();
-		}).pipe(Effect.provide(layers));
+const summariesHeldCommand = Command.make(
+	"summaries:held",
+	{ stats: heldStats },
+	({ stats }) =>
+		Effect.gen(function* () {
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
 
-		if (held.length === 0) {
-			yield* Console.error("No held summaries.");
-			return;
-		}
-		for (const summary of held) {
-			yield* Console.log(formatHeldSummaryLine(summary));
-		}
-	}),
+			if (stats) {
+				const now = new Date();
+				const rounds = yield* Effect.gen(function* () {
+					const storage = yield* StorageService;
+					return yield* storage.listSummaryRoundsSince(
+						new Date(now.getTime() - HOLD_STATS_DAYS * 24 * 60 * 60 * 1000),
+					);
+				}).pipe(Effect.provide(layers));
+				yield* Console.log(formatHoldStats(holdStats(rounds, now)));
+				return;
+			}
+
+			const held = yield* Effect.gen(function* () {
+				const storage = yield* StorageService;
+				return yield* storage.listHeldSummaries();
+			}).pipe(Effect.provide(layers));
+
+			if (held.length === 0) {
+				yield* Console.error("No held summaries.");
+				return;
+			}
+			for (const summary of held) {
+				yield* Console.log(formatHeldSummaryLine(summary));
+			}
+		}),
 );
 
 // ---------------------------------------------------------------------------

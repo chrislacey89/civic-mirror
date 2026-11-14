@@ -146,6 +146,14 @@ type HeldVideoInput = {
 
 type HeldVideo = HeldVideoInput & { createdAt: Date | null };
 
+/** What the hold rate is computed from: one stored check round. */
+interface SummaryRoundRow {
+	readonly meetingId: number;
+	readonly runId: string;
+	readonly gateFailures: number;
+	readonly createdAt: Date | null;
+}
+
 /**
  * A meeting whose summary the pre-publish check held, and the gates its
  * latest check run's best round failed. Evidence is as the check stored it,
@@ -332,6 +340,10 @@ interface StorageServiceInterface {
 		edited: { writeUp: WriteUp; publication: SummaryPublication } | null;
 		releasedAt?: Date;
 	}): Effect.Effect<{ released: boolean }, DatabaseError>;
+	/** Every check round stored at or after `since`, oldest first. */
+	listSummaryRoundsSince(
+		since: Date,
+	): Effect.Effect<readonly SummaryRoundRow[], DatabaseError>;
 	/** Meetings whose summary is held, oldest meeting first. */
 	listHeldSummaries(): Effect.Effect<readonly HeldSummary[], DatabaseError>;
 	/**
@@ -681,6 +693,26 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 				catch: (error) =>
 					new DatabaseError({
 						operation: "releaseSummary",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		listSummaryRoundsSince: (since) =>
+			Effect.tryPromise({
+				try: () =>
+					db
+						.select({
+							meetingId: schema.summaryRounds.meetingId,
+							runId: schema.summaryRounds.runId,
+							gateFailures: schema.summaryRounds.gateFailures,
+							createdAt: schema.summaryRounds.createdAt,
+						})
+						.from(schema.summaryRounds)
+						.where(gte(schema.summaryRounds.createdAt, since))
+						.orderBy(schema.summaryRounds.id)
+						.all(),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "listSummaryRoundsSince",
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
@@ -1665,6 +1697,7 @@ export type {
 	ExtractionMethod,
 	HeldSummary,
 	HeldVideo,
+	SummaryRoundRow,
 	HeldVideoInput,
 	Meeting,
 	MeetingInput,
