@@ -1,5 +1,5 @@
 import { Effect } from "effect";
-import { newPublication } from "#/pipeline/checks/prePublish.ts";
+import { gateEvidence, newPublication } from "#/pipeline/checks/prePublish.ts";
 import type { PrePublishOutcome } from "#/pipeline/checks/types.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import type { Official } from "#/pipeline/officials/types.ts";
@@ -75,5 +75,38 @@ function recheckMeetingSummary(
 	});
 }
 
-export { recheckMeetingSummary, rewriteMeetingSummary };
+/**
+ * The preview `summaries:recheck` prints: the outcome kind, each failing gate
+ * with its evidence, and the new headline. Only A5 blanks resident names in
+ * its evidence and the headline is not checked for them, so when A5 fails the
+ * gates are printed as ids alone and the headline is withheld.
+ */
+function describeRecheck(outcome: PrePublishOutcome): string[] {
+	const kind =
+		outcome.kind === "held"
+			? `held (${outcome.reason})`
+			: outcome.kind === "publish-flagged"
+				? `publish-flagged (${outcome.styleFails.join(", ")})`
+				: "publish";
+	const namesResident =
+		outcome.kind === "held" && outcome.gateFails.includes("A5");
+	const gates =
+		outcome.kind !== "held" || outcome.gateFails.length === 0
+			? "-"
+			: namesResident
+				? outcome.gateFails.join(", ")
+				: gateEvidence(outcome)
+						.map((line) => line.replace(/\s*\n\s*/g, " / "))
+						.join("  |  ");
+	const headline = namesResident
+		? "(withheld: A5 fails)"
+		: (outcome.best.highlights[0] ?? "(no highlights)");
+	return [
+		`  outcome:       ${kind}`,
+		`  gate failures: ${gates}`,
+		`  headline:      ${headline}`,
+	];
+}
+
+export { describeRecheck, recheckMeetingSummary, rewriteMeetingSummary };
 export type { RewriteInput };

@@ -29,6 +29,7 @@ import {
 	incompleteRegeneration,
 	regenerateBodySummaries,
 } from "#/pipeline/regenerate.ts";
+import { describeRecheck, recheckMeetingSummary } from "#/pipeline/rewrite.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import {
 	describeRelease,
@@ -695,6 +696,109 @@ const summariesRegenerateCommand = Command.make(
 );
 
 // ---------------------------------------------------------------------------
+// `summaries:recheck` subcommand — writes one meeting's summary text again
+// from the ledger and sources it stores, and runs the pre-publish check. The
+// ledger is never redrawn. Prints the outcome and writes nothing until
+// `--confirm` is passed, because the local .env points at production.
+// ---------------------------------------------------------------------------
+
+const recheckBodySlug = Flag.String("body").pipe(
+	Flag.withDescription("Slug of the body whose meeting to recheck."),
+);
+
+const recheckMeetingDate = Flag.String("date").pipe(
+	Flag.withDescription("ISO date (YYYY-MM-DD) of the meeting."),
+);
+
+const recheckSession = Flag.String("session").pipe(
+	Flag.withDefault(""),
+	Flag.withDescription(
+		"Session slug of the meeting (defaults to the meeting stored without one).",
+	),
+);
+
+const recheckConfirm = Flag.Boolean("confirm").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription(
+		"Store the new text and its publication state. Without it, nothing is written.",
+	),
+);
+
+const summariesRecheckCommand = Command.make(
+	"summaries:recheck",
+	{
+		bodySlug: recheckBodySlug,
+		date: recheckMeetingDate,
+		session: recheckSession,
+		confirm: recheckConfirm,
+	},
+	({ bodySlug, date, session, confirm }) =>
+		Effect.gen(function* () {
+			const body = DEFAULT_BODIES.find((b) => b.slug === bodySlug);
+			if (!body) {
+				return yield* Effect.fail(
+					new Error(
+						`Unknown body slug: ${bodySlug}. Known slugs: ${DEFAULT_BODIES.map((b) => b.slug).join(", ")}`,
+					),
+				);
+			}
+
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			yield* Effect.gen(function* () {
+				const storage = yield* StorageService;
+				const meeting = yield* storage.getMeetingSourceState({
+					bodySlug,
+					date,
+					session,
+				});
+				if (meeting === null) {
+					return yield* Effect.fail(
+						new Error(
+							`No meeting for ${bodySlug} on ${date} with session ${JSON.stringify(session)}.`,
+						),
+					);
+				}
+				if ((yield* storage.getStoredWriteUp(meeting.meetingId)) === null) {
+					return yield* Effect.fail(
+						new Error(
+							`${bodySlug} on ${date} has no summary to recheck; summaries:regenerate builds one.`,
+						),
+					);
+				}
+
+				yield* Console.log(
+					`[summaries:recheck] target=${(resolveDatabaseUrl() ?? "").replace(/\?.*$/, "")}`,
+				);
+				yield* Console.log(
+					`[summaries:recheck] meeting id=${meeting.meetingId} body=${bodySlug} date=${date} session=${JSON.stringify(session)}`,
+				);
+				const result = yield* recheckMeetingSummary({
+					meetingId: meeting.meetingId,
+					meetingContext: `${body.name}, ${date}`,
+					glossary: body.glossary,
+					officials: officialsFor(body.slug, date),
+					confirm,
+				});
+				for (const line of describeRecheck(result.outcome)) {
+					yield* Console.log(line);
+				}
+				yield* Console.log(
+					result.written
+						? "[summaries:recheck] stored."
+						: "[summaries:recheck] dry run. Re-run with --confirm to store the new text.",
+				);
+			}).pipe(Effect.provide(layers));
+		}),
+);
+
+// ---------------------------------------------------------------------------
 // `summaries:audit` subcommand — runs the registered code checks over every
 // stored summary and prints each verdict that is not a pass. Read-only, so a
 // check can be measured against the published summaries before it enforces.
@@ -783,6 +887,7 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		summariesHeldCommand,
 		summariesReleaseCommand,
 		summariesRegenerateCommand,
+		summariesRecheckCommand,
 		summariesAuditCommand,
 		documentDetachCommand,
 	]),

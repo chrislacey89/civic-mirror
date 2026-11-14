@@ -3,9 +3,13 @@ import { Effect, Layer, Schedule } from "effect";
 import { describe, expect, it } from "vitest";
 import { listRecentMeetingsQuery } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
+import { checkDraft } from "#/pipeline/checks/prePublish.ts";
 import { publicationOf } from "#/pipeline/checks/test-outcomes.ts";
-import type { WrittenDraft } from "#/pipeline/checks/types.ts";
-import { recheckMeetingSummary } from "#/pipeline/rewrite.ts";
+import type {
+	PrePublishOutcome,
+	WrittenDraft,
+} from "#/pipeline/checks/types.ts";
+import { describeRecheck, recheckMeetingSummary } from "#/pipeline/rewrite.ts";
 import {
 	StorageService,
 	StorageServiceLive,
@@ -224,5 +228,57 @@ describe("recheckMeetingSummary", () => {
 
 		expect(String(error)).toContain("503 Service Unavailable");
 		expect(await rows()).toEqual(before);
+	});
+});
+
+describe("describeRecheck", () => {
+	const checked = (draft: WrittenDraft): PrePublishOutcome =>
+		checkDraft({
+			draft,
+			context: {
+				input: {
+					sources: [{ kind: "documents", text: MINUTES }],
+					meetingContext: "",
+				},
+				ledger: [PAVING],
+				officials: [],
+			},
+		});
+
+	it("prints the outcome kind, no gate failures and the new headline for a draft that publishes", () => {
+		expect(describeRecheck(checked(WHOLE))).toEqual([
+			"  outcome:       publish",
+			"  gate failures: -",
+			`  headline:      ${WHOLE.highlights[0]}`,
+		]);
+	});
+
+	it("prints each failing gate with its evidence for a held draft", () => {
+		const lines = describeRecheck(
+			checked({ ...WHOLE, prose: "The council accepted the paving bid of" }),
+		);
+
+		expect(lines[0]).toBe("  outcome:       held (gate-failed)");
+		expect(lines[1]).toMatch(/^ {2}gate failures: TRUNC: /);
+		expect(lines[2]).toBe(`  headline:      ${WHOLE.highlights[0]}`);
+	});
+
+	it("prints gate ids only and withholds the headline when A5 fails, so a resident's name is never printed", () => {
+		const outcome: PrePublishOutcome = {
+			kind: "held",
+			reason: "gate-failed",
+			best: { highlights: ["Jane Roe speaks against paving"], prose: "x." },
+			gateFails: ["A5", "TRUNC"],
+			rounds: [],
+		};
+
+		const lines = describeRecheck(outcome);
+
+		expect(lines).toEqual([
+			"  outcome:       held (gate-failed)",
+			"  gate failures: A5, TRUNC",
+			"  headline:      (withheld: A5 fails)",
+		]);
+		expect(lines.join("\n")).not.toContain("Jane Roe");
 	});
 });
