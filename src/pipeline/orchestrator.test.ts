@@ -300,6 +300,7 @@ function buildStubLayers(config: StubConfig) {
 			}),
 		isVideoHeld: (videoId) => Effect.sync(() => isHeld(videoId)),
 		listHeldVideos: () => Effect.succeed([]),
+		listHeldSummaries: () => Effect.succeed([]),
 		listSummaryMeetings: () => Effect.succeed([]),
 		getMeetingSources: () =>
 			Effect.sync(

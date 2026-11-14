@@ -10,7 +10,14 @@ import {
 	mapSumToLevel,
 	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
-import type { SummaryPublication, WriteUp } from "#/pipeline/checks/types.ts";
+import {
+	type CheckReport,
+	GATE_IDS,
+	type GateId,
+	type SummaryHeldReason,
+	type SummaryPublication,
+	type WriteUp,
+} from "#/pipeline/checks/types.ts";
 import { DatabaseError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
 import type { MatchableSummary } from "#/pipeline/services/MeetingMatchService.ts";
@@ -138,6 +145,24 @@ type HeldVideoInput = {
 };
 
 type HeldVideo = HeldVideoInput & { createdAt: Date | null };
+
+/**
+ * A meeting whose summary the pre-publish check held, and the gates its
+ * latest check run's best round failed. Evidence is as the check stored it,
+ * so a resident's name is already redacted.
+ */
+interface HeldSummary {
+	readonly meetingId: number;
+	readonly bodySlug: string;
+	readonly meetingDate: string;
+	/** Null for the meeting stored without a session. */
+	readonly session: string | null;
+	readonly heldReason: SummaryHeldReason;
+	readonly gateFails: readonly {
+		readonly id: GateId;
+		readonly evidence: string;
+	}[];
+}
 
 /** Every source a stored meeting holds, and what its current summary was built from. */
 type MeetingSources = {
@@ -295,6 +320,8 @@ interface StorageServiceInterface {
 	listHeldVideos(input?: {
 		bodySlug?: string;
 	}): Effect.Effect<HeldVideo[], DatabaseError>;
+	/** Meetings whose summary is held, oldest meeting first. */
+	listHeldSummaries(): Effect.Effect<readonly HeldSummary[], DatabaseError>;
 	/**
 	 * A body's meetings that have a summary, oldest first; the one on `date`
 	 * when it is given. The `combined` scope keeps only a summary built from
@@ -636,6 +663,15 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		listHeldSummaries: () =>
+			Effect.tryPromise({
+				try: () => listHeldSummariesQuery(db),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "listHeldSummaries",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 		listSummaryMeetings: (input) =>
 			Effect.tryPromise({
 				try: async () => {
@@ -946,6 +982,93 @@ async function getStoredWriteUpQuery(
 			isRecurring: decision.isRecurring,
 		})),
 	};
+}
+
+async function listHeldSummariesQuery(
+	db: LibSQLDatabase<typeof schema>,
+): Promise<HeldSummary[]> {
+	const held = await db
+		.select({
+			meetingId: schema.meetings.id,
+			bodySlug: schema.governingBodies.slug,
+			meetingDate: schema.meetings.date,
+			session: schema.meetings.session,
+			heldReason: schema.summaries.heldReason,
+			highlights: schema.summaries.highlights,
+			prose: schema.summaries.prose,
+		})
+		.from(schema.summaries)
+		.innerJoin(
+			schema.meetings,
+			eq(schema.summaries.meetingId, schema.meetings.id),
+		)
+		.innerJoin(
+			schema.governingBodies,
+			eq(schema.meetings.bodyId, schema.governingBodies.id),
+		)
+		.where(eq(schema.summaries.status, "held"))
+		.orderBy(schema.meetings.date, schema.meetings.id)
+		.all();
+
+	const result: HeldSummary[] = [];
+	for (const row of held) {
+		const rounds = await db
+			.select()
+			.from(schema.summaryRounds)
+			.where(eq(schema.summaryRounds.meetingId, row.meetingId))
+			.orderBy(schema.summaryRounds.id)
+			.all();
+		result.push({
+			meetingId: row.meetingId,
+			bodySlug: row.bodySlug,
+			meetingDate: row.meetingDate,
+			session: row.session === "" ? null : row.session,
+			heldReason: row.heldReason ?? "gate-failed",
+			gateFails: gateFailsOfBestRound(rounds, {
+				highlights: row.highlights as string[],
+				prose: row.prose,
+			}),
+		});
+	}
+	return result;
+}
+
+/**
+ * The gates the latest run's best round failed. Rounds do not record which
+ * one was best: it is the round whose text the summary holds, else the one
+ * with the fewest gate failures.
+ */
+function gateFailsOfBestRound(
+	rounds: (typeof schema.summaryRounds.$inferSelect)[],
+	stored: WriteUp,
+): HeldSummary["gateFails"] {
+	const last = rounds.at(-1);
+	if (last === undefined) return [];
+	const run = rounds.filter((round) => round.runId === last.runId);
+	const best =
+		run.find(
+			(round) =>
+				round.prose === stored.prose &&
+				JSON.stringify(round.highlights) === JSON.stringify(stored.highlights),
+		) ?? run.reduce((a, b) => (b.gateFailures < a.gateFailures ? b : a));
+	const reports: CheckReport[] = [best.verdicts.code];
+	if (typeof best.verdicts.judge === "object")
+		reports.push(best.verdicts.judge);
+	return GATE_IDS.flatMap((id) => {
+		const verdict = reports
+			.map((report) => report.verdicts[id])
+			.find((v) => v !== undefined && v.outcome !== "pass");
+		if (verdict === undefined) return [];
+		return [
+			{
+				id,
+				evidence:
+					verdict.outcome === "fail"
+						? verdict.evidence
+						: `unchecked (${verdict.reason})`,
+			},
+		];
+	});
 }
 
 async function getMatchableSummaryQuery(
@@ -1485,6 +1608,7 @@ export { StorageService, StorageServiceLive, OCR_CONFIDENCE_MULTIPLIER };
 export type {
 	DramaCategoryScoreInput,
 	ExtractionMethod,
+	HeldSummary,
 	HeldVideo,
 	HeldVideoInput,
 	Meeting,

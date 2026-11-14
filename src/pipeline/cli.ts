@@ -29,6 +29,7 @@ import {
 	regenerateBodySummaries,
 } from "#/pipeline/regenerate.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
+import { formatHeldSummaryLine } from "#/pipeline/summaryHolds.ts";
 
 /**
  * Effect teaching note: This file owns the CLI surface — `effect/cli` Command
@@ -278,6 +279,37 @@ const heldListCommand = Command.make(
 				yield* Console.log(formatHeldVideoLine(video));
 			}
 		}),
+);
+
+// ---------------------------------------------------------------------------
+// `summaries:held` subcommand — prints the meetings whose summary the
+// pre-publish check held, one per line, with each failing gate and its
+// quoted evidence. Read-only.
+// ---------------------------------------------------------------------------
+
+const summariesHeldCommand = Command.make("summaries:held", {}, () =>
+	Effect.gen(function* () {
+		const layers = yield* Effect.try({
+			try: () => buildProductionLayers({ dryRun: false }),
+			catch: (error) =>
+				new Error(
+					`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+				),
+		});
+
+		const held = yield* Effect.gen(function* () {
+			const storage = yield* StorageService;
+			return yield* storage.listHeldSummaries();
+		}).pipe(Effect.provide(layers));
+
+		if (held.length === 0) {
+			yield* Console.error("No held summaries.");
+			return;
+		}
+		for (const summary of held) {
+			yield* Console.log(formatHeldSummaryLine(summary));
+		}
+	}),
 );
 
 // ---------------------------------------------------------------------------
@@ -593,6 +625,7 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		listBodiesCommand,
 		dramaDetectCommand,
 		heldListCommand,
+		summariesHeldCommand,
 		summariesRegenerateCommand,
 		summariesAuditCommand,
 		documentDetachCommand,
