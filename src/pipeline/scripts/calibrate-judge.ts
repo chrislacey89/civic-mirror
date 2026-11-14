@@ -17,7 +17,9 @@
  * production judge's fingerprint: change the judge's model, prompt or
  * settings, and that test fails until this script is run again.
  *
- *   pnpm tsx src/pipeline/scripts/calibrate-judge.ts [--write] [--limit n]
+ *   pnpm tsx src/pipeline/scripts/calibrate-judge.ts [--dry] [--write] [--limit n]
+ *
+ * --dry applies the edits and the code checks and calls no model.
  *
  * Exit codes:
  *   0  every gated check clears the bars and no verdict flipped
@@ -46,13 +48,18 @@ import {
 	clearsBars,
 	scoreCheck,
 } from "#/pipeline/checks/calibration.ts";
+import { runCodeChecks } from "#/pipeline/checks/index.ts";
 import {
 	JUDGE_GATED,
 	JUDGE_OWNS,
 	type JudgeInput,
 	splitOf,
 } from "#/pipeline/checks/judge.ts";
-import type { CheckContext, WriteUp } from "#/pipeline/checks/types.ts";
+import {
+	type CheckContext,
+	GATE_IDS,
+	type WriteUp,
+} from "#/pipeline/checks/types.ts";
 import { DEFAULT_BODIES } from "#/pipeline/composition.ts";
 import { officialsFor } from "#/pipeline/officials/index.ts";
 import {
@@ -87,6 +94,8 @@ interface Item {
 	readonly split: Split;
 	readonly labels: Record<Judged, Label>;
 	readonly input: JudgeInput;
+	/** The stored draft before the edit. */
+	readonly base: WriteUp;
 }
 
 function arg(name: string): string | undefined {
@@ -164,8 +173,28 @@ async function itemsOf(entries: readonly Entry[]): Promise<Item[]> {
 			split: splitOf(meeting.context.input),
 			labels: entry.labels,
 			input: { context: meeting.context, draft },
+			base: meeting.draft,
 		};
 	});
+}
+
+/** The code checks' gate verdicts on a draft, as text to compare. */
+function gateVerdicts(context: CheckContext, draft: WriteUp): string {
+	const { verdicts } = runCodeChecks(draft, context);
+	return JSON.stringify(GATE_IDS.map((id) => verdicts[id] ?? null));
+}
+
+/**
+ * Whether a code gate says something about the edited draft it did not say
+ * about the base. Code catches such an edit before the judge would see it,
+ * so the edit measures that check, not the judge: an invented name trips
+ * A1, a listed loaded word trips code A2. A base draft a code gate holds
+ * for something else still measures the judge, since the edit is no easier
+ * for it.
+ */
+function codeSeesEdit(item: Item): boolean {
+	const { context, draft } = item.input;
+	return gateVerdicts(context, draft) !== gateVerdicts(context, item.base);
 }
 
 /** The meeting with the injected instruction appended to each document. */
@@ -269,8 +298,28 @@ async function main(): Promise<number> {
 	let runs: Map<string, Record<Judged, Label>>[];
 	let probes: Map<string, Record<Judged, Label>>;
 	let probed: Item[];
+	let excluded: Item[];
 	try {
-		items = await itemsOf(entries.slice(0, limit));
+		const applied = await itemsOf(entries.slice(0, limit));
+		items = applied.filter((item) => !codeSeesEdit(item));
+		excluded = applied.filter((item) => codeSeesEdit(item));
+		console.log(
+			`${applied.length} edits applied; ${excluded.length} seen by code checks: ${
+				excluded.map((item) => item.id).join(", ") || "none"
+			}`,
+		);
+		for (const split of ["documents", "transcript"] as const) {
+			const fails = JUDGE_OWNS.map(
+				(check) =>
+					`${check} ${
+						items.filter(
+							(item) => item.split === split && item.labels[check] === "fail",
+						).length
+					}`,
+			);
+			console.log(`${split}: fail edits scored: ${fails.join(", ")}`);
+		}
+		if (process.argv.includes("--dry")) return 0;
 		runs = [await pass("run1", items), await pass("run2", items)];
 		probed = items.filter((item) =>
 			JUDGE_GATED[item.split].some(
@@ -355,7 +404,8 @@ async function main(): Promise<number> {
 			fingerprint: judge.fingerprint,
 			model: JUDGE_MODEL_ID,
 			calibratedAt: new Date().toISOString().slice(0, 10),
-			applied: items.length,
+			judged: items.length,
+			seenByCode: excluded.map((item) => item.id),
 			scores,
 			injection: { probed: probed.length, flipped },
 		};

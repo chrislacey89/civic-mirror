@@ -8,8 +8,10 @@ export interface CalibrationRecord {
 	readonly model: string;
 	/** ISO date. */
 	readonly calibratedAt: string;
-	/** How many corpus edits were applied and judged. */
-	readonly applied: number;
+	/** How many corpus edits reached the judge and were scored. */
+	readonly judged: number;
+	/** The edits a code gate catches, left out because they measure that check, not the judge. */
+	readonly seenByCode: readonly string[];
 	readonly scores: Record<
 		keyof typeof JUDGE_GATED,
 		Record<(typeof JUDGE_OWNS)[number], CalibrationScore>
