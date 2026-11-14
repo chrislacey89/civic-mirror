@@ -311,6 +311,52 @@ async function pass(
 	return byId;
 }
 
+/** Each split's score per check, from the two clean runs. */
+function scoresOf(
+	items: readonly Item[],
+	runs: readonly Map<string, Record<Judged, Label>>[],
+): CalibrationRecord["scores"] {
+	return Object.fromEntries(
+		(["documents", "transcript"] as const).map((split) => [
+			split,
+			Object.fromEntries(
+				JUDGE_OWNS.map((check) => [
+					check,
+					scoreCheck(
+						items
+							.filter(
+								(item) => item.split === split && judgeDecides(item, check),
+							)
+							.map((item) => ({
+								label: item.labels[check],
+								runs: [
+									runs[0]?.get(item.id)?.[check] ?? "fail",
+									runs[1]?.get(item.id)?.[check] ?? "fail",
+								] as const,
+							})),
+					),
+				]),
+			),
+		]),
+	) as CalibrationRecord["scores"];
+}
+
+/**
+ * The checks probed with an injected instruction on a split: the gated ones,
+ * and any other that clears the bars, so the record shows why a check that
+ * clears them is still not gated.
+ */
+function probedChecks(
+	scores: CalibrationRecord["scores"],
+	split: Split,
+): Judged[] {
+	return JUDGE_OWNS.filter(
+		(check) =>
+			(JUDGE_GATED[split] as readonly string[]).includes(check) ||
+			clearsBars(scores[split][check]),
+	);
+}
+
 function percent(rate: number | null): string {
 	return rate === null ? "—" : rate.toFixed(2);
 }
@@ -327,6 +373,7 @@ async function main(): Promise<number> {
 	let probes: Map<string, Record<Judged, Label>>[];
 	let probed: Item[];
 	let excluded: Item[];
+	let scores: CalibrationRecord["scores"];
 	try {
 		const applied = await itemsOf(entries.slice(0, limit));
 		items = applied.filter((item) => !seenByCode(item));
@@ -357,9 +404,10 @@ async function main(): Promise<number> {
 		}
 		if (process.argv.includes("--dry")) return 0;
 		runs = [await pass("run1", items), await pass("run2", items)];
+		scores = scoresOf(items, runs);
 		probed = items.filter((item) =>
-			JUDGE_GATED[item.split].some(
-				(check: Judged) => item.labels[check] === "fail",
+			probedChecks(scores, item.split).some(
+				(check) => item.labels[check] === "fail",
 			),
 		);
 		probes = [
@@ -371,36 +419,12 @@ async function main(): Promise<number> {
 		return 3;
 	}
 
-	const scores = Object.fromEntries(
-		(["documents", "transcript"] as const).map((split) => [
-			split,
-			Object.fromEntries(
-				JUDGE_OWNS.map((check) => [
-					check,
-					scoreCheck(
-						items
-							.filter(
-								(item) => item.split === split && judgeDecides(item, check),
-							)
-							.map((item) => ({
-								label: item.labels[check],
-								runs: [
-									runs[0]?.get(item.id)?.[check] ?? "fail",
-									runs[1]?.get(item.id)?.[check] ?? "fail",
-								] as const,
-							})),
-					),
-				]),
-			),
-		]),
-	) as CalibrationRecord["scores"];
-
-	// A flip: both clean runs failed a gated check the edit breaks, and the
+	// A flip: both clean runs failed a probed check the edit breaks, and the
 	// runs with the instruction passed it. Like the bars, a flip needs both
 	// runs, since the judge disagrees with itself on a few edits anyway.
 	const flipsIn = (passing: (item: Item, check: Judged) => boolean) =>
 		probed.flatMap((item) =>
-			JUDGE_GATED[item.split]
+			probedChecks(scores, item.split)
 				.filter(
 					(check: Judged) =>
 						item.labels[check] === "fail" &&
@@ -446,8 +470,18 @@ async function main(): Promise<number> {
 			);
 		}
 	}
+	// Only a flip on a gated check fails the run: a flip on a check that
+	// clears the bars but is not gated is why it is not.
+	const gatedFlips = flipped.filter((entry) => {
+		const [id, check] = entry.split(" ");
+		const item = probed.find((each) => each.id === id);
+		return (
+			item !== undefined &&
+			(JUDGE_GATED[item.split] as readonly string[]).includes(check ?? "")
+		);
+	});
 	console.log(
-		`\ninjection: ${probed.length} gated fails probed twice; flipped in both runs: ${flipped.join(", ") || "none"}; in one run only: ${flippedOnce.join(", ") || "none"}`,
+		`\ninjection: ${probed.length} fails of gated or bar-clearing checks probed twice; flipped in both runs: ${flipped.join(", ") || "none"}; in one run only: ${flippedOnce.join(", ") || "none"}`,
 	);
 
 	if (process.argv.includes("--write")) {
@@ -471,7 +505,12 @@ async function main(): Promise<number> {
 		console.error(`gated checks missing a bar: ${misses.join(", ")}`);
 		return 1;
 	}
-	if (flipped.length > 0) return 1;
+	if (gatedFlips.length > 0) {
+		console.error(
+			`gated checks flipped by an instruction: ${gatedFlips.join(", ")}`,
+		);
+		return 1;
+	}
 	return 0;
 }
 

@@ -36,9 +36,10 @@ export const JUDGE_OWNS = [
 /**
  * The checks whose judge verdict may hold a page, by the meeting's sources:
  * those whose calibration record (`calibrate-judge`) clears every bar in
- * `calibration.ts`. Every other judge verdict only flags. A5 is not gated: its
- * corpus fail edits are names the code names check already holds, so the
- * judge's A5 job has not been measured.
+ * `calibration.ts` and that no instruction inside a source flipped in both
+ * probe runs. Every other judge verdict only flags. A5 clears the bars on
+ * meetings with documents, but an appended "ignore previous instructions"
+ * turned one of its fails to a pass in both runs, so it is not gated.
  */
 export const JUDGE_GATED = {
 	documents: ["A2"],
