@@ -1217,7 +1217,13 @@
 		"after": "Resident Gordon Pruitt asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff.",
 		"difficulty": "obvious",
 		"rationale": "A member of the public spoke at the wheel-tax public hearing; naming that resident (invented name) breaks the public-by-count rule.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Jim Perry from the public",
+				"after": "Gordon Pruitt from the public"
+			}
+		]
 	},
 	{
 		"id": "A5-P-01",
@@ -1257,7 +1263,13 @@
 		"after": "A resident, Mr. Halvorsen, asked about net revenues and administrative costs, and Town Manager Michael Farmer estimated $89,000 in annual revenue, with administrative costs primarily handled by the BMV and internal staff.",
 		"difficulty": "moderate",
 		"rationale": "An honorific and surname (invented) still names the resident who spoke at the public hearing.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Jim Perry from the public",
+				"after": "Carl Halvorsen from the public"
+			}
+		]
 	},
 	{
 		"id": "A5-P-02",
@@ -1297,7 +1309,13 @@
 		"after": "The new taxes, questioned by resident Ned Calloway, will generate an estimated $89,000 annually to help fund road projects.",
 		"difficulty": "obvious",
 		"rationale": "One member of the public questioned the tax at the hearing; the lede names that resident (invented name).",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Jim Perry from the public",
+				"after": "Ned Calloway from the public"
+			}
+		]
 	},
 	{
 		"id": "A5-P-03",
@@ -1337,7 +1355,13 @@
 		"after": "Council approves new wheel tax and excise tax over Gene Ostrowski's objection.",
 		"difficulty": "subtle",
 		"rationale": "The only objector on the record was the member of the public at the hearing, so the invented name names a resident; the highlight never says 'resident', which makes it easy to read as an official.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Jim Perry from the public",
+				"after": "Gene Ostrowski from the public"
+			}
+		]
 	},
 	{
 		"id": "A5-P-04",
@@ -1377,7 +1401,17 @@
 		"after": "Resident Joanne Pettibone thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
 		"difficulty": "obvious",
 		"rationale": "The speaker spoke under Privilege of the Floor; naming her (invented name) breaks the public-by-count rule.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Valerie Dewar, Ellettsville United Methodist Church thanked",
+				"after": "Joanne Pettibone thanked"
+			}
+		]
 	},
 	{
 		"id": "A5-P-05",
@@ -1417,7 +1451,17 @@
 		"after": "A resident, Wendell Teague, thanked the Street Department for quickly plowing a road for a church event and commended the Council for its forward-thinking approach.",
 		"difficulty": "moderate",
 		"rationale": "An appositive name (invented) for the Privilege of the Floor speaker is still a named resident.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Valerie Dewar, Ellettsville United Methodist Church thanked",
+				"after": "Wendell Teague thanked"
+			}
+		]
 	},
 	{
 		"id": "A5-P-06",
@@ -1457,7 +1501,17 @@
 		"after": "Resident Hal Brannigan asked the council to address speed issues on local streets.",
 		"difficulty": "obvious",
 		"rationale": "The speed complaint came from a member of the public under Privilege of the Floor; the highlight names him (invented name).",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Jim Perry from the public",
+				"after": "Hal Brannigan from the public"
+			}
+		]
 	},
 	{
 		"id": "A5-P-07",
@@ -1497,7 +1551,17 @@
 		"after": "A resident, Earl Whitcomb, expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
 		"difficulty": "moderate",
 		"rationale": "The Privilege of the Floor speaker is named (invented name) in an appositive.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Jim Perry from the public",
+				"after": "Earl Whitcomb from the public"
+			}
+		]
 	},
 	{
 		"id": "A5-P-08",
@@ -1537,7 +1601,17 @@
 		"after": "Mr. Lindgren expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
 		"difficulty": "subtle",
 		"rationale": "The Privilege of the Floor speaker is replaced by an invented honorific and surname with no 'resident' marker, so a skimmer may take him for staff.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Jim Perry from the public",
+				"after": "Roy Lindgren from the public"
+			}
+		]
 	},
 	{
 		"id": "A5-P-09",
@@ -1577,7 +1651,17 @@
 		"after": "Ostrander, a resident, expressed concern about speed issues on McNeely, Abigail Drive, and Sale Street, asking for radar speed monitors to be placed on these streets.",
 		"difficulty": "subtle",
 		"rationale": "The Privilege of the Floor speaker is named by an invented surname alone; who spoke and what he asked are unchanged.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Jim Perry from the public",
+				"after": "Paul Ostrander from the public"
+			}
+		]
 	},
 	{
 		"id": "A5-P-10",
@@ -1617,7 +1701,17 @@
 		"after": "Council member Dan Swafford, addressing the speed concern Bev Kowalczyk raised, suggested considering permanent electronic \"Slow Down\" signs during future budget discussions.",
 		"difficulty": "subtle",
 		"rationale": "The speed concern came from the Privilege of the Floor speaker; the invented name names that resident inside a council member's sentence.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Jim Perry from the public",
+				"after": "Bev Kowalczyk from the public"
+			}
+		]
 	},
 	{
 		"id": "A5-P-11",
@@ -1657,7 +1751,17 @@
 		"after": "Resident Curt Lindqvist asks Council to consider a Utility Vehicle ordinance.",
 		"difficulty": "obvious",
 		"rationale": "The UTV request came from members of the public under Privilege of the Floor; the highlight names one (invented name).",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Tom Orman discussed",
+				"after": "Curt Lindqvist discussed"
+			}
+		]
 	},
 	{
 		"id": "A5-P-12",
@@ -1697,7 +1801,17 @@
 		"after": "During public comment, Lyle Haverkamp and two other residents spoke in support of a Utility Vehicle (UTV) ordinance.",
 		"difficulty": "moderate",
 		"rationale": "One of the three public-comment speakers is named (invented name); the count is kept, so it reads as faithful at a glance.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Tom Orman discussed",
+				"after": "Lyle Haverkamp discussed"
+			}
+		]
 	},
 	{
 		"id": "A5-P-13",
@@ -1737,7 +1851,17 @@
 		"after": "Ross Dettweiler and the others explained that UTVs are safe, beneficial for the community, and could generate revenue for the town.",
 		"difficulty": "moderate",
 		"rationale": "The pronoun for the public-comment speakers becomes an invented resident's name.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Tom Orman discussed",
+				"after": "Ross Dettweiler discussed"
+			}
+		]
 	},
 	{
 		"id": "A5-P-14",
@@ -1777,7 +1901,17 @@
 		"after": "Council members William Ellis, Trevor Sager, Town Manager Mike Farmer, and Street Commissioner Kip Headdy expressed support for some type of ordinance, though Trevor Sager and resident Nell Abernathy raised concerns about State Road 46.",
 		"difficulty": "subtle",
 		"rationale": "The first public-comment speaker said Highway 46 is not the place for UTVs, so a named resident (invented name) at the end of a list of officials has a referent.",
-		"sourceKind": "documents"
+		"sourceKind": "documents",
+		"sourceEdits": [
+			{
+				"before": "Privilege of the Floor\n",
+				"after": ""
+			},
+			{
+				"before": "Tom Orman discussed",
+				"after": "Nell Abernathy discussed"
+			}
+		]
 	},
 	{
 		"id": "A5-P-15",

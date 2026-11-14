@@ -59,7 +59,11 @@ import {
 	type JudgeInput,
 	splitOf,
 } from "#/pipeline/checks/judge.ts";
-import type { CheckContext, WriteUp } from "#/pipeline/checks/types.ts";
+import type {
+	CheckContext,
+	CheckReport,
+	WriteUp,
+} from "#/pipeline/checks/types.ts";
 import { DEFAULT_BODIES } from "#/pipeline/composition.ts";
 import { officialsFor } from "#/pipeline/officials/index.ts";
 import {
@@ -94,8 +98,10 @@ interface Item {
 	readonly split: Split;
 	readonly labels: Record<Judged, Label>;
 	readonly input: JudgeInput;
-	/** The stored draft before the edit. */
-	readonly base: WriteUp;
+	/** The code checks' report on the stored draft before the edit. */
+	readonly base: CheckReport;
+	/** The code checks' report on the edited draft. */
+	readonly code: CheckReport;
 }
 
 function arg(name: string): string | undefined {
@@ -186,18 +192,27 @@ async function itemsOf(entries: readonly Entry[]): Promise<Item[]> {
 			split: splitOf(context.input),
 			labels: entry.labels,
 			input: { context, draft },
-			base: meeting.draft,
+			base: runCodeChecks(meeting.draft, context),
+			code: runCodeChecks(draft, context),
 		};
 	});
 }
 
 /** Whether code checks catch the edit, so the judge would never see it. */
 function seenByCode(item: Item): boolean {
-	const { context, draft } = item.input;
-	return codeSeesEdit(
-		runCodeChecks(item.base, context),
-		runCodeChecks(draft, context),
-		JUDGE_DECIDES_UNCHECKED_ONLY,
+	return codeSeesEdit(item.base, item.code, JUDGE_DECIDES_UNCHECKED_ONLY);
+}
+
+/**
+ * Whether the judge's verdict on `check` would decide anything in
+ * production. On a check the judge decides only where code left it
+ * unchecked, code's pass stands, so the judge's verdict on such an item is
+ * not part of its job.
+ */
+function judgeDecides(item: Item, check: Judged): boolean {
+	return (
+		!JUDGE_DECIDES_UNCHECKED_ONLY.includes(check) ||
+		item.code.verdicts[check]?.outcome === "unchecked"
 	);
 }
 
@@ -332,6 +347,14 @@ async function main(): Promise<number> {
 			);
 			console.log(`${split}: fail edits scored: ${fails.join(", ")}`);
 		}
+		for (const check of JUDGE_OWNS.filter((c) =>
+			JUDGE_DECIDES_UNCHECKED_ONLY.includes(c),
+		)) {
+			const open = items.filter((item) => judgeDecides(item, check));
+			console.log(
+				`${check} scored only where code left it unchecked: ${open.filter((i) => i.labels[check] === "fail").length} fail, ${open.filter((i) => i.labels[check] === "pass").length} pass`,
+			);
+		}
 		if (process.argv.includes("--dry")) return 0;
 		runs = [await pass("run1", items), await pass("run2", items)];
 		probed = items.filter((item) =>
@@ -356,7 +379,9 @@ async function main(): Promise<number> {
 					check,
 					scoreCheck(
 						items
-							.filter((item) => item.split === split)
+							.filter(
+								(item) => item.split === split && judgeDecides(item, check),
+							)
 							.map((item) => ({
 								label: item.labels[check],
 								runs: [
