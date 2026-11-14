@@ -29,7 +29,12 @@ import {
 	regenerateBodySummaries,
 } from "#/pipeline/regenerate.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
-import { formatHeldSummaryLine } from "#/pipeline/summaryHolds.ts";
+import {
+	describeRelease,
+	formatHeldSummaryLine,
+	planRelease,
+	ReleaseRefused,
+} from "#/pipeline/summaryHolds.ts";
 
 /**
  * Effect teaching note: This file owns the CLI surface — `effect/cli` Command
@@ -310,6 +315,104 @@ const summariesHeldCommand = Command.make("summaries:held", {}, () =>
 			yield* Console.log(formatHeldSummaryLine(summary));
 		}
 	}),
+);
+
+// ---------------------------------------------------------------------------
+// `summaries:release` subcommand — publishes one meeting's held summary.
+// Reports what it would change until `--confirm` is passed, because the
+// local .env points at production.
+// ---------------------------------------------------------------------------
+
+const releaseBodySlug = Flag.String("body").pipe(
+	Flag.withDescription("Slug of the body whose meeting is held."),
+);
+
+const releaseMeetingDate = Flag.String("date").pipe(
+	Flag.withDescription("ISO date (YYYY-MM-DD) of the meeting."),
+);
+
+const releaseSession = Flag.String("session").pipe(
+	Flag.withDefault(""),
+	Flag.withDescription(
+		"Session slug of the meeting (defaults to the meeting stored without one).",
+	),
+);
+
+const releaseNote = Flag.String("note").pipe(
+	Flag.withDescription("Why the summary is released; stored with it."),
+);
+
+const releaseConfirm = Flag.Boolean("confirm").pipe(
+	Flag.withDefault(false),
+	Flag.withDescription("Publish the summary. Without it, nothing is written."),
+);
+
+const summariesReleaseCommand = Command.make(
+	"summaries:release",
+	{
+		bodySlug: releaseBodySlug,
+		date: releaseMeetingDate,
+		session: releaseSession,
+		note: releaseNote,
+		confirm: releaseConfirm,
+	},
+	({ bodySlug, date, session, note, confirm }) =>
+		Effect.gen(function* () {
+			const layers = yield* Effect.try({
+				try: () => buildProductionLayers({ dryRun: false }),
+				catch: (error) =>
+					new Error(
+						`Failed to construct pipeline layers: ${error instanceof Error ? error.message : String(error)}`,
+					),
+			});
+
+			yield* Effect.gen(function* () {
+				yield* Console.log(
+					`[summaries:release] target=${(resolveDatabaseUrl() ?? "").replace(/\?.*$/, "")}`,
+				);
+				const plan = yield* planRelease({ bodySlug, date, session, note });
+				const now = new Date();
+				yield* Console.log(
+					`[summaries:release] meeting id=${plan.held.meetingId} body=${bodySlug} date=${date} session=${JSON.stringify(session)}`,
+				);
+				for (const line of describeRelease(plan, note, now)) {
+					yield* Console.log(line);
+				}
+				if (!confirm) {
+					yield* Console.log(
+						"[summaries:release] dry run. Re-run with --confirm to publish the summary.",
+					);
+					return;
+				}
+				const storage = yield* StorageService;
+				const { released } = yield* storage.releaseSummary({
+					meetingId: plan.held.meetingId,
+					note,
+					edited: plan.edited,
+					releasedAt: now,
+				});
+				if (!released) {
+					return yield* new ReleaseRefused({
+						message: "The summary was no longer held; nothing was written.",
+						details: [],
+					});
+				}
+				yield* Console.log("[summaries:release] released.");
+			}).pipe(
+				Effect.provide(layers),
+				Effect.catchTag("ReleaseRefused", (refused) =>
+					Effect.gen(function* () {
+						yield* Console.error(
+							`[summaries:release] refused: ${refused.message}`,
+						);
+						for (const line of refused.details) {
+							yield* Console.error(`  ${line}`);
+						}
+						return yield* Effect.fail(new Error(refused.message));
+					}),
+				),
+			);
+		}),
 );
 
 // ---------------------------------------------------------------------------
@@ -626,6 +729,7 @@ const rootCommand = Command.make("pipeline", {}, () =>
 		dramaDetectCommand,
 		heldListCommand,
 		summariesHeldCommand,
+		summariesReleaseCommand,
 		summariesRegenerateCommand,
 		summariesAuditCommand,
 		documentDetachCommand,

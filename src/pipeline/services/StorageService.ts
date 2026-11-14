@@ -320,6 +320,18 @@ interface StorageServiceInterface {
 	listHeldVideos(input?: {
 		bodySlug?: string;
 	}): Effect.Effect<HeldVideo[], DatabaseError>;
+	/**
+	 * Publish a held summary: status `published`, `released_at` and the
+	 * operator's note. With `edited`, its text replaces the summary's and its
+	 * check run is stored as rounds. A summary that is not held is left as it
+	 * is, and `released` is false.
+	 */
+	releaseSummary(input: {
+		meetingId: number;
+		note: string;
+		edited: { writeUp: WriteUp; publication: SummaryPublication } | null;
+		releasedAt?: Date;
+	}): Effect.Effect<{ released: boolean }, DatabaseError>;
 	/** Meetings whose summary is held, oldest meeting first. */
 	listHeldSummaries(): Effect.Effect<readonly HeldSummary[], DatabaseError>;
 	/**
@@ -663,6 +675,15 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		releaseSummary: (input) =>
+			Effect.tryPromise({
+				try: () => releaseSummaryTransaction(db, input),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "releaseSummary",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 		listHeldSummaries: () =>
 			Effect.tryPromise({
 				try: () => listHeldSummariesQuery(db),
@@ -982,6 +1003,40 @@ async function getStoredWriteUpQuery(
 			isRecurring: decision.isRecurring,
 		})),
 	};
+}
+
+async function releaseSummaryTransaction(
+	db: LibSQLDatabase<typeof schema>,
+	input: Parameters<StorageServiceInterface["releaseSummary"]>[0],
+): Promise<{ released: boolean }> {
+	return await db.transaction(async (tx) => {
+		const result = await tx
+			.update(schema.summaries)
+			.set({
+				status: "published",
+				heldReason: null,
+				releasedAt: input.releasedAt ?? new Date(),
+				releaseNote: input.note,
+				...(input.edited === null
+					? {}
+					: {
+							highlights: [...input.edited.writeUp.highlights],
+							prose: input.edited.writeUp.prose,
+						}),
+			})
+			.where(
+				and(
+					eq(schema.summaries.meetingId, input.meetingId),
+					eq(schema.summaries.status, "held"),
+				),
+			)
+			.run();
+		if (result.rowsAffected === 0) return { released: false };
+		if (input.edited !== null) {
+			await insertSummaryRounds(tx, input.meetingId, input.edited.publication);
+		}
+		return { released: true };
+	});
 }
 
 async function listHeldSummariesQuery(

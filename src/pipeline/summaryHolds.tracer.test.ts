@@ -10,10 +10,12 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createClient } from "@libsql/client";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/libsql";
 import { migrate } from "drizzle-orm/libsql/migrator";
 import { Effect } from "effect";
 import { describe, expect, it, onTestFinished } from "vitest";
+import { listRecentMeetingsQuery } from "#/db/queries.ts";
 import * as schema from "#/db/schema.ts";
 import { PUBLISHED, publicationOf } from "#/pipeline/checks/test-outcomes.ts";
 import {
@@ -167,5 +169,60 @@ describe("summaries CLI (tracer)", () => {
 		expect(lines[0]).toContain(
 			"TRUNC: The council approved the paving bid for",
 		);
+	}, 60_000);
+
+	it("slice 2: summaries:release previews without --confirm, and with it publishes the held draft", async () => {
+		const { url, db, store } = await tracerDb();
+		await store({ date: "2025-05-27", text: TRUNCATED, held: true });
+		const t = new Transcript("slice-2");
+		const release = [
+			"summaries:release",
+			"--body",
+			BODY.slug,
+			"--date",
+			"2025-05-27",
+			"--note",
+			"Truncated mid-sentence; the meaning is intact",
+		];
+		const row = () =>
+			db
+				.select()
+				.from(schema.summaries)
+				.where(eq(schema.summaries.meetingId, 1))
+				.get();
+
+		t.note("Without --confirm: a preview, and nothing written.");
+		const dry = await t.run(url, release);
+		expect(dry.code).toBe(0);
+		expect(dry.stdout).toContain("status:        held -> published");
+		expect(dry.stdout).toContain("dry run");
+		expect((await row())?.status).toBe("held");
+		expect((await row())?.releasedAt).toBeNull();
+		expect(await listRecentMeetingsQuery(db)).toEqual([]);
+
+		t.note("With --confirm: published, with released_at and release_note.");
+		const done = await t.run(url, [...release, "--confirm"]);
+		expect(done.code).toBe(0);
+		expect(done.stdout).toContain("released.");
+		const released = await row();
+		expect(released?.status).toBe("published");
+		expect(released?.heldReason).toBeNull();
+		expect(released?.releasedAt).toBeInstanceOf(Date);
+		expect(released?.releaseNote).toBe(
+			"Truncated mid-sentence; the meaning is intact",
+		);
+		expect(released?.prose).toBe(TRUNCATED.prose);
+
+		t.note("The meeting is back in the reader's list, and no longer held.");
+		const lists = await listRecentMeetingsQuery(db);
+		expect(lists.map((m) => m.date)).toEqual(["2025-05-27"]);
+		const after = await t.run(url, ["summaries:held"]);
+		expect(after.stderr).toContain("No held summaries.");
+
+		t.note("Releasing again is refused: the summary is not held.");
+		const again = await t.run(url, [...release, "--confirm"]);
+		expect(again.code).not.toBe(0);
+		expect(again.stderr).toContain("is not held");
+		t.save();
 	}, 60_000);
 });
