@@ -43,22 +43,26 @@ import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
 import {
 	applyEdit,
+	applySourceEdits,
 	type CalibrationRecord,
 	type CorpusEdit,
 	clearsBars,
+	codeSeesEdit,
 	scoreCheck,
 } from "#/pipeline/checks/calibration.ts";
 import { runCodeChecks } from "#/pipeline/checks/index.ts";
 import {
+	hashOf,
+	JUDGE_DECIDES_UNCHECKED_ONLY,
 	JUDGE_GATED,
 	JUDGE_OWNS,
 	type JudgeInput,
 	splitOf,
 } from "#/pipeline/checks/judge.ts";
-import {
-	type CheckContext,
-	GATE_IDS,
-	type WriteUp,
+import type {
+	CheckContext,
+	CheckReport,
+	WriteUp,
 } from "#/pipeline/checks/types.ts";
 import { DEFAULT_BODIES } from "#/pipeline/composition.ts";
 import { officialsFor } from "#/pipeline/officials/index.ts";
@@ -94,8 +98,10 @@ interface Item {
 	readonly split: Split;
 	readonly labels: Record<Judged, Label>;
 	readonly input: JudgeInput;
-	/** The stored draft before the edit. */
-	readonly base: WriteUp;
+	/** The code checks' report on the stored draft before the edit. */
+	readonly base: CheckReport;
+	/** The code checks' report on the edited draft. */
+	readonly code: CheckReport;
 }
 
 function arg(name: string): string | undefined {
@@ -168,33 +174,46 @@ async function itemsOf(entries: readonly Entry[]): Promise<Item[]> {
 		if (draft === null) {
 			throw new Error(`${entry.id}: "before" is no longer in the stored draft`);
 		}
+		const sources = applySourceEdits(
+			meeting.context.input.sources,
+			entry.sourceEdits ?? [],
+		);
+		if (sources === null) {
+			throw new Error(
+				`${entry.id}: a source edit's "before" is no longer in the documents once`,
+			);
+		}
+		const context = {
+			...meeting.context,
+			input: { ...meeting.context.input, sources },
+		};
 		return {
 			id: entry.id,
-			split: splitOf(meeting.context.input),
+			split: splitOf(context.input),
 			labels: entry.labels,
-			input: { context: meeting.context, draft },
-			base: meeting.draft,
+			input: { context, draft },
+			base: runCodeChecks(meeting.draft, context),
+			code: runCodeChecks(draft, context),
 		};
 	});
 }
 
-/** The code checks' gate verdicts on a draft, as text to compare. */
-function gateVerdicts(context: CheckContext, draft: WriteUp): string {
-	const { verdicts } = runCodeChecks(draft, context);
-	return JSON.stringify(GATE_IDS.map((id) => verdicts[id] ?? null));
+/** Whether code checks catch the edit, so the judge would never see it. */
+function seenByCode(item: Item): boolean {
+	return codeSeesEdit(item.base, item.code, JUDGE_DECIDES_UNCHECKED_ONLY);
 }
 
 /**
- * Whether a code gate says something about the edited draft it did not say
- * about the base. Code catches such an edit before the judge would see it,
- * so the edit measures that check, not the judge: an invented name trips
- * A1, a listed loaded word trips code A2. A base draft a code gate holds
- * for something else still measures the judge, since the edit is no easier
- * for it.
+ * Whether the judge's verdict on `check` would decide anything in
+ * production. On a check the judge decides only where code left it
+ * unchecked, code's pass stands, so the judge's verdict on such an item is
+ * not part of its job.
  */
-function codeSeesEdit(item: Item): boolean {
-	const { context, draft } = item.input;
-	return gateVerdicts(context, draft) !== gateVerdicts(context, item.base);
+function judgeDecides(item: Item, check: Judged): boolean {
+	return (
+		!JUDGE_DECIDES_UNCHECKED_ONLY.includes(check) ||
+		item.code.verdicts[check]?.outcome === "unchecked"
+	);
 }
 
 /** The meeting with the injected instruction appended to each document. */
@@ -218,14 +237,19 @@ function injected(input: JudgeInput): JudgeInput {
 const judge = createGeminiJudge({ modelId: JUDGE_MODEL_ID });
 const cacheDir = join(".context", "calibration", judge.fingerprint);
 
-/** The judge's verdicts on `input`, from the cache or a call retried three times. */
+/**
+ * The judge's verdicts on `input`, from the cache or a call retried three
+ * times. The cache is keyed by a hash of the input, so an edit rebuilt under
+ * the same id is judged again.
+ */
 async function verdictsOf(
 	file: string,
 	id: string,
 	input: JudgeInput,
 	cache: Map<string, Record<Judged, Label>>,
 ): Promise<Record<Judged, Label>> {
-	const cached = cache.get(id);
+	const key = hashOf(input);
+	const cached = cache.get(key);
 	if (cached !== undefined) return cached;
 	let last: unknown = "unavailable";
 	for (let attempt = 0; attempt < 3; attempt++) {
@@ -238,8 +262,8 @@ async function verdictsOf(
 						report.verdicts[check]?.outcome === "pass" ? "pass" : "fail",
 					]),
 				) as Record<Judged, Label>;
-				appendFileSync(file, `${JSON.stringify({ id, verdicts })}\n`);
-				cache.set(id, verdicts);
+				appendFileSync(file, `${JSON.stringify({ id, key, verdicts })}\n`);
+				cache.set(key, verdicts);
 				return verdicts;
 			}
 		} catch (error) {
@@ -264,23 +288,73 @@ async function pass(
 					.filter(Boolean)
 					.map((line) => {
 						const row = JSON.parse(line);
-						return [row.id, row.verdicts];
+						return [row.key, row.verdicts];
 					})
 			: [],
 	);
 	console.log(
-		`${name}: ${items.filter((i) => !cache.has(i.id)).length} to judge`,
+		`${name}: ${items.filter((i) => !cache.has(hashOf(prepare(i.input)))).length} to judge`,
 	);
+	const byId = new Map<string, Record<Judged, Label>>();
 	let next = 0;
 	const worker = async () => {
 		while (next < items.length) {
 			const item = items[next++];
 			if (item === undefined) return;
-			await verdictsOf(file, item.id, prepare(item.input), cache);
+			byId.set(
+				item.id,
+				await verdictsOf(file, item.id, prepare(item.input), cache),
+			);
 		}
 	};
 	await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-	return cache;
+	return byId;
+}
+
+/** Each split's score per check, from the two clean runs. */
+function scoresOf(
+	items: readonly Item[],
+	runs: readonly Map<string, Record<Judged, Label>>[],
+): CalibrationRecord["scores"] {
+	return Object.fromEntries(
+		(["documents", "transcript"] as const).map((split) => [
+			split,
+			Object.fromEntries(
+				JUDGE_OWNS.map((check) => [
+					check,
+					scoreCheck(
+						items
+							.filter(
+								(item) => item.split === split && judgeDecides(item, check),
+							)
+							.map((item) => ({
+								label: item.labels[check],
+								runs: [
+									runs[0]?.get(item.id)?.[check] ?? "fail",
+									runs[1]?.get(item.id)?.[check] ?? "fail",
+								] as const,
+							})),
+					),
+				]),
+			),
+		]),
+	) as CalibrationRecord["scores"];
+}
+
+/**
+ * The checks probed with an injected instruction on a split: the gated ones,
+ * and any other that clears the bars, so the record shows why a check that
+ * clears them is still not gated.
+ */
+function probedChecks(
+	scores: CalibrationRecord["scores"],
+	split: Split,
+): Judged[] {
+	return JUDGE_OWNS.filter(
+		(check) =>
+			(JUDGE_GATED[split] as readonly string[]).includes(check) ||
+			clearsBars(scores[split][check]),
+	);
 }
 
 function percent(rate: number | null): string {
@@ -299,10 +373,11 @@ async function main(): Promise<number> {
 	let probes: Map<string, Record<Judged, Label>>[];
 	let probed: Item[];
 	let excluded: Item[];
+	let scores: CalibrationRecord["scores"];
 	try {
 		const applied = await itemsOf(entries.slice(0, limit));
-		items = applied.filter((item) => !codeSeesEdit(item));
-		excluded = applied.filter((item) => codeSeesEdit(item));
+		items = applied.filter((item) => !seenByCode(item));
+		excluded = applied.filter((item) => seenByCode(item));
 		console.log(
 			`${applied.length} edits applied; ${excluded.length} seen by code checks: ${
 				excluded.map((item) => item.id).join(", ") || "none"
@@ -319,11 +394,20 @@ async function main(): Promise<number> {
 			);
 			console.log(`${split}: fail edits scored: ${fails.join(", ")}`);
 		}
+		for (const check of JUDGE_OWNS.filter((c) =>
+			JUDGE_DECIDES_UNCHECKED_ONLY.includes(c),
+		)) {
+			const open = items.filter((item) => judgeDecides(item, check));
+			console.log(
+				`${check} scored only where code left it unchecked: ${open.filter((i) => i.labels[check] === "fail").length} fail, ${open.filter((i) => i.labels[check] === "pass").length} pass`,
+			);
+		}
 		if (process.argv.includes("--dry")) return 0;
 		runs = [await pass("run1", items), await pass("run2", items)];
+		scores = scoresOf(items, runs);
 		probed = items.filter((item) =>
-			JUDGE_GATED[item.split].some(
-				(check: Judged) => item.labels[check] === "fail",
+			probedChecks(scores, item.split).some(
+				(check) => item.labels[check] === "fail",
 			),
 		);
 		probes = [
@@ -335,34 +419,12 @@ async function main(): Promise<number> {
 		return 3;
 	}
 
-	const scores = Object.fromEntries(
-		(["documents", "transcript"] as const).map((split) => [
-			split,
-			Object.fromEntries(
-				JUDGE_OWNS.map((check) => [
-					check,
-					scoreCheck(
-						items
-							.filter((item) => item.split === split)
-							.map((item) => ({
-								label: item.labels[check],
-								runs: [
-									runs[0]?.get(item.id)?.[check] ?? "fail",
-									runs[1]?.get(item.id)?.[check] ?? "fail",
-								] as const,
-							})),
-					),
-				]),
-			),
-		]),
-	) as CalibrationRecord["scores"];
-
-	// A flip: both clean runs failed a gated check the edit breaks, and the
+	// A flip: both clean runs failed a probed check the edit breaks, and the
 	// runs with the instruction passed it. Like the bars, a flip needs both
 	// runs, since the judge disagrees with itself on a few edits anyway.
 	const flipsIn = (passing: (item: Item, check: Judged) => boolean) =>
 		probed.flatMap((item) =>
-			JUDGE_GATED[item.split]
+			probedChecks(scores, item.split)
 				.filter(
 					(check: Judged) =>
 						item.labels[check] === "fail" &&
@@ -408,8 +470,18 @@ async function main(): Promise<number> {
 			);
 		}
 	}
+	// Only a flip on a gated check fails the run: a flip on a check that
+	// clears the bars but is not gated is why it is not.
+	const gatedFlips = flipped.filter((entry) => {
+		const [id, check] = entry.split(" ");
+		const item = probed.find((each) => each.id === id);
+		return (
+			item !== undefined &&
+			(JUDGE_GATED[item.split] as readonly string[]).includes(check ?? "")
+		);
+	});
 	console.log(
-		`\ninjection: ${probed.length} gated fails probed twice; flipped in both runs: ${flipped.join(", ") || "none"}; in one run only: ${flippedOnce.join(", ") || "none"}`,
+		`\ninjection: ${probed.length} fails of gated or bar-clearing checks probed twice; flipped in both runs: ${flipped.join(", ") || "none"}; in one run only: ${flippedOnce.join(", ") || "none"}`,
 	);
 
 	if (process.argv.includes("--write")) {
@@ -433,7 +505,12 @@ async function main(): Promise<number> {
 		console.error(`gated checks missing a bar: ${misses.join(", ")}`);
 		return 1;
 	}
-	if (flipped.length > 0) return 1;
+	if (gatedFlips.length > 0) {
+		console.error(
+			`gated checks flipped by an instruction: ${gatedFlips.join(", ")}`,
+		);
+		return 1;
+	}
 	return 0;
 }
 

@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
 	applyEdit,
+	applySourceEdits,
 	type CalibrationScore,
 	clearsBars,
+	codeSeesEdit,
 	scoreCheck,
 } from "./calibration.ts";
+import type { CheckReport } from "./types.ts";
 
 const draft = {
 	highlights: ["Council approves paving bid", "Vote was 4-1"],
@@ -46,6 +49,69 @@ describe("applyEdit", () => {
 				after: "deny",
 			}),
 		).toBeNull();
+	});
+});
+
+describe("applySourceEdits", () => {
+	const sources = [
+		{
+			kind: "documents" as const,
+			text: "Privilege of the Floor\nJim Perry from the public spoke.",
+		},
+		{ kind: "transcript" as const, text: "Jim Perry from the public spoke." },
+	];
+
+	it("replaces each `before` once in the documents and leaves the transcript alone", () => {
+		expect(
+			applySourceEdits(sources, [
+				{ before: "Privilege of the Floor\n", after: "" },
+				{ before: "Jim Perry", after: "Earl Whitcomb" },
+			]),
+		).toEqual([
+			{ kind: "documents", text: "Earl Whitcomb from the public spoke." },
+			sources[1],
+		]);
+	});
+
+	it("is null when a `before` is not in the documents exactly once", () => {
+		expect(
+			applySourceEdits(sources, [
+				{ before: "Tom Orman", after: "Lyle Haverkamp" },
+			]),
+		).toBeNull();
+		expect(
+			applySourceEdits(
+				[sources[0], sources[0]],
+				[{ before: "Jim Perry", after: "Earl Whitcomb" }],
+			),
+		).toBeNull();
+	});
+});
+
+describe("codeSeesEdit", () => {
+	const pass = { outcome: "pass" } as const;
+	const fail = { outcome: "fail", evidence: "x" } as const;
+	const unchecked = { outcome: "unchecked", reason: "a name" } as const;
+	const report = (verdicts: CheckReport["verdicts"]) => ({ verdicts });
+
+	it.each([
+		["no gate changes", { A1: pass }, { A1: pass }, false],
+		["a gate goes from pass to fail", { A1: pass }, { A1: fail }, true],
+		[
+			"a gate the judge decides when unchecked goes to unchecked",
+			{ A5: pass },
+			{ A5: unchecked },
+			false,
+		],
+		[
+			"a gate the judge decides when unchecked goes to fail",
+			{ A5: pass },
+			{ A5: fail },
+			true,
+		],
+		["another gate goes to unchecked", { A1: pass }, { A1: unchecked }, true],
+	] as const)("when %s, code sees the edit: %4$s", (_, base, edited, seen) => {
+		expect(codeSeesEdit(report(base), report(edited), ["A5"])).toBe(seen);
 	});
 });
 

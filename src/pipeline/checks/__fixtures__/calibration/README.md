@@ -25,10 +25,15 @@ that decides the label. Real residents' names never appear in it.
   list ("sensibly", "fretted", "played this down", "in a bid to..."). Only two use
   listed words.
 - **A5 fails** name a resident who spoke at public comment. **Every such name is
-  invented**, and none appears in any source. Code cannot catch these: an invented
-  name is never inside the minutes' public-comment section. Because an invented
-  name is in no source, these drafts also fail A1. The labels here cover only
-  A2, A4 and A5.
+  invented.** Each A5 fail carries `sourceEdits` (added for #228) that put its
+  invented name in the minutes in place of the real speaker's, so A1 finds it in a
+  source. On minutes that mark public comment ("Privilege of the Floor"), the
+  edits also remove that heading, and on 2026-02-09 the speaker's church. Code A5
+  fails any name inside a marked section and clears a name written beside an
+  organisation, so only unmarked minutes with no role beside the name leave A5 to
+  the judge, which is the only A5 job the judge has. Without these edits, A1
+  caught every A5 fail but one before the judge saw it. The labels here cover
+  only A2, A4 and A5.
 - **A5 passes** name officials, staff or vendors with their roles, spelled as the
   documents spell them, or refer to residents by count.
 
@@ -45,10 +50,14 @@ draft, do an exact-string replace of `before` with `after` in the target field:
 If `before` is missing, the stored draft has changed since 2026-11-03, and that
 entry no longer applies.
 
+An entry with `sourceEdits` also changes the meeting's documents, in order, each
+an exact-string replace of a `before` that occurs once across them. The
+transcript is never edited. The changed sources are used for that entry only.
+
 `sourceKind` records whether the meeting has documents or only a caption
 transcript. All A5 pairs are on documents meetings. In the four transcript-only
 base meetings, no resident spoke at public comment.
 
 ## Re-running it
 
-`pnpm tsx src/pipeline/scripts/calibrate-judge.ts --write` applies every edit, leaves out the ones a code check catches, has the production judge check the rest twice, and writes `record.json`. `judge-record.test.ts` fails whenever the judge's model, prompt or settings no longer match the record, or a gated check in `JUDGE_GATED` no longer clears the bars in `src/pipeline/checks/calibration.ts`. `--dry` shows what would be scored without calling the model.
+`pnpm tsx src/pipeline/scripts/calibrate-judge.ts --write` applies every edit, leaves out the ones a code check catches, has the production judge check the rest twice, and writes `record.json`. A5 is scored only on edits where code A5 is unchecked, since elsewhere code's A5 verdict stands and the judge's decides nothing. `judge-record.test.ts` fails whenever the judge's model, prompt or settings no longer match the record, or a gated check in `JUDGE_GATED` no longer clears the bars in `src/pipeline/checks/calibration.ts`. `--dry` shows what would be scored without calling the model.
