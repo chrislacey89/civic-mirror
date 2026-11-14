@@ -243,6 +243,7 @@ function buildStubLayers(config: StubConfig) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		rewrite: () => Effect.die("rewrite is not used by the orchestrator"),
 	});
 
 	const isHeld = (videoId: string) =>

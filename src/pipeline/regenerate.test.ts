@@ -89,6 +89,7 @@ async function setup(options: {
 						)
 					: Effect.succeed(options.result ?? REGENERATED);
 			}),
+		rewrite: () => Effect.die("rewrite is not used by regenerate"),
 	});
 	const layers = Layer.mergeAll(StorageServiceLive(db), summarization);
 

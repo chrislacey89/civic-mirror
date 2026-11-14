@@ -376,6 +376,14 @@ interface SummarizationServiceInterface {
 	summarize(
 		input: SummarizeRequest,
 	): Effect.Effect<SummarizationResult, LlmError>;
+	/**
+	 * Write a meeting's text again from a ledger already stored, and put it
+	 * through the pre-publish check. The ledger generator is never called.
+	 */
+	rewrite(
+		input: SummarizeRequest,
+		ledger: SummarizationOutput["fiscalDecisions"],
+	): Effect.Effect<PrePublishOutcome, LlmError>;
 }
 
 class SummarizationService extends Context.Service<
@@ -558,33 +566,9 @@ function SummarizationServiceLive(
 					);
 					// The text is written from the ledger this summary returns, so
 					// the prose cannot carry a figure or an entry the ledger dropped.
-					const draft = await config.writeFn(input, verified);
-					// A revision rewrites only the text, so the ledger call is never re-run.
-					const checked = await prePublish({
-						draft,
-						context: { input, ledger: verified, officials: input.officials },
-						revise: (revision) =>
-							Effect.runPromise(
-								Effect.tryPromise(() =>
-									config.writeFn(input, verified, revision),
-								).pipe(Effect.retry(config.revisionRetry ?? REVISION_RETRY)),
-							),
-						cap: config.roundCap ?? 1,
-						judge:
-							config.judge === undefined
-								? undefined
-								: retried(config.judge, config),
-					});
+					const checked = await writeAndCheck(config, input, verified);
 					const highlights = [...checked.best.highlights];
 					const prose = checked.best.prose;
-					// Warn-only: these rules are not yet checks, and a breach is a
-					// signal for prompt iteration, never a reason to change or
-					// reject the text.
-					for (const warning of proseWarnings(prose, highlights)) {
-						console.warn(
-							`[summarize] writing rule breach in "${input.meetingContext}": ${warning}`,
-						);
-					}
 					// A disagreement needs two kinds of source to disagree; one
 					// reported from a single kind is the model inventing the other. The
 					// unread figures are already recorded above, so an amount
@@ -616,7 +600,53 @@ function SummarizationServiceLive(
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		rewrite: (input, ledger) =>
+			Effect.tryPromise({
+				try: () => writeAndCheck(config, input, ledger),
+				catch: (error) =>
+					new LlmError({
+						model: config.model,
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 	});
+}
+
+/**
+ * Write a meeting's text from `ledger` and put it through the pre-publish
+ * check, revising up to the round cap. A revision rewrites only the text, so
+ * nothing here calls the ledger generator.
+ */
+async function writeAndCheck(
+	config: SummarizationServiceConfig,
+	input: SummarizeRequest,
+	ledger: SummarizationOutput["fiscalDecisions"],
+): Promise<PrePublishOutcome> {
+	const draft = await config.writeFn(input, ledger);
+	const checked = await prePublish({
+		draft,
+		context: { input, ledger, officials: input.officials },
+		revise: (revision) =>
+			Effect.runPromise(
+				Effect.tryPromise(() => config.writeFn(input, ledger, revision)).pipe(
+					Effect.retry(config.revisionRetry ?? REVISION_RETRY),
+				),
+			),
+		cap: config.roundCap ?? 1,
+		judge:
+			config.judge === undefined ? undefined : retried(config.judge, config),
+	});
+	// Warn-only: these rules are not yet checks, and a breach is a signal for
+	// prompt iteration, never a reason to change or reject the text.
+	for (const warning of proseWarnings(
+		checked.best.prose,
+		checked.best.highlights,
+	)) {
+		console.warn(
+			`[summarize] writing rule breach in "${input.meetingContext}": ${warning}`,
+		);
+	}
+	return checked;
 }
 
 export {
