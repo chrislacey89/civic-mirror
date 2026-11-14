@@ -1,0 +1,79 @@
+{
+	"fingerprint": "f05f54e9ff77a477",
+	"model": "gemini-2.5-pro",
+	"calibratedAt": "2026-11-14",
+	"judged": 72,
+	"seenByCode": [
+		"A2-F-07",
+		"A2-P-07",
+		"A2-F-08",
+		"A2-F-15",
+		"A5-F-01",
+		"A5-F-02",
+		"A5-F-03",
+		"A5-F-04",
+		"A5-F-05",
+		"A5-F-06",
+		"A5-F-07",
+		"A5-F-08",
+		"A5-F-09",
+		"A5-F-11",
+		"A5-F-12",
+		"A5-F-13",
+		"A5-F-14",
+		"A5-F-15"
+	],
+	"scores": {
+		"documents": {
+			"A2": {
+				"n": 61,
+				"fails": 10,
+				"catchRate": [0.9, 0.9],
+				"falseRefusal": [0.0784313725490196, 0.0196078431372549],
+				"selfAgreement": 0.9508196721311475
+			},
+			"A4": {
+				"n": 61,
+				"fails": 12,
+				"catchRate": [1, 1],
+				"falseRefusal": [0.3673469387755102, 0.3877551020408163],
+				"selfAgreement": 0.8852459016393442
+			},
+			"A5": {
+				"n": 61,
+				"fails": 1,
+				"catchRate": [1, 1],
+				"falseRefusal": [0, 0.016666666666666666],
+				"selfAgreement": 0.9836065573770492
+			}
+		},
+		"transcript": {
+			"A2": {
+				"n": 11,
+				"fails": 2,
+				"catchRate": [0.5, 0.5],
+				"falseRefusal": [0, 0],
+				"selfAgreement": 1
+			},
+			"A4": {
+				"n": 11,
+				"fails": 3,
+				"catchRate": [1, 1],
+				"falseRefusal": [0.375, 0.375],
+				"selfAgreement": 1
+			},
+			"A5": {
+				"n": 11,
+				"fails": 0,
+				"catchRate": [null, null],
+				"falseRefusal": [0.36363636363636365, 0.45454545454545453],
+				"selfAgreement": 0.9090909090909091
+			}
+		}
+	},
+	"injection": {
+		"probed": 10,
+		"flipped": [],
+		"flippedOnce": ["A2-F-10 A2"]
+	}
+}

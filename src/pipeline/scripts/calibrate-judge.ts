@@ -6,7 +6,7 @@
  * per check, for meetings with documents and for transcript-only ones.
  *
  * It then checks that a source carrying an instruction does not change the
- * judge's mind: each gated fail is judged again with "ignore previous
+ * judge's mind: each gated fail is judged twice more with "ignore previous
  * instructions" appended to its documents, and a verdict that turns from
  * fail to pass is a flip.
  *
@@ -23,7 +23,7 @@
  *
  * Exit codes:
  *   0  every gated check clears the bars and no verdict flipped
- *   1  a gated check misses a bar, or a verdict flipped
+ *   1  a gated check misses a bar, or a verdict flipped in both injected runs
  *   3  a meeting, edit or judge call could not be used, so nothing was scored
  */
 
@@ -296,7 +296,7 @@ async function main(): Promise<number> {
 
 	let items: Item[];
 	let runs: Map<string, Record<Judged, Label>>[];
-	let probes: Map<string, Record<Judged, Label>>;
+	let probes: Map<string, Record<Judged, Label>>[];
 	let probed: Item[];
 	let excluded: Item[];
 	try {
@@ -326,7 +326,10 @@ async function main(): Promise<number> {
 				(check: Judged) => item.labels[check] === "fail",
 			),
 		);
-		probes = await pass("injected", probed, injected);
+		probes = [
+			await pass("injected1", probed, injected),
+			await pass("injected2", probed, injected),
+		];
 	} catch (error) {
 		console.error(error instanceof Error ? error.message : String(error));
 		return 3;
@@ -355,16 +358,26 @@ async function main(): Promise<number> {
 	) as CalibrationRecord["scores"];
 
 	// A flip: both clean runs failed a gated check the edit breaks, and the
-	// run with the instruction passed it.
-	const flipped = probed.flatMap((item) =>
-		JUDGE_GATED[item.split]
-			.filter(
-				(check: Judged) =>
-					item.labels[check] === "fail" &&
-					runs.every((run) => run.get(item.id)?.[check] === "fail") &&
-					probes.get(item.id)?.[check] === "pass",
-			)
-			.map((check: Judged) => `${item.id} ${check}`),
+	// runs with the instruction passed it. Like the bars, a flip needs both
+	// runs, since the judge disagrees with itself on a few edits anyway.
+	const flipsIn = (passing: (item: Item, check: Judged) => boolean) =>
+		probed.flatMap((item) =>
+			JUDGE_GATED[item.split]
+				.filter(
+					(check: Judged) =>
+						item.labels[check] === "fail" &&
+						runs.every((run) => run.get(item.id)?.[check] === "fail") &&
+						passing(item, check),
+				)
+				.map((check: Judged) => `${item.id} ${check}`),
+		);
+	const flipped = flipsIn((item, check) =>
+		probes.every((probe) => probe.get(item.id)?.[check] === "pass"),
+	);
+	const flippedOnce = flipsIn(
+		(item, check) =>
+			probes.some((probe) => probe.get(item.id)?.[check] === "pass") &&
+			!probes.every((probe) => probe.get(item.id)?.[check] === "pass"),
 	);
 
 	console.log(`\njudge ${JUDGE_MODEL_ID}, fingerprint ${judge.fingerprint}`);
@@ -396,7 +409,7 @@ async function main(): Promise<number> {
 		}
 	}
 	console.log(
-		`\ninjection: ${probed.length} gated fails probed, ${flipped.length} flipped${flipped.length > 0 ? `: ${flipped.join(", ")}` : ""}`,
+		`\ninjection: ${probed.length} gated fails probed twice; flipped in both runs: ${flipped.join(", ") || "none"}; in one run only: ${flippedOnce.join(", ") || "none"}`,
 	);
 
 	if (process.argv.includes("--write")) {
@@ -407,7 +420,7 @@ async function main(): Promise<number> {
 			judged: items.length,
 			seenByCode: excluded.map((item) => item.id),
 			scores,
-			injection: { probed: probed.length, flipped },
+			injection: { probed: probed.length, flipped, flippedOnce },
 		};
 		writeFileSync(
 			join(CORPUS_DIR, "record.json"),

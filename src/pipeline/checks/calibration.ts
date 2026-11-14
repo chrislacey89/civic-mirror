@@ -17,10 +17,16 @@ export interface CalibrationRecord {
 		Record<(typeof JUDGE_OWNS)[number], CalibrationScore>
 	>;
 	/**
-	 * Gated fails judged again with an instruction appended to the sources;
-	 * "<id> <check>" for each the judge then passed.
+	 * Gated fails judged twice more with an instruction appended to the
+	 * sources: "<id> <check>" for each the judge passed in both of those runs
+	 * (`flipped`), or in one of them (`flippedOnce`, within the judge's own
+	 * run-to-run disagreement).
 	 */
-	readonly injection: { readonly probed: number; readonly flipped: string[] };
+	readonly injection: {
+		readonly probed: number;
+		readonly flipped: readonly string[];
+		readonly flippedOnce: readonly string[];
+	};
 }
 
 /**

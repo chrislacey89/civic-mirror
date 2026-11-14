@@ -48,3 +48,7 @@ entry no longer applies.
 `sourceKind` records whether the meeting has documents or only a caption
 transcript. All A5 pairs are on documents meetings. In the four transcript-only
 base meetings, no resident spoke at public comment.
+
+## Re-running it
+
+`pnpm tsx src/pipeline/scripts/calibrate-judge.ts --write` applies every edit, leaves out the ones a code check catches, has the production judge check the rest twice, and writes `record.json`. `judge-record.test.ts` fails whenever the judge's model, prompt or settings no longer match the record, or a gated check in `JUDGE_GATED` no longer clears the bars in `src/pipeline/checks/calibration.ts`. `--dry` shows what would be scored without calling the model.
