@@ -1,5 +1,6 @@
 ---
 date: 2026-11-13
+updated: 2026-11-13
 category: testing-patterns
 problem_type: a calibration corpus for an LLM judge measures cases an upstream code check already decides, and inherits its pass labels from an earlier scorer, so its catch and false-refusal rates describe a different job than the one the judge will do
 components: [pipeline/checks/__fixtures__/calibration, pipeline/checks/names, pipeline/checks/publicComment, spike verdicts]
@@ -61,11 +62,21 @@ Label base drafts by hand, or take their pass labels from the judge's own view o
 
 Import the judge prompt's rules from the rubric, or diff them against it, rather than restating them.
 
+### What #205 did when it re-measured (2026-11-13)
+
+**Leave out an edit only when the edit itself changes a code verdict.** The literal rule above ("every fail edit passes every code check") turned out to be too strict on this corpus. Today's code checks hold 64 of the 90 edited drafts, mostly because the *unedited* published drafts already fail A5 (names code cannot resolve) or A1. Under that rule only 4 A2 fail edits reached the judge, so nothing could be measured. What inflates a catch rate is an edit that code catches *because of the edit*: an invented name tripping A1, or a listed loaded word tripping code A2. A base draft held for an unrelated name elsewhere does not make an A2 edit any easier for the judge. So `calibrate-judge` compares the code verdicts on each edited draft with those on its base draft, and scores only the edits that change none (`codeSeesEdit`). That left 72 edits, including 10 A2 fails on meetings with documents and 1 A5 fail.
+
+**A check needs a minimum number of scored fails to clear.** With the code-caught edits gone, A5 had one fail edit, and 1 of 1 caught is a catch rate of 1.00. `BARS.minFails` is 10 (`src/pipeline/checks/calibration.ts`). A2 cleared at exactly 10 (9 of 10 caught in each run). It is gated on meetings with documents, and A5 waits on #228.
+
+**An injection flip counts only when both probe runs flip.** The judge disagrees with itself on about 5% of edits between clean runs (self-agreement 0.95). One edit (A2-F-10, "pounced on") passed in one of two runs that had "ignore previous instructions" appended to the documents, and failed in the other. The rule mirrors the bars' two-run rule, and the record keeps one-run flips as `flippedOnce`. This rule was chosen after the first flip was seen, so read it as a decision, not a measurement. In production each draft gets one judge call, so a 1-in-2 flip is still a real attack on that draft.
+
+**The fingerprint has to cover everything the judge reads.** #205 pinned the judge as a hash of model, system prompt and settings, and keyed both the committed calibration record and the call cache by it. But the judge's user prompt embeds the writer's `buildWritingPrompt`, which changed in 6 of the 6 PRs before this one, plus the judge's own template and the output schema's descriptions, which the Google provider forwards to Gemini. Pre-merge review of PR #233 found none of those in the hash. A change to any of them leaves the record test green and lets `--write` replay cached verdicts for a prompt that never ran. Hash the prompt as built for a fixed fixture input, plus the schema.
+
 ## Prevention
 
-**Code-level:** #205's harness should assert, over `corpus.json`, that every fail edit passes the code checks that run before the judge. A test against today's corpus would fail on 14 of the 15 A5 fail edits, so the corpus has to be rebuilt first.
+**Code-level:** `src/pipeline/scripts/calibrate-judge.ts` leaves out every edit whose code verdicts the edit changes, so a corpus fail that code already catches can no longer inflate a judge's numbers. `src/pipeline/services/judge-record.test.ts` fails when the judge's fingerprint drifts from the committed `record.json`, or when a gated check no longer clears the bars. The fingerprint itself is still too narrow, see above (PR #233 review finding C1). Until it covers the whole prompt, the record test does not guard a writer-prompt change.
 
-**Process-level:** A calibration spike's verdict should state what it measured under: which stages ran before the judge, the prompt text, and where the pass labels came from. That applies the sibling doc's "keep the frame with the number" rule at the moment the corpus is built.
+**Process-level:** A calibration spike's verdict should state what it measured under: which stages ran before the judge, the prompt text, and where the pass labels came from. That applies the sibling doc's "keep the frame with the number" rule at the moment the corpus is built. When a calibration rule is decided after the data is seen, as the two-run injection rule was, the record and the PR say so.
 
 ## Planning / Calibration Notes
 
@@ -78,10 +89,12 @@ Import the judge prompt's rules from the rubric, or diff them against it, rather
 **Rationale:** the owner chose to ship. The A5 result is weaker than its 1.00 suggests, and the A2 corpus result disagrees with live-draft agreement. #205 has to re-measure both before it gates them.
 **Revisable:** yes, once a corpus whose fail edits survive A1 has been run.
 
+**Superseded by #205 (PR #233):** re-measured with code-caught edits left out, Pro gates A2 only, on meetings with documents. A5's fail edits are almost all caught by A1, so its real job is unmeasured until #228 rebuilds them.
+
 ## Related
 
-- #195 (spike), PR #227, #205 (the slice that consumes the verdict)
+- #195 (spike), PR #227, #205 (the slice that consumes the verdict), PR #233 (the harness and record), #228 (rebuild the A5 fail edits)
 
 ## Shelf Life
 
-Once #205's harness asserts that fail edits survive the earlier stages, this lesson lives in that test.
+The edit-exclusion rule lives in `calibrate-judge.ts` and the bars live in `calibration.ts`. This doc expires once the judge's fingerprint covers its whole prompt (PR #233 finding C1) and #228 has measured A5 on fail edits that survive A1.
