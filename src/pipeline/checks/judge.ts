@@ -47,6 +47,14 @@ export const JUDGE_GATED = {
 	Record<"documents" | "transcript", readonly GateId[]>
 >;
 
+/**
+ * Checks the judge decides only where code left them unchecked. A5's code
+ * check clears every name it can tie to an officials list or a role, and
+ * fails a resident named from a marked public-comment section, so the judge
+ * decides just the names `unresolvedNames()` returns.
+ */
+export const JUDGE_DECIDES_UNCHECKED_ONLY: readonly GateId[] = ["A5"];
+
 /** Which split of `JUDGE_GATED` a meeting falls in. */
 export function splitOf(input: SummarizationInput): keyof typeof JUDGE_GATED {
 	return hasSourceKind(input.sources, "documents") ? "documents" : "transcript";
@@ -79,5 +87,13 @@ export function judgeFingerprint(cfg: {
 	prompt: string;
 	settings: Record<string, unknown>;
 }): string {
-	return createHash("sha256").update(canonical(cfg)).digest("hex").slice(0, 16);
+	return hashOf(cfg);
+}
+
+/** A short hash of `value`, the same whatever order its object keys are in. */
+export function hashOf(value: unknown): string {
+	return createHash("sha256")
+		.update(canonical(value))
+		.digest("hex")
+		.slice(0, 16);
 }

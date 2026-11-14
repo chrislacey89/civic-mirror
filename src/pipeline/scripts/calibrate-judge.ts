@@ -43,23 +43,23 @@ import { resolveDatabaseUrl } from "#/db/database-url.ts";
 import * as schema from "#/db/schema.ts";
 import {
 	applyEdit,
+	applySourceEdits,
 	type CalibrationRecord,
 	type CorpusEdit,
 	clearsBars,
+	codeSeesEdit,
 	scoreCheck,
 } from "#/pipeline/checks/calibration.ts";
 import { runCodeChecks } from "#/pipeline/checks/index.ts";
 import {
+	hashOf,
+	JUDGE_DECIDES_UNCHECKED_ONLY,
 	JUDGE_GATED,
 	JUDGE_OWNS,
 	type JudgeInput,
 	splitOf,
 } from "#/pipeline/checks/judge.ts";
-import {
-	type CheckContext,
-	GATE_IDS,
-	type WriteUp,
-} from "#/pipeline/checks/types.ts";
+import type { CheckContext, WriteUp } from "#/pipeline/checks/types.ts";
 import { DEFAULT_BODIES } from "#/pipeline/composition.ts";
 import { officialsFor } from "#/pipeline/officials/index.ts";
 import {
@@ -168,33 +168,37 @@ async function itemsOf(entries: readonly Entry[]): Promise<Item[]> {
 		if (draft === null) {
 			throw new Error(`${entry.id}: "before" is no longer in the stored draft`);
 		}
+		const sources = applySourceEdits(
+			meeting.context.input.sources,
+			entry.sourceEdits ?? [],
+		);
+		if (sources === null) {
+			throw new Error(
+				`${entry.id}: a source edit's "before" is no longer in the documents once`,
+			);
+		}
+		const context = {
+			...meeting.context,
+			input: { ...meeting.context.input, sources },
+		};
 		return {
 			id: entry.id,
-			split: splitOf(meeting.context.input),
+			split: splitOf(context.input),
 			labels: entry.labels,
-			input: { context: meeting.context, draft },
+			input: { context, draft },
 			base: meeting.draft,
 		};
 	});
 }
 
-/** The code checks' gate verdicts on a draft, as text to compare. */
-function gateVerdicts(context: CheckContext, draft: WriteUp): string {
-	const { verdicts } = runCodeChecks(draft, context);
-	return JSON.stringify(GATE_IDS.map((id) => verdicts[id] ?? null));
-}
-
-/**
- * Whether a code gate says something about the edited draft it did not say
- * about the base. Code catches such an edit before the judge would see it,
- * so the edit measures that check, not the judge: an invented name trips
- * A1, a listed loaded word trips code A2. A base draft a code gate holds
- * for something else still measures the judge, since the edit is no easier
- * for it.
- */
-function codeSeesEdit(item: Item): boolean {
+/** Whether code checks catch the edit, so the judge would never see it. */
+function seenByCode(item: Item): boolean {
 	const { context, draft } = item.input;
-	return gateVerdicts(context, draft) !== gateVerdicts(context, item.base);
+	return codeSeesEdit(
+		runCodeChecks(item.base, context),
+		runCodeChecks(draft, context),
+		JUDGE_DECIDES_UNCHECKED_ONLY,
+	);
 }
 
 /** The meeting with the injected instruction appended to each document. */
@@ -218,14 +222,19 @@ function injected(input: JudgeInput): JudgeInput {
 const judge = createGeminiJudge({ modelId: JUDGE_MODEL_ID });
 const cacheDir = join(".context", "calibration", judge.fingerprint);
 
-/** The judge's verdicts on `input`, from the cache or a call retried three times. */
+/**
+ * The judge's verdicts on `input`, from the cache or a call retried three
+ * times. The cache is keyed by a hash of the input, so an edit rebuilt under
+ * the same id is judged again.
+ */
 async function verdictsOf(
 	file: string,
 	id: string,
 	input: JudgeInput,
 	cache: Map<string, Record<Judged, Label>>,
 ): Promise<Record<Judged, Label>> {
-	const cached = cache.get(id);
+	const key = hashOf(input);
+	const cached = cache.get(key);
 	if (cached !== undefined) return cached;
 	let last: unknown = "unavailable";
 	for (let attempt = 0; attempt < 3; attempt++) {
@@ -238,8 +247,8 @@ async function verdictsOf(
 						report.verdicts[check]?.outcome === "pass" ? "pass" : "fail",
 					]),
 				) as Record<Judged, Label>;
-				appendFileSync(file, `${JSON.stringify({ id, verdicts })}\n`);
-				cache.set(id, verdicts);
+				appendFileSync(file, `${JSON.stringify({ id, key, verdicts })}\n`);
+				cache.set(key, verdicts);
 				return verdicts;
 			}
 		} catch (error) {
@@ -264,23 +273,27 @@ async function pass(
 					.filter(Boolean)
 					.map((line) => {
 						const row = JSON.parse(line);
-						return [row.id, row.verdicts];
+						return [row.key, row.verdicts];
 					})
 			: [],
 	);
 	console.log(
-		`${name}: ${items.filter((i) => !cache.has(i.id)).length} to judge`,
+		`${name}: ${items.filter((i) => !cache.has(hashOf(prepare(i.input)))).length} to judge`,
 	);
+	const byId = new Map<string, Record<Judged, Label>>();
 	let next = 0;
 	const worker = async () => {
 		while (next < items.length) {
 			const item = items[next++];
 			if (item === undefined) return;
-			await verdictsOf(file, item.id, prepare(item.input), cache);
+			byId.set(
+				item.id,
+				await verdictsOf(file, item.id, prepare(item.input), cache),
+			);
 		}
 	};
 	await Promise.all(Array.from({ length: CONCURRENCY }, worker));
-	return cache;
+	return byId;
 }
 
 function percent(rate: number | null): string {
@@ -301,8 +314,8 @@ async function main(): Promise<number> {
 	let excluded: Item[];
 	try {
 		const applied = await itemsOf(entries.slice(0, limit));
-		items = applied.filter((item) => !codeSeesEdit(item));
-		excluded = applied.filter((item) => codeSeesEdit(item));
+		items = applied.filter((item) => !seenByCode(item));
+		excluded = applied.filter((item) => seenByCode(item));
 		console.log(
 			`${applied.length} edits applied; ${excluded.length} seen by code checks: ${
 				excluded.map((item) => item.id).join(", ") || "none"
