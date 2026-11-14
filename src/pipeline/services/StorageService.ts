@@ -304,6 +304,13 @@ interface StorageServiceInterface {
 		} | null,
 		DatabaseError
 	>;
+	/**
+	 * A meeting's fiscal decisions as stored, in the shape the writer and the
+	 * pre-publish checks read; empty when it has none.
+	 */
+	getStoredLedger(
+		meetingId: number,
+	): Effect.Effect<SummarizationOutput["fiscalDecisions"], DatabaseError>;
 	/** The stored summary of a meeting in the shape the same-meeting check takes, or null when it has none. */
 	getMatchableSummary(
 		meetingId: number,
@@ -345,6 +352,19 @@ interface StorageServiceInterface {
 		edited: { writeUp: WriteUp; publication: SummaryPublication } | null;
 		releasedAt?: Date;
 	}): Effect.Effect<{ released: boolean }, DatabaseError>;
+	/**
+	 * Replace a summary's text and publication state, and store the check run
+	 * as rounds, in one transaction. A release date and note are cleared, since
+	 * they were about the text being replaced. Fiscal decisions, budget
+	 * discussions and the summary's other columns are not touched. Fails when
+	 * the meeting has no summary.
+	 */
+	replaceSummaryText(input: {
+		meetingId: number;
+		highlights: readonly string[];
+		prose: string;
+		publication: SummaryPublication;
+	}): Effect.Effect<void, DatabaseError>;
 	/** Every check round stored at or after `since`, oldest first. */
 	listSummaryRoundsSince(
 		since: Date,
@@ -701,6 +721,24 @@ function StorageServiceLive(db: LibSQLDatabase<typeof schema>) {
 						message: error instanceof Error ? error.message : String(error),
 					}),
 			}),
+		getStoredLedger: (meetingId) =>
+			Effect.tryPromise({
+				try: () => getStoredLedgerQuery(db, meetingId),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "getStoredLedger",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
+		replaceSummaryText: (input) =>
+			Effect.tryPromise({
+				try: () => replaceSummaryTextTransaction(db, input),
+				catch: (error) =>
+					new DatabaseError({
+						operation: "replaceSummaryText",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+			}),
 		listSummaryRoundsSince: (since) =>
 			Effect.tryPromise({
 				try: () =>
@@ -1008,6 +1046,20 @@ async function getStoredWriteUpQuery(
 		.get();
 	if (!summary) return null;
 
+	return {
+		writeUp: {
+			highlights: summary.highlights as string[],
+			prose: summary.prose,
+		},
+		ledger: await getStoredLedgerQuery(db, meetingId),
+	};
+}
+
+/** A meeting's fiscal decisions as stored, in the order they were inserted. */
+async function getStoredLedgerQuery(
+	db: LibSQLDatabase<typeof schema>,
+	meetingId: number,
+): Promise<SummarizationOutput["fiscalDecisions"]> {
 	const decisions = await db
 		.select()
 		.from(schema.fiscalDecisions)
@@ -1015,31 +1067,25 @@ async function getStoredWriteUpQuery(
 		.orderBy(schema.fiscalDecisions.id)
 		.all();
 
-	return {
-		writeUp: {
-			highlights: summary.highlights as string[],
-			prose: summary.prose,
-		},
-		ledger: decisions.map((decision) => ({
-			title: decision.title,
-			description: decision.description,
-			amount: decision.amount,
-			originalAmount: decision.originalAmount,
-			budgetCategory: decision.budgetCategory ?? undefined,
-			status: decision.status as "approved" | "denied" | "tabled",
-			voteRecord:
-				(decision.voteRecord as {
-					yea: number;
-					nay: number;
-					abstain: number;
-				} | null) ?? undefined,
-			vendor: decision.vendor ?? undefined,
-			fundingSource: decision.fundingSource ?? undefined,
-			ordinanceNumber: decision.ordinanceNumber ?? undefined,
-			confidence: decision.confidence,
-			isRecurring: decision.isRecurring,
-		})),
-	};
+	return decisions.map((decision) => ({
+		title: decision.title,
+		description: decision.description,
+		amount: decision.amount,
+		originalAmount: decision.originalAmount,
+		budgetCategory: decision.budgetCategory ?? undefined,
+		status: decision.status as "approved" | "denied" | "tabled",
+		voteRecord:
+			(decision.voteRecord as {
+				yea: number;
+				nay: number;
+				abstain: number;
+			} | null) ?? undefined,
+		vendor: decision.vendor ?? undefined,
+		fundingSource: decision.fundingSource ?? undefined,
+		ordinanceNumber: decision.ordinanceNumber ?? undefined,
+		confidence: decision.confidence,
+		isRecurring: decision.isRecurring,
+	}));
 }
 
 async function releaseSummaryTransaction(
@@ -1073,6 +1119,30 @@ async function releaseSummaryTransaction(
 			await insertSummaryRounds(tx, input.meetingId, input.edited.publication);
 		}
 		return { released: true };
+	});
+}
+
+async function replaceSummaryTextTransaction(
+	db: LibSQLDatabase<typeof schema>,
+	input: Parameters<StorageServiceInterface["replaceSummaryText"]>[0],
+): Promise<void> {
+	await db.transaction(async (tx) => {
+		const result = await tx
+			.update(schema.summaries)
+			.set({
+				highlights: [...input.highlights],
+				prose: input.prose,
+				status: input.publication.status,
+				heldReason: input.publication.heldReason,
+				releasedAt: null,
+				releaseNote: null,
+			})
+			.where(eq(schema.summaries.meetingId, input.meetingId))
+			.run();
+		if (result.rowsAffected === 0) {
+			throw new Error(`Meeting ${input.meetingId} has no summary to replace.`);
+		}
+		await insertSummaryRounds(tx, input.meetingId, input.publication);
 	});
 }
 

@@ -328,6 +328,10 @@ function buildStubLayers(config: StubConfig) {
 			}),
 		detachTranscript: () => Effect.succeed(null),
 		detachDocument: () => Effect.succeed(false),
+		getStoredLedger: () =>
+			Effect.die("getStoredLedger is not used by the orchestrator"),
+		replaceSummaryText: () =>
+			Effect.die("replaceSummaryText is not used by the orchestrator"),
 	});
 
 	const meetingMatch = Layer.succeed(MeetingMatchService, {
