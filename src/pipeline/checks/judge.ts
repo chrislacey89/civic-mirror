@@ -34,24 +34,18 @@ export const JUDGE_OWNS = [
 ] as const satisfies readonly CheckId[];
 
 /**
- * The checks whose judge verdict may hold a page, by the meeting's sources,
- * as #195's calibration cleared them: catch rate ≥ 0.9, false-refusal rate
- * ≤ 0.1 and self-agreement ≥ 0.9 on the corpus. Every other judge verdict
- * only flags.
+ * The checks whose judge verdict may hold a page, by the meeting's sources:
+ * those whose calibration record (`calibrate-judge`) clears every bar in
+ * `calibration.ts`. Every other judge verdict only flags. A5 is not gated: its
+ * corpus fail edits are names the code names check already holds, so the
+ * judge's A5 job has not been measured.
  */
 export const JUDGE_GATED = {
-	documents: ["A2", "A5"],
+	documents: ["A2"],
 	transcript: [],
 } as const satisfies Readonly<
 	Record<"documents" | "transcript", readonly GateId[]>
 >;
-
-/**
- * Gated checks the judge decides only where code left them unchecked. A5's
- * code check clears every name it can tie to an officials list or a role,
- * so the judge decides just the names `unresolvedNames()` returns.
- */
-export const JUDGE_DECIDES_UNCHECKED_ONLY: readonly GateId[] = ["A5"];
 
 /** Which split of `JUDGE_GATED` a meeting falls in. */
 export function splitOf(input: SummarizationInput): keyof typeof JUDGE_GATED {

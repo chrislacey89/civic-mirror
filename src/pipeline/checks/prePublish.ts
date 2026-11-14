@@ -1,13 +1,7 @@
 import { feedbackFrom } from "./feedback.ts";
 import { groundedFigureCount } from "./figures.ts";
 import { CODE_CHECKS, runCodeChecks } from "./index.ts";
-import {
-	gatedFor,
-	JUDGE_DECIDES_UNCHECKED_ONLY,
-	JUDGE_OWNS,
-	type Judge,
-	type JudgeInput,
-} from "./judge.ts";
+import { gatedFor, JUDGE_OWNS, type Judge, type JudgeInput } from "./judge.ts";
 import {
 	type CheckContext,
 	type CheckId,
@@ -60,51 +54,30 @@ function checkingOf(args: {
 }
 
 /**
- * The gates code failed, less the gated ones it left unchecked for the
- * judge to decide. The judge runs only when this is empty, and the revise
- * loop measures improvement by it alone.
- */
-function codeGateFails(code: CheckReport, gated: readonly GateId[]): GateId[] {
-	return failedGates(code).filter(
-		(id) => !(gated.includes(id) && code.verdicts[id]?.outcome === "unchecked"),
-	);
-}
-
-/**
- * The verdicts the outcome rests on: code's, with each gated check the judge
- * decides replaced by the judge's verdict. The judge decides a gated check
- * code left unchecked, and one code passed unless it is in
- * `JUDGE_DECIDES_UNCHECKED_ONLY`.
+ * The verdicts the outcome rests on: code's, with each gated check replaced
+ * by the judge's verdict. The judge is asked only once every code gate
+ * passes, so its verdict replaces a pass.
  */
 function decided(round: Round, gated: readonly GateId[]): CheckReport {
 	const { judge } = round;
 	if (typeof judge === "string") return round.code;
 	const overrides = gated.flatMap((id) => {
-		const code = round.code.verdicts[id];
 		const judged = judge.verdicts[id];
-		if (judged === undefined || code?.outcome === "fail") return [];
-		if (
-			code?.outcome !== "unchecked" &&
-			JUDGE_DECIDES_UNCHECKED_ONLY.includes(id)
-		) {
-			return [];
-		}
-		return [[id, judged] as const];
+		return judged === undefined ? [] : [[id, judged] as const];
 	});
 	return {
 		verdicts: { ...round.code.verdicts, ...Object.fromEntries(overrides) },
 	};
 }
 
-/** The judge's fails that decide nothing: they flag the draft but never hold it. */
+/** The judge's fails on checks it may not gate: they flag the draft but never hold it. */
 function judgeFlags(round: Round, gated: readonly GateId[]): CheckId[] {
 	const { judge } = round;
 	if (typeof judge === "string") return [];
-	const verdicts = decided(round, gated).verdicts;
 	return JUDGE_OWNS.filter(
 		(id) =>
 			judge.verdicts[id]?.outcome === "fail" &&
-			verdicts[id] !== judge.verdicts[id],
+			!(gated as readonly CheckId[]).includes(id),
 	);
 }
 
@@ -157,7 +130,7 @@ async function roundOf(
 ): Promise<Round> {
 	const coded = codeRound(round, draft, checking);
 	const { context, judge, gated } = checking;
-	if (judge === undefined || codeGateFails(coded.code, gated).length > 0) {
+	if (judge === undefined || coded.gateFailures > 0) {
 		return coded;
 	}
 	const judged: Round = {
@@ -216,10 +189,10 @@ function outcomeOf(
  * not worse ties or improves, and may still have fixed some of a gate's
  * failed items.
  */
-function worsens(round: Round, best: Round, gated: readonly GateId[]): boolean {
+function worsens(round: Round, best: Round): boolean {
 	if (round.groundedFigures < best.groundedFigures) return true;
-	const fails = codeGateFails(round.code, gated).length;
-	const bestFails = codeGateFails(best.code, gated).length;
+	const fails = failedGates(round.code).length;
+	const bestFails = failedGates(best.code).length;
 	if (fails !== bestFails) return fails > bestFails;
 	return round.styleScore < best.styleScore;
 }
@@ -294,7 +267,7 @@ export async function prePublish(args: {
 		}
 		const round = await roundOf(rounds.length + 1, draft, checking);
 		rounds.push(round);
-		if (worsens(round, best, gated)) break;
+		if (worsens(round, best)) break;
 		const stuck =
 			!passesEveryCheck(round) &&
 			sameRevision(revision, revisionOf(round, gated));
@@ -324,8 +297,8 @@ export function newPublication(outcome: PrePublishOutcome): SummaryPublication {
 
 /**
  * One line per gate a held outcome failed, from the round its best draft came
- * from: the gate id and the quoted text, or why it went unchecked. A judge's
- * A5 fail quotes nothing, since its quote would name the resident.
+ * from: the gate id and the quoted text, or why it went unchecked. A gate the
+ * judge failed is marked "(judge)".
  */
 export function gateEvidence(outcome: PrePublishOutcome): string[] {
 	if (outcome.kind !== "held") return [];
@@ -335,11 +308,7 @@ export function gateEvidence(outcome: PrePublishOutcome): string[] {
 		if (verdict?.outcome === "fail") return `${id}: ${verdict.evidence}`;
 		const judged =
 			typeof round?.judge === "object" ? round.judge.verdicts[id] : undefined;
-		if (judged?.outcome === "fail") {
-			return id === "A5"
-				? "A5 (judge): a person named in the draft spoke as a member of the public"
-				: `${id} (judge): ${judged.evidence}`;
-		}
+		if (judged?.outcome === "fail") return `${id} (judge): ${judged.evidence}`;
 		if (verdict?.outcome === "unchecked") {
 			return `${id}: unchecked (${verdict.reason})`;
 		}

@@ -90,17 +90,18 @@ describe("scoreCheck", () => {
 describe("clearsBars", () => {
 	const clearing: CalibrationScore = {
 		n: 78,
-		fails: 12,
+		fails: 10,
 		catchRate: [0.9, 1],
 		falseRefusal: [0.1, 0.05],
 		selfAgreement: 0.9,
 	};
 
-	it("clears at catch ≥ 0.9, false refusal ≤ 0.1 and self-agreement ≥ 0.9 in both runs", () => {
+	it("clears at 10 fails measured, catch ≥ 0.9, false refusal ≤ 0.1 and self-agreement ≥ 0.9 in both runs", () => {
 		expect(clearsBars(clearing)).toBe(true);
 	});
 
 	it.each([
+		["fewer than 10 fails were measured", { fails: 9 }],
 		["a run's catch rate is below 0.9", { catchRate: [0.89, 1] }],
 		["a run's false refusal is above 0.1", { falseRefusal: [0.05, 0.11] }],
 		["self-agreement is below 0.9", { selfAgreement: 0.89 }],

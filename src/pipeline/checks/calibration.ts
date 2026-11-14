@@ -1,4 +1,25 @@
+import type { JUDGE_GATED, JUDGE_OWNS } from "./judge.ts";
 import type { WriteUp } from "./types.ts";
+
+/** What `calibrate-judge --write` records beside the corpus. */
+export interface CalibrationRecord {
+	/** The fingerprint of the judge that was calibrated. */
+	readonly fingerprint: string;
+	readonly model: string;
+	/** ISO date. */
+	readonly calibratedAt: string;
+	/** How many corpus edits were applied and judged. */
+	readonly applied: number;
+	readonly scores: Record<
+		keyof typeof JUDGE_GATED,
+		Record<(typeof JUDGE_OWNS)[number], CalibrationScore>
+	>;
+	/**
+	 * Gated fails judged again with an instruction appended to the sources;
+	 * "<id> <check>" for each the judge then passed.
+	 */
+	readonly injection: { readonly probed: number; readonly flipped: string[] };
+}
 
 /**
  * One edit from the calibration corpus
@@ -87,16 +108,22 @@ export function scoreCheck(
 	};
 }
 
-/** The bars a judge must clear, in both runs, to gate a check (PRD #193 › Calibration). */
+/**
+ * The bars a judge must clear, in both runs, to gate a check: PRD #193 ›
+ * Calibration's three rates, measured on at least `minFails` fail edits that
+ * reach the judge, so one lucky catch cannot clear a check.
+ */
 export const BARS = {
+	minFails: 10,
 	catchRate: 0.9,
 	falseRefusal: 0.1,
 	selfAgreement: 0.9,
 } as const;
 
-/** Whether a score clears every bar. A check with no fail measured cannot clear. */
+/** Whether a score clears every bar. */
 export function clearsBars(score: CalibrationScore): boolean {
 	return (
+		score.fails >= BARS.minFails &&
 		score.catchRate.every((rate) => rate !== null && rate >= BARS.catchRate) &&
 		score.falseRefusal.every(
 			(rate) => rate === null || rate <= BARS.falseRefusal,

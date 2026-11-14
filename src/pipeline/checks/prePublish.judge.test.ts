@@ -90,6 +90,7 @@ describe("prePublish with a judge", () => {
 			gateFails: ["A2"],
 		});
 		expect(outcome.rounds[0]?.judgeFingerprint).toBe("fp-1");
+		expect(gateEvidence(outcome)).toEqual(["A2 (judge): sensibly suggested"]);
 	});
 
 	it.each([
@@ -203,43 +204,28 @@ describe("prePublish with a judge", () => {
 			},
 		];
 
-		it("on a meeting with documents, a name code cannot resolve goes to the judge, and its pass publishes", async () => {
+		it.each([
+			["a meeting with documents", documentsMeeting],
+			["a transcript-only meeting", transcriptMeeting],
+		])("on %s, a name code cannot resolve holds without asking the judge", async (_, context) => {
 			const { judge, calls } = judging(() => report());
 			const outcome = await prePublish({
 				draft,
-				context: documentsMeeting,
+				context,
 				revise: noRevision,
 				cap: 1,
 				checks: unresolvedName,
 				judge,
 			});
-			expect(calls).toHaveLength(1);
-			expect(outcome.kind).toBe("publish");
-		});
-
-		it("on a meeting with documents, the judge's fail on an unresolved name holds, and the evidence names no one", async () => {
-			const { judge } = judging(() =>
-				report({ A5: fail("resident Jane Doe asked about the bid") }),
-			);
-			const outcome = await prePublish({
-				draft,
-				context: documentsMeeting,
-				revise: noRevision,
-				cap: 1,
-				checks: unresolvedName,
-				judge,
-			});
+			expect(calls).toEqual([]);
 			expect(outcome).toMatchObject({
 				kind: "held",
 				reason: "gate-failed",
 				gateFails: ["A5"],
 			});
-			const evidence = gateEvidence(outcome).join("\n");
-			expect(evidence).toContain("A5 (judge)");
-			expect(evidence).not.toContain("Jane Doe");
 		});
 
-		it("when code resolved every name, the judge's A5 fail flags and does not hold", async () => {
+		it("the judge's A5 fail flags and does not hold", async () => {
 			const { judge } = judging(() =>
 				report({ A5: fail("Town Manager Mike Farmer said") }),
 			);
@@ -254,24 +240,6 @@ describe("prePublish with a judge", () => {
 			expect(outcome).toMatchObject({
 				kind: "publish-flagged",
 				styleFails: ["A5"],
-			});
-		});
-
-		it("on a transcript-only meeting, an unresolved name holds without asking the judge", async () => {
-			const { judge, calls } = judging(() => report());
-			const outcome = await prePublish({
-				draft,
-				context: transcriptMeeting,
-				revise: noRevision,
-				cap: 1,
-				checks: unresolvedName,
-				judge,
-			});
-			expect(calls).toEqual([]);
-			expect(outcome).toMatchObject({
-				kind: "held",
-				reason: "gate-failed",
-				gateFails: ["A5"],
 			});
 		});
 	});

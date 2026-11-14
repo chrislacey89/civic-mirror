@@ -32,7 +32,7 @@ describe("judgeFingerprint", () => {
 });
 
 describe("gatedFor", () => {
-	it("gates A2 and A5 on a meeting with documents", () => {
+	it("gates A2 on a meeting with documents", () => {
 		expect(
 			gatedFor({
 				meetingContext: "Town Council, 2026-05-11",
@@ -41,7 +41,7 @@ describe("gatedFor", () => {
 					{ kind: "transcript", text: "Captions." },
 				],
 			}),
-		).toEqual(["A2", "A5"]);
+		).toEqual(["A2"]);
 	});
 
 	it("gates nothing on a transcript-only meeting", () => {
