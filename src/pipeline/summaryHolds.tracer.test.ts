@@ -60,7 +60,7 @@ async function tracerDb() {
 				const documents: MeetingInput["documents"] = [
 					{
 						sourceUrl: `https://example.com/${input.date}.pdf`,
-						rawText: `Minutes of ${input.date}. The council approved the paving bid.`,
+						rawText: `Minutes of ${input.date}. The council approved the paving bid of $12,000.`,
 						documentType: "minutes",
 						extractionMethod: "text-layer",
 					},
@@ -223,6 +223,80 @@ describe("summaries CLI (tracer)", () => {
 		const again = await t.run(url, [...release, "--confirm"]);
 		expect(again.code).not.toBe(0);
 		expect(again.stderr).toContain("is not held");
+		t.save();
+	}, 60_000);
+
+	it("slice 3: summaries:release --file refuses a draft that fails a gate, and publishes one that passes as a new round", async () => {
+		const { url, db, store } = await tracerDb();
+		await store({ date: "2025-05-27", text: TRUNCATED, held: true });
+		const t = new Transcript("slice-3");
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "civic-mirror-release-"));
+		onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
+		const ungrounded = path.join(dir, "ungrounded.md");
+		fs.writeFileSync(
+			ungrounded,
+			"- Council approves paving bid\n\nThe council approved the paving bid of $99,000.\n",
+		);
+		const grounded = path.join(dir, "grounded.md");
+		fs.writeFileSync(
+			grounded,
+			"- Council approves paving bid\n\nThe council approved the paving bid of $12,000.\n",
+		);
+		const release = (file: string) => [
+			"summaries:release",
+			"--body",
+			BODY.slug,
+			"--date",
+			"2025-05-27",
+			"--note",
+			"Finished the sentence",
+			"--file",
+			file,
+			"--confirm",
+		];
+		const row = () =>
+			db
+				.select()
+				.from(schema.summaries)
+				.where(eq(schema.summaries.meetingId, 1))
+				.get();
+		const rounds = () =>
+			db
+				.select()
+				.from(schema.summaryRounds)
+				.where(eq(schema.summaryRounds.meetingId, 1))
+				.all();
+		const roundsBefore = (await rounds()).length;
+
+		t.note(
+			"An edit with a figure no source has is refused, even with --confirm.",
+		);
+		const refused = await t.run(url, release(ungrounded));
+		expect(refused.code).not.toBe(0);
+		expect(refused.stderr).toContain("fails a gate");
+		expect(refused.stderr).toContain("$99,000");
+		expect((await row())?.status).toBe("held");
+		expect((await row())?.prose).toBe(TRUNCATED.prose);
+		expect(await rounds()).toHaveLength(roundsBefore);
+
+		t.note(
+			"An edit that passes every gate is published in place of the held draft.",
+		);
+		const done = await t.run(url, release(grounded));
+		expect(done.code).toBe(0);
+		expect(done.stdout).toContain("the edited draft");
+		const released = await row();
+		expect(released?.status).toBe("published");
+		expect(released?.prose).toBe(
+			"The council approved the paving bid of $12,000.",
+		);
+		expect(released?.releaseNote).toBe("Finished the sentence");
+		const after = await rounds();
+		expect(after).toHaveLength(roundsBefore + 1);
+		expect(after.at(-1)?.runId).toMatch(/^release-/);
+		expect(after.at(-1)?.prose).toBe(
+			"The council approved the paving bid of $12,000.",
+		);
 		t.save();
 	}, 60_000);
 });

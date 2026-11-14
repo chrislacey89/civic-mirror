@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { config as loadDotenv } from "dotenv";
@@ -342,6 +343,13 @@ const releaseNote = Flag.String("note").pipe(
 	Flag.withDescription("Why the summary is released; stored with it."),
 );
 
+const releaseFile = Flag.String("file").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		'An edited draft to publish instead: highlights as a "- " list, a blank line, then the prose. It must pass every gate.',
+	),
+);
+
 const releaseConfirm = Flag.Boolean("confirm").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription("Publish the summary. Without it, nothing is written."),
@@ -354,9 +362,10 @@ const summariesReleaseCommand = Command.make(
 		date: releaseMeetingDate,
 		session: releaseSession,
 		note: releaseNote,
+		file: releaseFile,
 		confirm: releaseConfirm,
 	},
-	({ bodySlug, date, session, note, confirm }) =>
+	({ bodySlug, date, session, note, file, confirm }) =>
 		Effect.gen(function* () {
 			const layers = yield* Effect.try({
 				try: () => buildProductionLayers({ dryRun: false }),
@@ -370,7 +379,25 @@ const summariesReleaseCommand = Command.make(
 				yield* Console.log(
 					`[summaries:release] target=${(resolveDatabaseUrl() ?? "").replace(/\?.*$/, "")}`,
 				);
-				const plan = yield* planRelease({ bodySlug, date, session, note });
+				const editedText = yield* Option.match(file, {
+					onNone: () => Effect.succeed(undefined),
+					onSome: (path) =>
+						Effect.try({
+							try: () => readFileSync(path, "utf8"),
+							catch: (error) =>
+								new ReleaseRefused({
+									message: `Cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+									details: [],
+								}),
+						}),
+				});
+				const plan = yield* planRelease({
+					bodySlug,
+					date,
+					session,
+					note,
+					...(editedText === undefined ? {} : { editedText }),
+				});
 				const now = new Date();
 				yield* Console.log(
 					`[summaries:release] meeting id=${plan.held.meetingId} body=${bodySlug} date=${date} session=${JSON.stringify(session)}`,

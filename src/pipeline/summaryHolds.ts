@@ -1,10 +1,37 @@
 import { Data, Effect } from "effect";
+import {
+	checkDraft,
+	gateEvidence,
+	toPublication,
+} from "#/pipeline/checks/prePublish.ts";
 import type { SummaryPublication, WriteUp } from "#/pipeline/checks/types.ts";
 import type { DatabaseError } from "#/pipeline/errors.ts";
+import { officialsFor } from "#/pipeline/officials/index.ts";
 import {
 	type HeldSummary,
 	StorageService,
 } from "#/pipeline/services/StorageService.ts";
+import { readableSources } from "#/pipeline/sources.ts";
+
+/**
+ * Read an edited draft for `summaries:release --file`: the highlights as a
+ * "- " list, a blank line, then the prose. Null when either part is missing.
+ */
+export function parseReleaseFile(text: string): WriteUp | null {
+	const lines = text.replace(/\r\n/g, "\n").split("\n");
+	let i = 0;
+	while (i < lines.length && lines[i]?.trim() === "") i++;
+	const highlights: string[] = [];
+	while (i < lines.length && lines[i]?.startsWith("- ")) {
+		const highlight = lines[i]?.slice(2).trim() ?? "";
+		if (highlight !== "") highlights.push(highlight);
+		i++;
+	}
+	if (i < lines.length && lines[i]?.trim() !== "") return null;
+	const prose = lines.slice(i).join("\n").trim();
+	if (highlights.length === 0 || prose === "") return null;
+	return { highlights, prose };
+}
 
 /**
  * One line of `summaries:held`: the date, the body and session, why it is
@@ -54,6 +81,8 @@ export function planRelease(input: {
 	date: string;
 	session: string;
 	note: string;
+	/** The text of a `--file` draft, released in place of the held one. */
+	editedText?: string;
 }): Effect.Effect<ReleasePlan, ReleaseRefused | DatabaseError, StorageService> {
 	return Effect.gen(function* () {
 		if (input.note.trim() === "") {
@@ -79,7 +108,44 @@ export function planRelease(input: {
 				details: [],
 			});
 		}
-		return { held, edited: null };
+		if (input.editedText === undefined) return { held, edited: null };
+
+		const writeUp = parseReleaseFile(input.editedText);
+		if (writeUp === null) {
+			return yield* new ReleaseRefused({
+				message:
+					'The file is not a draft: write the highlights as a "- " list, a blank line, then the prose.',
+				details: [],
+			});
+		}
+		// The same code checks a model draft goes through, against the stored
+		// sources and ledger, read only.
+		const stored = yield* storage.getStoredWriteUp(meeting.meetingId);
+		const sources = yield* storage.getMeetingSources(meeting.meetingId);
+		const outcome = checkDraft({
+			draft: { ...writeUp, finishReason: null, usage: null },
+			context: {
+				input: {
+					sources: readableSources(sources),
+					meetingContext: `${input.bodySlug}, ${input.date}`,
+				},
+				ledger: stored?.ledger ?? [],
+				officials: officialsFor(input.bodySlug, input.date),
+			},
+		});
+		if (outcome.kind === "held") {
+			return yield* new ReleaseRefused({
+				message: "The edited draft fails a gate; nothing was written.",
+				details: gateEvidence(outcome),
+			});
+		}
+		return {
+			held,
+			edited: {
+				writeUp,
+				publication: toPublication(outcome, `release-${crypto.randomUUID()}`),
+			},
+		};
 	});
 }
 
