@@ -1,0 +1,23 @@
+{
+	"schema_version": 1,
+	"id": "sample",
+	"transcript_path": "transcripts/sample.txt",
+	"meeting_context": "Fixture meeting, 2026-01-01, agenda approval",
+	"graded_at": "2026-05-02",
+	"graded_by": "fixture",
+	"ground_truth": {
+		"category_scores": {
+			"procedural_breakdown": { "score": 0, "evidence_quotes": [] },
+			"question_looping": { "score": 0, "evidence_quotes": [] },
+			"defensive_hedging": { "score": 0, "evidence_quotes": [] },
+			"timeline_pressure": { "score": 0, "evidence_quotes": [] },
+			"improvised_workarounds": { "score": 0, "evidence_quotes": [] },
+			"visible_dissent": { "score": 0, "evidence_quotes": [] },
+			"post_hoc_corrections": { "score": 0, "evidence_quotes": [] }
+		},
+		"level": "routine",
+		"headline": "Routine agenda approval",
+		"narrative": "Standard motion-second-vote pattern, no friction observed.",
+		"notes": ""
+	}
+}
