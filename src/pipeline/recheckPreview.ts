@@ -64,29 +64,29 @@ const writeUp = z.object({
  * An outcome as the file holds it. `bestRound` is the index of the round the
  * best draft came from, so reading it back can point `best` at that round's
  * draft again: `gateEvidence` finds the round by identity, not by value. It
- * is null only when no round holds the best draft.
+ * is required, so a file cannot carry text that no round holds.
  */
 const savedOutcome = z.discriminatedUnion("kind", [
 	z.object({
 		kind: z.literal("publish"),
 		best: writeUp,
-		bestRound: z.number().int().nullable(),
-		rounds: z.array(round),
+		bestRound: z.number().int(),
+		rounds: z.array(round).min(1),
 	}),
 	z.object({
 		kind: z.literal("publish-flagged"),
 		best: writeUp,
-		bestRound: z.number().int().nullable(),
+		bestRound: z.number().int(),
 		styleFails: z.array(checkId),
-		rounds: z.array(round),
+		rounds: z.array(round).min(1),
 	}),
 	z.object({
 		kind: z.literal("held"),
 		reason: z.enum(["gate-failed", "critic-unavailable"]),
 		best: writeUp,
-		bestRound: z.number().int().nullable(),
+		bestRound: z.number().int(),
 		gateFails: z.array(gateId),
-		rounds: z.array(round),
+		rounds: z.array(round).min(1),
 	}),
 ]);
 
@@ -136,20 +136,22 @@ export function decodeRecheckPreview(text: string): RecheckEntry[] {
 	return parsed.data.entries.map(({ meetingId, runId, outcome }) => {
 		const { bestRound, ...rest } = outcome;
 		const rounds: readonly Round[] = rest.rounds;
-		let best: WriteUp = rest.best;
-		if (bestRound !== null) {
-			const draft = rounds[bestRound]?.draft;
-			if (
-				draft === undefined ||
-				draft.prose !== best.prose ||
-				JSON.stringify(draft.highlights) !== JSON.stringify(best.highlights)
-			) {
-				throw new Error(
-					`Not a recheck preview file: meeting ${meetingId}'s best draft is not round ${bestRound}'s.`,
-				);
-			}
-			best = draft;
+		const draft = rounds[bestRound]?.draft;
+		if (
+			draft === undefined ||
+			draft.prose !== rest.best.prose ||
+			JSON.stringify(draft.highlights) !== JSON.stringify(rest.best.highlights)
+		) {
+			throw new Error(
+				`Not a recheck preview file: meeting ${meetingId}'s best draft is not round ${bestRound}'s.`,
+			);
 		}
+		if (rest.kind !== "held" && rounds[bestRound]?.gateFailures !== 0) {
+			throw new Error(
+				`Not a recheck preview file: meeting ${meetingId} is marked to publish, but round ${bestRound} fails a gate.`,
+			);
+		}
+		const best: WriteUp = draft;
 		return {
 			meetingId,
 			runId,

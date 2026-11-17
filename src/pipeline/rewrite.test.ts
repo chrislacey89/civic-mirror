@@ -267,6 +267,39 @@ describe("recheck preview and apply", () => {
 		);
 	});
 
+	it("if a preview file has no best round, refuses to read it", async () => {
+		const { preview } = await setup();
+		const file = JSON.parse(encodeRecheckPreview([await preview()]));
+		file.entries[0].outcome.bestRound = null;
+		file.entries[0].outcome.best.prose = "Jane Roe opposed the paving bid.";
+
+		expect(() => decodeRecheckPreview(JSON.stringify(file))).toThrow(
+			/Not a recheck preview file/,
+		);
+	});
+
+	it("if a preview file has no rounds, refuses to read it", async () => {
+		const { preview } = await setup();
+		const file = JSON.parse(encodeRecheckPreview([await preview()]));
+		file.entries[0].outcome.bestRound = null;
+		file.entries[0].outcome.rounds = [];
+
+		expect(() => decodeRecheckPreview(JSON.stringify(file))).toThrow(
+			/Not a recheck preview file/,
+		);
+	});
+
+	it("if a preview file marks a draft to publish whose best round fails a gate, refuses to read it", async () => {
+		const { preview } = await setup();
+		const file = JSON.parse(encodeRecheckPreview([await preview()]));
+		const { bestRound, rounds } = file.entries[0].outcome;
+		rounds[bestRound].gateFailures = 1;
+
+		expect(() => decodeRecheckPreview(JSON.stringify(file))).toThrow(
+			/fails a gate/,
+		);
+	});
+
 	it("if a file is not a recheck preview, refuses to read it", () => {
 		expect(() =>
 			decodeRecheckPreview(JSON.stringify({ version: 1, entries: [{}] })),
