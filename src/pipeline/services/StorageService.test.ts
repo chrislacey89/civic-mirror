@@ -86,19 +86,22 @@ const testMeetingInput = {
 		prose:
 			"The Town Council met on March 23, 2026. The primary action was approval of $50,000 for road repairs on Sale Street.",
 		model: "gemini-2.5-flash",
-		publication: publicationOf(
-			{
-				highlights: ["Approved $50,000 for Sale Street road repairs"],
-				prose: "The primary action was approval of $50,000 for road repairs.",
-			},
-			"test-run",
-			[
+		// A getter, so each use gets its own run id: two meetings may not share one.
+		get publication() {
+			return publicationOf(
 				{
-					kind: "documents",
-					text: "Motion to approve $50,000 for road repairs.",
+					highlights: ["Approved $50,000 for Sale Street road repairs"],
+					prose: "The primary action was approval of $50,000 for road repairs.",
 				},
-			],
-		),
+				undefined,
+				[
+					{
+						kind: "documents",
+						text: "Motion to approve $50,000 for road repairs.",
+					},
+				],
+			);
+		},
 	},
 	fiscalDecisions: [
 		{

@@ -34,7 +34,7 @@ export function summarized(
  */
 export function publicationOf(
 	text: WriteUp,
-	runId = "test-run",
+	runId: string = crypto.randomUUID(),
 	sources: LabelledSource[] = [],
 ): SummaryPublication {
 	return toPublication(

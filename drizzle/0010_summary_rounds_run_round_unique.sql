@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `summary_rounds_run_id_round_unique` ON `summary_rounds` (`run_id`,`round`);

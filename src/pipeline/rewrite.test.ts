@@ -306,6 +306,23 @@ describe("recheck preview and apply", () => {
 		).toThrow(/Not a recheck preview file/);
 	});
 
+	it("if the same saved preview is applied twice, refuses the second time and leaves the summary and rounds as the first apply stored them", async () => {
+		const { preview, apply, rows } = await setup();
+		const entry = await preview();
+		const [saved] = decodeRecheckPreview(encodeRecheckPreview([entry]));
+		if (!saved) throw new Error("the saved preview holds no entry");
+		await apply(saved);
+		const afterFirst = await rows();
+
+		const error = await apply(saved).then(
+			() => undefined,
+			(e: unknown) => e,
+		);
+
+		expect(error).toBeDefined();
+		expect(await rows()).toEqual(afterFirst);
+	});
+
 	it("if the writing call fails, fails and leaves the stored summary unchanged", async () => {
 		const { recheck, rows } = await setup(async () => {
 			throw new Error("503 Service Unavailable");
