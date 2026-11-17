@@ -9,7 +9,16 @@ import type {
 	PrePublishOutcome,
 	WrittenDraft,
 } from "#/pipeline/checks/types.ts";
-import { describeRecheck, recheckMeetingSummary } from "#/pipeline/rewrite.ts";
+import type { RecheckEntry } from "#/pipeline/recheckPreview.ts";
+import {
+	decodeRecheckPreview,
+	encodeRecheckPreview,
+} from "#/pipeline/recheckPreview.ts";
+import {
+	applyRecheckEntry,
+	describeRecheck,
+	previewMeetingRecheck,
+} from "#/pipeline/rewrite.ts";
 import {
 	StorageService,
 	StorageServiceLive,
@@ -57,6 +66,7 @@ async function setup(writeFn: SummarizationWriteFn = async () => WHOLE) {
 		.run();
 
 	let ledgerCalls = 0;
+	let writeCalls = 0;
 	const writtenFrom: SummarizationOutput["fiscalDecisions"][] = [];
 	const layers = Layer.mergeAll(
 		StorageServiceLive(db),
@@ -68,6 +78,7 @@ async function setup(writeFn: SummarizationWriteFn = async () => WHOLE) {
 				throw new Error("the ledger call must not run");
 			},
 			writeFn: async (input, ledger, revision) => {
+				writeCalls++;
 				writtenFrom.push(ledger);
 				return writeFn(input, ledger, revision);
 			},
@@ -107,16 +118,27 @@ async function setup(writeFn: SummarizationWriteFn = async () => WHOLE) {
 		}).pipe(Effect.provide(layers)),
 	);
 
-	const recheck = (confirm: boolean) =>
+	const preview = () =>
 		Effect.runPromise(
-			recheckMeetingSummary({
+			previewMeetingRecheck({
 				meetingId: meeting.id,
 				meetingContext: "Town Council, 2025-05-27",
 				glossary: undefined,
 				officials: [],
-				confirm,
 			}).pipe(Effect.provide(layers)),
 		);
+
+	const apply = (entry: RecheckEntry) =>
+		Effect.runPromise(applyRecheckEntry(entry).pipe(Effect.provide(layers)));
+
+	/** A preview saved to a file, read back, and applied: what --confirm --from does. */
+	const recheck = async () => {
+		const entry = await preview();
+		const [saved] = decodeRecheckPreview(encodeRecheckPreview([entry]));
+		if (!saved) throw new Error("the saved preview holds no entry");
+		await apply(saved);
+		return entry;
+	};
 
 	const rows = async () => ({
 		summary: await db
@@ -144,19 +166,41 @@ async function setup(writeFn: SummarizationWriteFn = async () => WHOLE) {
 	return {
 		db,
 		meeting,
+		preview,
+		apply,
 		recheck,
 		rows,
 		ledgerCalls: () => ledgerCalls,
+		writeCalls: () => writeCalls,
 		writtenFrom,
 	};
 }
 
-describe("recheckMeetingSummary", () => {
+describe("recheck preview and apply", () => {
+	it("when a saved preview is applied, stores its text and rounds under its run id exactly and makes no second writing call", async () => {
+		const { recheck, rows, writeCalls } = await setup();
+
+		const previewed = await recheck();
+
+		const after = await rows();
+		expect(writeCalls()).toBe(1);
+		expect(after.summary).toMatchObject({
+			highlights: previewed.outcome.best.highlights,
+			prose: previewed.outcome.best.prose,
+			status: "published",
+			heldReason: null,
+		});
+		const stored = after.rounds.filter((r) => r.runId === previewed.runId);
+		expect(stored.map((r) => r.prose)).toEqual(
+			previewed.outcome.rounds.map((r) => r.draft.prose),
+		);
+	});
+
 	it("when run with confirm, leaves fiscal_decisions and budget_discussions byte for byte and never calls the ledger generator", async () => {
 		const { recheck, rows, ledgerCalls, writtenFrom } = await setup();
 		const before = await rows();
 
-		const result = await recheck(true);
+		const result = await recheck();
 
 		const after = await rows();
 		expect(result.outcome.kind).toBe("publish");
@@ -168,16 +212,14 @@ describe("recheckMeetingSummary", () => {
 		expect(after.summary?.prose).toBe(WHOLE.prose);
 	});
 
-	it("if run without confirm, returns the outcome and writes nothing", async () => {
-		const { recheck, rows } = await setup();
+	it("a preview returns the outcome under a new run id and writes nothing", async () => {
+		const { preview, rows } = await setup();
 		const before = await rows();
 
-		const result = await recheck(false);
+		const result = await preview();
 
-		expect(result).toMatchObject({
-			written: false,
-			outcome: { kind: "publish" },
-		});
+		expect(result.outcome.kind).toBe("publish");
+		expect(result.runId).not.toBe("first-run");
 		expect(result.outcome.best.highlights).toEqual(WHOLE.highlights);
 		expect(await rows()).toEqual(before);
 	});
@@ -187,7 +229,7 @@ describe("recheckMeetingSummary", () => {
 		expect((await rows()).summary?.status).toBe("held");
 		expect(await listRecentMeetingsQuery(db, "town-council")).toEqual([]);
 
-		await recheck(true);
+		await recheck();
 
 		expect((await rows()).summary).toMatchObject({
 			status: "published",
@@ -203,7 +245,7 @@ describe("recheckMeetingSummary", () => {
 			prose: "The council accepted the paving bid of",
 		}));
 
-		const result = await recheck(true);
+		const result = await recheck();
 
 		const after = await rows();
 		expect(result.outcome.kind).toBe("held");
@@ -215,13 +257,29 @@ describe("recheckMeetingSummary", () => {
 		expect(new Set(after.rounds.map((round) => round.runId)).size).toBe(2);
 	});
 
+	it("if a preview file's best draft was edited so it no longer matches its round, refuses to read it", async () => {
+		const { preview } = await setup();
+		const file = JSON.parse(encodeRecheckPreview([await preview()]));
+		file.entries[0].outcome.best.prose = "Jane Roe opposed the paving bid.";
+
+		expect(() => decodeRecheckPreview(JSON.stringify(file))).toThrow(
+			/best draft is not round 0's/,
+		);
+	});
+
+	it("if a file is not a recheck preview, refuses to read it", () => {
+		expect(() =>
+			decodeRecheckPreview(JSON.stringify({ version: 1, entries: [{}] })),
+		).toThrow(/Not a recheck preview file/);
+	});
+
 	it("if the writing call fails, fails and leaves the stored summary unchanged", async () => {
 		const { recheck, rows } = await setup(async () => {
 			throw new Error("503 Service Unavailable");
 		});
 		const before = await rows();
 
-		const error = await recheck(true).then(
+		const error = await recheck().then(
 			() => undefined,
 			(e: unknown) => e,
 		);
@@ -261,6 +319,21 @@ describe("describeRecheck", () => {
 		expect(lines[0]).toBe("  outcome:       held (gate-failed)");
 		expect(lines[1]).toMatch(/^ {2}gate failures: TRUNC: /);
 		expect(lines[2]).toBe(`  headline:      ${WHOLE.highlights[0]}`);
+	});
+
+	it("prints the same gate evidence for a held outcome read back from its preview file", () => {
+		const outcome = checked({
+			...WHOLE,
+			prose: "The council accepted the paving bid of",
+		});
+		const [saved] = decodeRecheckPreview(
+			encodeRecheckPreview([{ meetingId: 1, runId: "run", outcome }]),
+		);
+
+		expect(saved && describeRecheck(saved.outcome)).toEqual(
+			describeRecheck(outcome),
+		);
+		expect(describeRecheck(outcome)[1]).toMatch(/TRUNC: /);
 	});
 
 	it("prints gate ids only and withholds the headline when A5 fails, so a resident's name is never printed", () => {

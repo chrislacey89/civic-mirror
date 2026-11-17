@@ -1,8 +1,9 @@
 import { Effect } from "effect";
-import { gateEvidence, newPublication } from "#/pipeline/checks/prePublish.ts";
+import { gateEvidence, toPublication } from "#/pipeline/checks/prePublish.ts";
 import type { PrePublishOutcome } from "#/pipeline/checks/types.ts";
 import type { DatabaseError, LlmError } from "#/pipeline/errors.ts";
 import type { Official } from "#/pipeline/officials/types.ts";
+import type { RecheckEntry } from "#/pipeline/recheckPreview.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import { SummarizationService } from "#/pipeline/services/SummarizationService.ts";
 import { readableSources } from "#/pipeline/sources.ts";
@@ -48,30 +49,42 @@ function rewriteMeetingSummary(
 }
 
 /**
- * Rewrite a meeting's summary text and, with `confirm`, store it with its
- * publication state. Without `confirm` nothing is written. A writing call
- * that fails leaves the stored summary as it was.
+ * Rewrite a meeting's summary text and put it through the pre-publish check,
+ * under a new run id. Nothing is written: the operator reads the outcome,
+ * and `applyRecheckEntry` stores that same outcome when they confirm it.
  */
-function recheckMeetingSummary(
-	input: RewriteInput & { confirm: boolean },
+function previewMeetingRecheck(
+	input: RewriteInput,
 ): Effect.Effect<
-	{ meetingId: number; outcome: PrePublishOutcome; written: boolean },
+	RecheckEntry,
 	DatabaseError | LlmError,
 	StorageService | SummarizationService
 > {
+	return rewriteMeetingSummary(input).pipe(
+		Effect.map(({ meetingId, outcome }) => ({
+			meetingId,
+			runId: crypto.randomUUID(),
+			outcome,
+		})),
+	);
+}
+
+/**
+ * Store a previewed outcome as the meeting's summary text and publication,
+ * its rounds under the preview's run id. The model is not called, so what is
+ * stored is what was previewed.
+ */
+function applyRecheckEntry(
+	entry: RecheckEntry,
+): Effect.Effect<void, DatabaseError, StorageService> {
 	return Effect.gen(function* () {
 		const storage = yield* StorageService;
-		const { outcome } = yield* rewriteMeetingSummary(input);
-		if (!input.confirm) {
-			return { meetingId: input.meetingId, outcome, written: false };
-		}
 		yield* storage.replaceSummaryText({
-			meetingId: input.meetingId,
-			highlights: outcome.best.highlights,
-			prose: outcome.best.prose,
-			publication: newPublication(outcome),
+			meetingId: entry.meetingId,
+			highlights: entry.outcome.best.highlights,
+			prose: entry.outcome.best.prose,
+			publication: toPublication(entry.outcome, entry.runId),
 		});
-		return { meetingId: input.meetingId, outcome, written: true };
 	});
 }
 
@@ -108,5 +121,10 @@ function describeRecheck(outcome: PrePublishOutcome): string[] {
 	];
 }
 
-export { describeRecheck, recheckMeetingSummary, rewriteMeetingSummary };
+export {
+	applyRecheckEntry,
+	describeRecheck,
+	previewMeetingRecheck,
+	rewriteMeetingSummary,
+};
 export type { RewriteInput };

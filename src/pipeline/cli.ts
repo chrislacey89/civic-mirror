@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { config as loadDotenv } from "dotenv";
@@ -26,10 +27,19 @@ import {
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
 import {
+	decodeRecheckPreview,
+	encodeRecheckPreview,
+	recheckPreviewPath,
+} from "#/pipeline/recheckPreview.ts";
+import {
 	incompleteRegeneration,
 	regenerateBodySummaries,
 } from "#/pipeline/regenerate.ts";
-import { describeRecheck, recheckMeetingSummary } from "#/pipeline/rewrite.ts";
+import {
+	applyRecheckEntry,
+	describeRecheck,
+	previewMeetingRecheck,
+} from "#/pipeline/rewrite.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import {
 	describeRelease,
@@ -698,8 +708,10 @@ const summariesRegenerateCommand = Command.make(
 // ---------------------------------------------------------------------------
 // `summaries:recheck` subcommand — writes one meeting's summary text again
 // from the ledger and sources it stores, and runs the pre-publish check. The
-// ledger is never redrawn. Prints the outcome and writes nothing until
-// `--confirm` is passed, because the local .env points at production.
+// ledger is never redrawn. A run prints the outcome and saves it to a file;
+// `--confirm --from <file>` stores that saved outcome without calling the
+// model again, so production gets the draft the operator read. The local
+// .env points at production.
 // ---------------------------------------------------------------------------
 
 const recheckBodySlug = Flag.String("body").pipe(
@@ -717,10 +729,17 @@ const recheckSession = Flag.String("session").pipe(
 	),
 );
 
+const recheckFrom = Flag.String("from").pipe(
+	Flag.optional,
+	Flag.withDescription(
+		"A preview file a run without --confirm saved. Its outcome is printed, or stored with --confirm; the model is not called.",
+	),
+);
+
 const recheckConfirm = Flag.Boolean("confirm").pipe(
 	Flag.withDefault(false),
 	Flag.withDescription(
-		"Store the new text and its publication state. Without it, nothing is written.",
+		"Store the outcome saved in --from. Without it, nothing is written.",
 	),
 );
 
@@ -730,15 +749,23 @@ const summariesRecheckCommand = Command.make(
 		bodySlug: recheckBodySlug,
 		date: recheckMeetingDate,
 		session: recheckSession,
+		from: recheckFrom,
 		confirm: recheckConfirm,
 	},
-	({ bodySlug, date, session, confirm }) =>
+	({ bodySlug, date, session, from, confirm }) =>
 		Effect.gen(function* () {
 			const body = DEFAULT_BODIES.find((b) => b.slug === bodySlug);
 			if (!body) {
 				return yield* Effect.fail(
 					new Error(
 						`Unknown body slug: ${bodySlug}. Known slugs: ${DEFAULT_BODIES.map((b) => b.slug).join(", ")}`,
+					),
+				);
+			}
+			if (confirm && Option.isNone(from)) {
+				return yield* Effect.fail(
+					new Error(
+						"--confirm stores a previewed outcome: run without --confirm first, then pass the file it saves with --from.",
 					),
 				);
 			}
@@ -779,20 +806,63 @@ const summariesRecheckCommand = Command.make(
 				yield* Console.log(
 					`[summaries:recheck] meeting id=${meeting.meetingId} body=${bodySlug} date=${date} session=${JSON.stringify(session)}`,
 				);
-				const result = yield* recheckMeetingSummary({
+				if (Option.isSome(from)) {
+					const path = from.value;
+					const entries = yield* Effect.try({
+						try: () => decodeRecheckPreview(readFileSync(path, "utf8")),
+						catch: (error) =>
+							new Error(
+								`Cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`,
+							),
+					});
+					const entry = entries.find((e) => e.meetingId === meeting.meetingId);
+					if (entry === undefined) {
+						return yield* Effect.fail(
+							new Error(
+								`${path} holds no preview for meeting id ${meeting.meetingId}.`,
+							),
+						);
+					}
+					yield* Console.log(
+						`[summaries:recheck] saved preview ${path} run=${entry.runId}`,
+					);
+					for (const line of describeRecheck(entry.outcome)) {
+						yield* Console.log(line);
+					}
+					if (!confirm) {
+						yield* Console.log(
+							`[summaries:recheck] dry run. Re-run with --confirm --from ${path} to store this outcome.`,
+						);
+						return;
+					}
+					yield* applyRecheckEntry(entry);
+					yield* Console.log("[summaries:recheck] stored.");
+					return;
+				}
+
+				const entry = yield* previewMeetingRecheck({
 					meetingId: meeting.meetingId,
 					meetingContext: `${body.name}, ${date}`,
 					glossary: body.glossary,
 					officials: officialsFor(body.slug, date),
-					confirm,
 				});
-				for (const line of describeRecheck(result.outcome)) {
+				for (const line of describeRecheck(entry.outcome)) {
 					yield* Console.log(line);
 				}
+				const path = resolve(recheckPreviewPath(entry.runId));
+				yield* Effect.try({
+					try: () => {
+						mkdirSync(dirname(path), { recursive: true });
+						writeFileSync(path, encodeRecheckPreview([entry]));
+					},
+					catch: (error) =>
+						new Error(
+							`Cannot save the preview to ${path}: ${error instanceof Error ? error.message : String(error)}`,
+						),
+				});
+				yield* Console.log(`[summaries:recheck] preview saved: ${path}`);
 				yield* Console.log(
-					result.written
-						? "[summaries:recheck] stored."
-						: "[summaries:recheck] dry run. Re-run with --confirm to store the new text.",
+					`[summaries:recheck] dry run. Re-run with --confirm --from ${path} to store this outcome.`,
 				);
 			}).pipe(Effect.provide(layers));
 		}),
