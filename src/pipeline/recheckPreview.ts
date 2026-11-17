@@ -5,6 +5,7 @@ import {
 	CHECK_IDS,
 	type CheckId,
 	GATE_IDS,
+	HELD_REASONS,
 	type PrePublishOutcome,
 	type Round,
 	type WriteUp,
@@ -84,13 +85,44 @@ const savedOutcome = z.discriminatedUnion("kind", [
 	}),
 	z.object({
 		kind: z.literal("held"),
-		reason: z.enum(["gate-failed", "critic-unavailable"]),
+		reason: z.enum(HELD_REASONS),
 		best: writeUp,
 		bestRound: z.number().int(),
 		gateFails: z.array(gateId),
 		rounds: z.array(round).min(1),
 	}),
 ]);
+
+/** A type with every `readonly` removed, all the way down. */
+type Plain<T> = T extends readonly (infer U)[]
+	? Plain<U>[]
+	: T extends object
+		? { -readonly [K in keyof T]: Plain<T[K]> }
+		: T;
+
+/** True only when the two types are identical, optional fields included. */
+type Same<A, B> =
+	(<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+		? true
+		: false;
+
+/** Each variant of a union without `K`. */
+type OmitEach<T, K extends PropertyKey> = T extends unknown
+	? Omit<T, K>
+	: never;
+
+/**
+ * Compile-time check, no runtime cost: the schema's outcome must match
+ * `PrePublishOutcome` field for field. Assignability alone would not do: zod
+ * drops a field the schema lacks, and an optional field added to a domain type
+ * is still assignable both ways, so `--confirm` would store rounds that differ
+ * from the preview. Adding or changing a field on either side fails `tsc` here.
+ */
+const _schemaMatchesDomain: Same<
+	Plain<OmitEach<z.infer<typeof savedOutcome>, "bestRound">>,
+	Plain<PrePublishOutcome>
+> = true;
+void _schemaMatchesDomain;
 
 const savedPreview = z.object({
 	version: z.literal(1),
