@@ -159,3 +159,19 @@ export function decodeRecheckPreview(text: string): RecheckEntry[] {
 		};
 	});
 }
+
+/**
+ * The entry a preview file holds for one meeting. Throws, naming the meeting
+ * id and the file, when the file has none.
+ */
+export function recheckEntryFor(
+	entries: readonly RecheckEntry[],
+	meetingId: number,
+	source: string,
+): RecheckEntry {
+	const entry = entries.find((e) => e.meetingId === meetingId);
+	if (entry === undefined) {
+		throw new Error(`${source} holds no preview for meeting id ${meetingId}.`);
+	}
+	return entry;
+}

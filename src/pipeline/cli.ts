@@ -29,6 +29,7 @@ import {
 import {
 	decodeRecheckPreview,
 	encodeRecheckPreview,
+	recheckEntryFor,
 	recheckPreviewPath,
 } from "#/pipeline/recheckPreview.ts";
 import {
@@ -815,14 +816,11 @@ const summariesRecheckCommand = Command.make(
 								`Cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`,
 							),
 					});
-					const entry = entries.find((e) => e.meetingId === meeting.meetingId);
-					if (entry === undefined) {
-						return yield* Effect.fail(
-							new Error(
-								`${path} holds no preview for meeting id ${meeting.meetingId}.`,
-							),
-						);
-					}
+					const entry = yield* Effect.try({
+						try: () => recheckEntryFor(entries, meeting.meetingId, path),
+						catch: (error) =>
+							error instanceof Error ? error : new Error(String(error)),
+					});
 					yield* Console.log(
 						`[summaries:recheck] saved preview ${path} run=${entry.runId}`,
 					);

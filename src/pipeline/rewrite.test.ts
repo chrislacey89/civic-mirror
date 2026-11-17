@@ -13,6 +13,7 @@ import type { RecheckEntry } from "#/pipeline/recheckPreview.ts";
 import {
 	decodeRecheckPreview,
 	encodeRecheckPreview,
+	recheckEntryFor,
 } from "#/pipeline/recheckPreview.ts";
 import {
 	applyRecheckEntry,
@@ -304,6 +305,26 @@ describe("recheck preview and apply", () => {
 		expect(() =>
 			decodeRecheckPreview(JSON.stringify({ version: 1, entries: [{}] })),
 		).toThrow(/Not a recheck preview file/);
+	});
+
+	it("picks the entry for the meeting from a preview file", async () => {
+		const { preview } = await setup();
+		const entry = await preview();
+		const entries = decodeRecheckPreview(encodeRecheckPreview([entry]));
+
+		expect(recheckEntryFor(entries, entry.meetingId, "p.json").runId).toBe(
+			entry.runId,
+		);
+	});
+
+	it("if a preview file holds no entry for the meeting, refuses, naming the meeting id", async () => {
+		const { preview } = await setup();
+		const entry = await preview();
+		const entries = decodeRecheckPreview(encodeRecheckPreview([entry]));
+
+		expect(() =>
+			recheckEntryFor(entries, entry.meetingId + 1, "p.json"),
+		).toThrow(`p.json holds no preview for meeting id ${entry.meetingId + 1}.`);
 	});
 
 	it("if the same saved preview is applied twice, refuses the second time and leaves the summary and rounds as the first apply stored them", async () => {
