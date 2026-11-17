@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { Effect, Layer, Schedule } from "effect";
 import { describe, expect, it } from "vitest";
@@ -13,7 +16,9 @@ import type { RecheckEntry } from "#/pipeline/recheckPreview.ts";
 import {
 	decodeRecheckPreview,
 	encodeRecheckPreview,
+	loadRecheckEntry,
 	recheckEntryFor,
+	saveRecheckPreview,
 } from "#/pipeline/recheckPreview.ts";
 import {
 	applyRecheckEntry,
@@ -325,6 +330,42 @@ describe("recheck preview and apply", () => {
 		expect(() =>
 			recheckEntryFor(entries, entry.meetingId + 1, "p.json"),
 		).toThrow(`p.json holds no preview for meeting id ${entry.meetingId + 1}.`);
+	});
+
+	it("saves a preview to a file and loads the meeting's entry back from it", async () => {
+		const { preview } = await setup();
+		const entry = await preview();
+		const dir = mkdtempSync(join(tmpdir(), "recheck-preview-"));
+		try {
+			const path = saveRecheckPreview(
+				[entry],
+				entry.runId,
+				join(dir, "nested"),
+			);
+			const loaded = loadRecheckEntry(path, entry.meetingId);
+
+			expect(path).toBe(join(dir, "nested", `recheck-${entry.runId}.json`));
+			expect(loaded.runId).toBe(entry.runId);
+			expect(loaded.outcome.kind).toBe(entry.outcome.kind);
+			expect(loaded.outcome.best).toEqual(entry.outcome.best);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("if a saved preview file holds no entry for the meeting, loading refuses, naming the file and the meeting id", async () => {
+		const { preview } = await setup();
+		const entry = await preview();
+		const dir = mkdtempSync(join(tmpdir(), "recheck-preview-"));
+		try {
+			const path = saveRecheckPreview([entry], entry.runId, dir);
+
+			expect(() => loadRecheckEntry(path, entry.meetingId + 1)).toThrow(
+				`${path} holds no preview for meeting id ${entry.meetingId + 1}.`,
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("if the same saved preview is applied twice, refuses the second time and leaves the summary and rounds as the first apply stored them", async () => {

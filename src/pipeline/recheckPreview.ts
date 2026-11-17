@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { z } from "zod";
 import {
 	CHECK_IDS,
@@ -101,9 +103,37 @@ const savedPreview = z.object({
 	),
 });
 
-/** Where a preview run saves its outcomes. `.context/` is git-ignored. */
-export function recheckPreviewPath(runId: string): string {
-	return `.context/recheck-${runId}.json`;
+/**
+ * Where a preview run saves its outcomes. `.context/` is git-ignored; `dir`
+ * lets a test save somewhere else.
+ */
+export function recheckPreviewPath(runId: string, dir = ".context"): string {
+	return `${dir}/recheck-${runId}.json`;
+}
+
+/** The message of a thrown value. */
+function messageOf(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Writes a preview's entries to its file under `dir` (made if missing) and
+ * returns the absolute path. Throws "Cannot save the preview to <path>: ..."
+ * when the file cannot be written.
+ */
+export function saveRecheckPreview(
+	entries: readonly RecheckEntry[],
+	runId: string,
+	dir = ".context",
+): string {
+	const path = resolve(recheckPreviewPath(runId, dir));
+	try {
+		mkdirSync(dirname(path), { recursive: true });
+		writeFileSync(path, encodeRecheckPreview(entries));
+	} catch (error) {
+		throw new Error(`Cannot save the preview to ${path}: ${messageOf(error)}`);
+	}
+	return path;
 }
 
 /** A preview's outcomes as the text of its file. */
@@ -174,4 +204,23 @@ export function recheckEntryFor(
 		throw new Error(`${source} holds no preview for meeting id ${meetingId}.`);
 	}
 	return entry;
+}
+
+/**
+ * Reads a preview file and returns its entry for one meeting. Throws
+ * "Cannot read <path>: ..." when the file is missing or is not a preview, and
+ * "<path> holds no preview for meeting id N." when it has no entry for the
+ * meeting.
+ */
+export function loadRecheckEntry(
+	path: string,
+	meetingId: number,
+): RecheckEntry {
+	let entries: RecheckEntry[];
+	try {
+		entries = decodeRecheckPreview(readFileSync(path, "utf8"));
+	} catch (error) {
+		throw new Error(`Cannot read ${path}: ${messageOf(error)}`);
+	}
+	return recheckEntryFor(entries, meetingId, path);
 }

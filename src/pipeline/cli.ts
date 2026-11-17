@@ -1,5 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { config as loadDotenv } from "dotenv";
@@ -27,10 +26,8 @@ import {
 	runPipeline,
 } from "#/pipeline/orchestrator.ts";
 import {
-	decodeRecheckPreview,
-	encodeRecheckPreview,
-	recheckEntryFor,
-	recheckPreviewPath,
+	loadRecheckEntry,
+	saveRecheckPreview,
 } from "#/pipeline/recheckPreview.ts";
 import {
 	incompleteRegeneration,
@@ -809,15 +806,8 @@ const summariesRecheckCommand = Command.make(
 				);
 				if (Option.isSome(from)) {
 					const path = from.value;
-					const entries = yield* Effect.try({
-						try: () => decodeRecheckPreview(readFileSync(path, "utf8")),
-						catch: (error) =>
-							new Error(
-								`Cannot read ${path}: ${error instanceof Error ? error.message : String(error)}`,
-							),
-					});
 					const entry = yield* Effect.try({
-						try: () => recheckEntryFor(entries, meeting.meetingId, path),
+						try: () => loadRecheckEntry(path, meeting.meetingId),
 						catch: (error) =>
 							error instanceof Error ? error : new Error(String(error)),
 					});
@@ -847,16 +837,10 @@ const summariesRecheckCommand = Command.make(
 				for (const line of describeRecheck(entry.outcome)) {
 					yield* Console.log(line);
 				}
-				const path = resolve(recheckPreviewPath(entry.runId));
-				yield* Effect.try({
-					try: () => {
-						mkdirSync(dirname(path), { recursive: true });
-						writeFileSync(path, encodeRecheckPreview([entry]));
-					},
+				const path = yield* Effect.try({
+					try: () => saveRecheckPreview([entry], entry.runId),
 					catch: (error) =>
-						new Error(
-							`Cannot save the preview to ${path}: ${error instanceof Error ? error.message : String(error)}`,
-						),
+						error instanceof Error ? error : new Error(String(error)),
 				});
 				yield* Console.log(`[summaries:recheck] preview saved: ${path}`);
 				yield* Console.log(
