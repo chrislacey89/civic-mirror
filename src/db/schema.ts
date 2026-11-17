@@ -201,32 +201,43 @@ export const summaries = sqliteTable(
  * one `runId` and one or more rounds. Rows outlive the summary they led to,
  * so a replaced summary's history stays.
  */
-export const summaryRounds = sqliteTable("summary_rounds", {
-	id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
-	meetingId: integer("meeting_id")
-		.notNull()
-		.references(() => meetings.id, { onDelete: "cascade" }),
-	runId: text("run_id").notNull(),
-	round: integer().notNull(),
-	highlights: text({ mode: "json" }).notNull().$type<string[]>(),
-	prose: text().notNull(),
-	verdicts: text({ mode: "json" }).notNull().$type<{
-		code: CheckReport;
-		judge: CheckReport | "unavailable" | "skipped";
-	}>(),
-	gateFailures: integer("gate_failures").notNull(),
-	styleScore: integer("style_score").notNull(),
-	groundedFigures: integer("grounded_figures").notNull(),
-	/** Model, prompt hash and settings; null when no judge ran. */
-	judgeFingerprint: text("judge_fingerprint"),
-	finishReason: text("finish_reason"),
-	inputTokens: integer("input_tokens"),
-	outputTokens: integer("output_tokens"),
-	reasoningTokens: integer("reasoning_tokens"),
-	createdAt: integer("created_at", { mode: "timestamp" }).default(
-		sql`(unixepoch())`,
-	),
-});
+export const summaryRounds = sqliteTable(
+	"summary_rounds",
+	{
+		id: integer({ mode: "number" }).primaryKey({ autoIncrement: true }),
+		meetingId: integer("meeting_id")
+			.notNull()
+			.references(() => meetings.id, { onDelete: "cascade" }),
+		runId: text("run_id").notNull(),
+		round: integer().notNull(),
+		highlights: text({ mode: "json" }).notNull().$type<string[]>(),
+		prose: text().notNull(),
+		verdicts: text({ mode: "json" }).notNull().$type<{
+			code: CheckReport;
+			judge: CheckReport | "unavailable" | "skipped";
+		}>(),
+		gateFailures: integer("gate_failures").notNull(),
+		styleScore: integer("style_score").notNull(),
+		groundedFigures: integer("grounded_figures").notNull(),
+		/** Model, prompt hash and settings; null when no judge ran. */
+		judgeFingerprint: text("judge_fingerprint"),
+		finishReason: text("finish_reason"),
+		inputTokens: integer("input_tokens"),
+		outputTokens: integer("output_tokens"),
+		reasoningTokens: integer("reasoning_tokens"),
+		createdAt: integer("created_at", { mode: "timestamp" }).default(
+			sql`(unixepoch())`,
+		),
+	},
+	// A run id comes from the caller (a saved preview file), so applying the
+	// same file twice must fail instead of storing its rounds twice.
+	(table) => [
+		uniqueIndex("summary_rounds_run_id_round_unique").on(
+			table.runId,
+			table.round,
+		),
+	],
+);
 
 /**
  * Structured spending data extracted from meeting minutes — the core value prop.

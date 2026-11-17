@@ -27,3 +27,6 @@ test-results/
 
 # Scratch from the Playwright MCP browser tool
 .playwright-mcp/
+
+# Scratch output: recheck previews (full draft prose) and calibrate-judge cache
+.context/

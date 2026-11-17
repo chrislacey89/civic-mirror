@@ -173,7 +173,9 @@ export interface CodeCheck {
 	) => Partial<Record<CheckId, Verdict>>;
 }
 
-export type SummaryHeldReason = "gate-failed" | "critic-unavailable";
+export const HELD_REASONS = ["gate-failed", "critic-unavailable"] as const;
+
+export type SummaryHeldReason = (typeof HELD_REASONS)[number];
 
 /** What a summary's storage needs to know about the check it went through. */
 export interface SummaryPublication {
