@@ -10,8 +10,9 @@ import {
 	mapSumToLevel,
 	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
+import { JUDGE_GATED } from "#/pipeline/checks/judge.ts";
+import { decidedReport } from "#/pipeline/checks/prePublish.ts";
 import {
-	type CheckReport,
 	GATE_IDS,
 	type GateId,
 	type SummaryHeldReason,
@@ -1213,14 +1214,16 @@ function gateFailsOfBestRound(
 				round.prose === stored.prose &&
 				JSON.stringify(round.highlights) === JSON.stringify(stored.highlights),
 		) ?? run.reduce((a, b) => (b.gateFailures < a.gateFailures ? b : a));
-	const reports: CheckReport[] = [best.verdicts.code];
-	if (typeof best.verdicts.judge === "object")
-		reports.push(best.verdicts.judge);
+	// A held summary with a judge's verdict is a documents meeting: the judge
+	// runs only when code left no other gate failed, and only that split gates.
+	const verdicts = decidedReport(
+		best.verdicts.code,
+		best.verdicts.judge,
+		JUDGE_GATED.documents,
+	).verdicts;
 	return GATE_IDS.flatMap((id) => {
-		const verdict = reports
-			.map((report) => report.verdicts[id])
-			.find((v) => v !== undefined && v.outcome !== "pass");
-		if (verdict === undefined) return [];
+		const verdict = verdicts[id];
+		if (verdict === undefined || verdict.outcome === "pass") return [];
 		return [
 			{
 				id,

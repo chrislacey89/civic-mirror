@@ -77,14 +77,22 @@ function codeGateFails(code: CheckReport, gated: readonly GateId[]): GateId[] {
  * `JUDGE_DECIDES_UNCHECKED_ONLY`.
  */
 function decided(round: Round, gated: readonly GateId[]): CheckReport {
-	const { judge } = round;
-	if (typeof judge === "string") return round.code;
+	return decidedReport(round.code, round.judge, gated);
+}
+
+/** `decided`, from a round's stored reports rather than the round itself. */
+export function decidedReport(
+	code: CheckReport,
+	judge: CheckReport | "unavailable" | "skipped",
+	gated: readonly GateId[],
+): CheckReport {
+	if (typeof judge === "string") return code;
 	const overrides = gated.flatMap((id) => {
-		const code = round.code.verdicts[id];
+		const coded = code.verdicts[id];
 		const judged = judge.verdicts[id];
-		if (judged === undefined || code?.outcome === "fail") return [];
+		if (judged === undefined || coded?.outcome === "fail") return [];
 		if (
-			code?.outcome !== "unchecked" &&
+			coded?.outcome !== "unchecked" &&
 			JUDGE_DECIDES_UNCHECKED_ONLY.includes(id)
 		) {
 			return [];
@@ -92,7 +100,7 @@ function decided(round: Round, gated: readonly GateId[]): CheckReport {
 		return [[id, judged] as const];
 	});
 	return {
-		verdicts: { ...round.code.verdicts, ...Object.fromEntries(overrides) },
+		verdicts: { ...code.verdicts, ...Object.fromEntries(overrides) },
 	};
 }
 
