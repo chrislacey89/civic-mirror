@@ -1201,6 +1201,17 @@ async function listHeldSummariesQuery(
 }
 
 /**
+ * Returns the documents split's gated checks, and only compiles while the
+ * transcript split gates none: the second argument must be the empty tuple.
+ */
+function documentsOnly<Documents extends readonly GateId[]>(
+	documents: Documents,
+	_transcript: readonly [],
+): Documents {
+	return documents;
+}
+
+/**
  * The gates the latest run's best round failed. Rounds do not record which
  * one was best: it is the round whose text the summary holds, else the one
  * with the fewest gate failures.
@@ -1220,7 +1231,12 @@ function gateFailsOfBestRound(
 		) ?? run.reduce((a, b) => (b.gateFailures < a.gateFailures ? b : a));
 	// A held summary with a judge's verdict is a documents meeting: the judge
 	// runs only when code left no other gate failed, and only that split gates.
-	const verdicts = decided(best.verdicts, JUDGE_GATED.documents).verdicts;
+	// The call below stops compiling if the transcript split ever gates a
+	// check, which would make this documents-only list wrong.
+	const verdicts = decided(
+		best.verdicts,
+		documentsOnly(JUDGE_GATED.documents, JUDGE_GATED.transcript),
+	).verdicts;
 	const judged =
 		typeof best.verdicts.judge === "object" ? best.verdicts.judge : null;
 	const fails = GATE_IDS.flatMap((id): GateFailEvidence[] => {
