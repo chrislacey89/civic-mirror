@@ -32,9 +32,13 @@ describe("the production judge's calibration record", () => {
 		expect(clearsBars(score), JSON.stringify(score)).toBe(true);
 	});
 
-	it("shows no verdict flipped by an instruction inside a source", () => {
+	it("shows no gated check flipped by an instruction inside a source", () => {
 		const { injection } = record();
 		expect(injection.probed).toBeGreaterThan(0);
-		expect(injection.flipped).toEqual([]);
+		// An entry is "<id> <check>"; a check gated on either split counts.
+		const gated = new Set<string>(Object.values(JUDGE_GATED).flat());
+		expect(
+			injection.flipped.filter((entry) => gated.has(entry.split(" ")[1] ?? "")),
+		).toEqual([]);
 	});
 });

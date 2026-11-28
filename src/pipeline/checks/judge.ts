@@ -36,9 +36,10 @@ export const JUDGE_OWNS = [
 /**
  * The checks whose judge verdict may hold a page, by the meeting's sources:
  * those whose calibration record (`calibrate-judge`) clears every bar in
- * `calibration.ts`. Every other judge verdict only flags. A5 is not gated: its
- * corpus fail edits are names the code names check already holds, so the
- * judge's A5 job has not been measured.
+ * `calibration.ts` and that no instruction inside a source flipped in both
+ * probe runs. Every other judge verdict only flags. A5 clears the bars on
+ * meetings with documents, but an appended "ignore previous instructions"
+ * turned one of its fails to a pass in both runs, so it is not gated.
  */
 export const JUDGE_GATED = {
 	documents: ["A2"],
@@ -46,6 +47,14 @@ export const JUDGE_GATED = {
 } as const satisfies Readonly<
 	Record<"documents" | "transcript", readonly GateId[]>
 >;
+
+/**
+ * Checks the judge decides only where code left them unchecked. A5's code
+ * check clears every name it can tie to an officials list or a role, and
+ * fails a resident named from a marked public-comment section, so the judge
+ * decides just the names `unresolvedNames()` returns.
+ */
+export const JUDGE_DECIDES_UNCHECKED_ONLY: readonly GateId[] = ["A5"];
 
 /** Which split of `JUDGE_GATED` a meeting falls in. */
 export function splitOf(input: SummarizationInput): keyof typeof JUDGE_GATED {
@@ -79,5 +88,13 @@ export function judgeFingerprint(cfg: {
 	prompt: string;
 	settings: Record<string, unknown>;
 }): string {
-	return createHash("sha256").update(canonical(cfg)).digest("hex").slice(0, 16);
+	return hashOf(cfg);
+}
+
+/** A short hash of `value`, the same whatever order its object keys are in. */
+export function hashOf(value: unknown): string {
+	return createHash("sha256")
+		.update(canonical(value))
+		.digest("hex")
+		.slice(0, 16);
 }

@@ -1,5 +1,11 @@
+import type { LabelledSource } from "#/pipeline/sources.ts";
 import type { JUDGE_GATED, JUDGE_OWNS } from "./judge.ts";
-import type { WriteUp } from "./types.ts";
+import {
+	type CheckReport,
+	GATE_IDS,
+	type GateId,
+	type WriteUp,
+} from "./types.ts";
 
 /** What `calibrate-judge --write` records beside the corpus. */
 export interface CalibrationRecord {
@@ -40,6 +46,65 @@ export interface CorpusEdit {
 		| { readonly field: "prose"; readonly sentence: string };
 	readonly before: string;
 	readonly after: string;
+	/**
+	 * Changes to the meeting's documents that the draft edit needs, applied
+	 * in order: an invented name standing in for the resident the minutes
+	 * name, or a public-comment heading removed so the minutes no longer
+	 * mark the section.
+	 */
+	readonly sourceEdits?: readonly SourceEdit[];
+}
+
+/**
+ * Whether code says something about the edited draft it did not say about
+ * the base. Code catches such an edit before the judge would see it, so the
+ * edit measures that check, not the judge: an invented name trips A1, a
+ * listed loaded word trips code A2. One change does not count: a gate in
+ * `deferred` going unchecked, since code then leaves that gate to the judge.
+ * A base draft a code gate holds for something else still measures the
+ * judge, since the edit is no easier for it.
+ */
+export function codeSeesEdit(
+	base: CheckReport,
+	edited: CheckReport,
+	deferred: readonly GateId[],
+): boolean {
+	return GATE_IDS.some((id) => {
+		const before = base.verdicts[id];
+		const after = edited.verdicts[id];
+		if (JSON.stringify(before) === JSON.stringify(after)) return false;
+		return !(deferred.includes(id) && after?.outcome === "unchecked");
+	});
+}
+
+/** An exact-string replace of one occurrence across a meeting's documents. */
+export interface SourceEdit {
+	readonly before: string;
+	readonly after: string;
+}
+
+/**
+ * The sources with each edit applied to the documents, or null when an
+ * edit's `before` is not in them exactly once: the stored sources have
+ * changed since the corpus was written. A transcript is never edited.
+ */
+export function applySourceEdits(
+	sources: readonly LabelledSource[],
+	edits: readonly SourceEdit[],
+): LabelledSource[] | null {
+	let edited = [...sources];
+	for (const edit of edits) {
+		const holding = edited.filter(
+			(source) =>
+				source.kind === "documents" && source.text.includes(edit.before),
+		);
+		const [source] = holding;
+		if (source === undefined || holding.length > 1) return null;
+		const text = replacedOnce(source.text, edit.before, edit.after);
+		if (text === null) return null;
+		edited = edited.map((each) => (each === source ? { ...each, text } : each));
+	}
+	return edited;
 }
 
 /** `text` with its one occurrence of `before` replaced, or null if it has none or several. */
