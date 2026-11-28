@@ -236,7 +236,9 @@ describe("prePublish with a judge", () => {
 				gateFails: ["A5"],
 			});
 			const evidence = gateEvidence(outcome).join("\n");
-			expect(evidence).toContain("A5 (judge)");
+			expect(evidence).toContain(
+				"A5 (judge): a name in the draft fails A5; quote withheld",
+			);
 			expect(evidence).not.toContain("Jane Doe");
 		});
 

@@ -353,7 +353,7 @@ export function gateEvidence(outcome: PrePublishOutcome): string[] {
 			typeof round?.judge === "object" ? round.judge.verdicts[id] : undefined;
 		if (judged?.outcome === "fail") {
 			if (id === "A5") {
-				return "A5 (judge): a person named in the draft spoke as a member of the public";
+				return "A5 (judge): a name in the draft fails A5; quote withheld";
 			}
 			return namesResident
 				? `${id} (judge): quote withheld, A5 also fails`
