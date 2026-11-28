@@ -1,5 +1,6 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
+import { redactedEvidence } from "#/pipeline/checks/prePublish.ts";
 import {
 	AlertService,
 	AlertServiceLive,
@@ -15,7 +16,14 @@ describe("AlertService", () => {
 			meetingDate: "2025-05-27",
 			reason: "gate-failed",
 			gateFails: ["TRUNC"],
-			evidence: ["TRUNC: approved three purchases for the"],
+			evidence: redactedEvidence([
+				{
+					id: "TRUNC",
+					evidence: "TRUNC: approved three purchases for the",
+					quotesDraft: true,
+					judged: false,
+				},
+			]),
 		});
 
 		it("names the body and meeting date in the subject", () => {

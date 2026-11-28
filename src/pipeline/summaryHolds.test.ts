@@ -81,15 +81,16 @@ describe("formatHeldSummaryLine", () => {
 		expect(line).toContain('A1: "$90,000 was / not in the sources"');
 	});
 
-	it("prints gate ids only when A5 fails, so no gate quotes a resident's name", () => {
+	it("prints the evidence it is given, which storage has already redacted", () => {
 		const line = formatHeldSummaryLine({
 			...base,
 			gateFails: [
-				{ id: "A1", evidence: '"Resident Gordon Pruitt asked about $90,000"' },
+				{ id: "A1", evidence: "quote withheld, A5 also fails" },
 				{ id: "A5", evidence: '"[name] asked about $90,000"' },
 			],
 		} as never);
-		expect(line).not.toContain("Pruitt");
-		expect(line).toContain("A1  |  A5");
+		expect(line).toContain(
+			'A1: quote withheld, A5 also fails  |  A5: "[name] asked about $90,000"',
+		);
 	});
 });

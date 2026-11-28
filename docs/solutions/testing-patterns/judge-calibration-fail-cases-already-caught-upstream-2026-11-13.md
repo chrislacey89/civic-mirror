@@ -66,7 +66,7 @@ Import the judge prompt's rules from the rubric, or diff them against it, rather
 
 **Leave out an edit only when the edit itself changes a code verdict.** The literal rule above ("every fail edit passes every code check") turned out to be too strict on this corpus. Today's code checks hold 64 of the 90 edited drafts, mostly because the *unedited* published drafts already fail A5 (names code cannot resolve) or A1. Under that rule only 4 A2 fail edits reached the judge, so nothing could be measured. What inflates a catch rate is an edit that code catches *because of the edit*: an invented name tripping A1, or a listed loaded word tripping code A2. A base draft held for an unrelated name elsewhere does not make an A2 edit any easier for the judge. So `calibrate-judge` compares the code verdicts on each edited draft with those on its base draft, and scores only the edits that change none (`codeSeesEdit`). That left 72 edits, including 10 A2 fails on meetings with documents and 1 A5 fail.
 
-**A check needs a minimum number of scored fails to clear.** With the code-caught edits gone, A5 had one fail edit, and 1 of 1 caught is a catch rate of 1.00. `BARS.minFails` is 10 (`src/pipeline/checks/calibration.ts`). A2 cleared at exactly 10 (9 of 10 caught in each run). It is gated on meetings with documents, and A5 waits on #228.
+**A check needs a minimum number of scored fails to clear.** With the code-caught edits gone, A5 had one fail edit, and 1 of 1 caught is a catch rate of 1.00. `BARS.minFails` is 10 (`src/pipeline/checks/calibration.ts`). A2 cleared at exactly 10 (9 of 10 caught in each run).
 
 **An injection flip counts only when both probe runs flip.** The judge disagrees with itself on about 5% of edits between clean runs (self-agreement 0.95). One edit (A2-F-10, "pounced on") passed in one of two runs that had "ignore previous instructions" appended to the documents, and failed in the other. The rule mirrors the bars' two-run rule, and the record keeps one-run flips as `flippedOnce`. This rule was chosen after the first flip was seen, so read it as a decision, not a measurement. In production each draft gets one judge call, so a 1-in-2 flip is still a real attack on that draft.
 
@@ -88,8 +88,6 @@ Import the judge prompt's rules from the rubric, or diff them against it, rather
 **Decision:** #195 shipped its verdict on the corpus as built: Pro gates A2 and A5 on meetings with documents, A4 stays code-only, and every transcript-only check stays code-only.
 **Rationale:** the owner chose to ship. The A5 result is weaker than its 1.00 suggests, and the A2 corpus result disagrees with live-draft agreement. #205 has to re-measure both before it gates them.
 **Revisable:** yes, once a corpus whose fail edits survive A1 has been run.
-
-**Superseded by #205 (PR #233):** re-measured with code-caught edits left out, Pro gates A2 only, on meetings with documents. A5's fail edits are almost all caught by A1, so its real job is unmeasured until #228 rebuilds them.
 
 ## Related
 

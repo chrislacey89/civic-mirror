@@ -10,8 +10,14 @@ import {
 	mapSumToLevel,
 	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
+import { JUDGE_GATED } from "#/pipeline/checks/judge.ts";
 import {
-	type CheckReport,
+	decided,
+	type GateFailEvidence,
+	type RedactedEvidence,
+	redactedEvidence,
+} from "#/pipeline/checks/prePublish.ts";
+import {
 	GATE_IDS,
 	type GateId,
 	type SummaryHeldReason,
@@ -156,8 +162,8 @@ interface SummaryRoundRow {
 
 /**
  * A meeting whose summary the pre-publish check held, and the gates its
- * latest check run's best round failed. Evidence is as the check stored it,
- * so a resident's name is already redacted.
+ * latest check run's best round failed. Evidence is `RedactedEvidence`: the
+ * stored round keeps raw verdict text, and `gateFailsOfBestRound` redacts it.
  */
 interface HeldSummary {
 	readonly meetingId: number;
@@ -168,7 +174,7 @@ interface HeldSummary {
 	readonly heldReason: SummaryHeldReason;
 	readonly gateFails: readonly {
 		readonly id: GateId;
-		readonly evidence: string;
+		readonly evidence: RedactedEvidence;
 	}[];
 }
 
@@ -1196,6 +1202,17 @@ async function listHeldSummariesQuery(
 }
 
 /**
+ * Returns the documents split's gated checks, and only compiles while the
+ * transcript split gates none: the second argument must be the empty tuple.
+ */
+function documentsOnly<Documents extends readonly GateId[]>(
+	documents: Documents,
+	_transcript: readonly [],
+): Documents {
+	return documents;
+}
+
+/**
  * The gates the latest run's best round failed. Rounds do not record which
  * one was best: it is the round whose text the summary holds, else the one
  * with the fewest gate failures.
@@ -1213,14 +1230,19 @@ function gateFailsOfBestRound(
 				round.prose === stored.prose &&
 				JSON.stringify(round.highlights) === JSON.stringify(stored.highlights),
 		) ?? run.reduce((a, b) => (b.gateFailures < a.gateFailures ? b : a));
-	const reports: CheckReport[] = [best.verdicts.code];
-	if (typeof best.verdicts.judge === "object")
-		reports.push(best.verdicts.judge);
-	return GATE_IDS.flatMap((id) => {
-		const verdict = reports
-			.map((report) => report.verdicts[id])
-			.find((v) => v !== undefined && v.outcome !== "pass");
-		if (verdict === undefined) return [];
+	// A held summary with a judge's verdict is a documents meeting: the judge
+	// runs only when code left no other gate failed, and only that split gates.
+	// The call below stops compiling if the transcript split ever gates a
+	// check, which would make this documents-only list wrong.
+	const verdicts = decided(
+		best.verdicts,
+		documentsOnly(JUDGE_GATED.documents, JUDGE_GATED.transcript),
+	).verdicts;
+	const judged =
+		typeof best.verdicts.judge === "object" ? best.verdicts.judge : null;
+	const fails = GATE_IDS.flatMap((id): GateFailEvidence[] => {
+		const verdict = verdicts[id];
+		if (verdict === undefined || verdict.outcome === "pass") return [];
 		return [
 			{
 				id,
@@ -1228,9 +1250,16 @@ function gateFailsOfBestRound(
 					verdict.outcome === "fail"
 						? verdict.evidence
 						: `unchecked (${verdict.reason})`,
+				quotesDraft: verdict.outcome === "fail",
+				judged: verdict === judged?.verdicts[id],
 			},
 		];
 	});
+	const evidence = redactedEvidence(fails);
+	return fails.map((fail, i) => ({
+		id: fail.id,
+		evidence: evidence[i] ?? ("" as RedactedEvidence),
+	}));
 }
 
 async function getMatchableSummaryQuery(

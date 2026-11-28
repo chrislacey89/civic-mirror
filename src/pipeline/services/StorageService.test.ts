@@ -2309,6 +2309,135 @@ describe("StorageService", () => {
 			expect(rounds.map((r) => r.judgeFingerprint)).toEqual(["judge-fp-1"]);
 		});
 
+		it("lists the gates the judge decided, not code's unchecked A5 the judge passed", async () => {
+			const db = await createTestDb();
+			const base = held("run-judged");
+			const [round] = base.rounds;
+			const judged = {
+				...base,
+				rounds: [
+					{
+						...round,
+						code: {
+							verdicts: {
+								...round.code.verdicts,
+								TRUNC: { outcome: "pass" as const },
+								A5: { outcome: "unchecked" as const, reason: "names to judge" },
+								A2: { outcome: "pass" as const },
+							},
+						},
+						judge: {
+							verdicts: {
+								A5: { outcome: "pass" as const },
+								A2: { outcome: "fail" as const, evidence: "a stray claim" },
+							},
+						},
+						judgeFingerprint: "judge-fp-1",
+					},
+				],
+			};
+			const meeting = await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: { ...testMeetingInput.summary, publication: judged },
+				}),
+			);
+
+			const [row] = await run(db, (s) => s.listHeldSummaries());
+
+			expect(row?.meetingId).toBe(meeting.id);
+			expect(row?.gateFails).toEqual([{ id: "A2", evidence: "a stray claim" }]);
+		});
+
+		it("names no resident in a held summary's evidence when A5 fails", async () => {
+			const db = await createTestDb();
+			const base = held("run-judged");
+			const [round] = base.rounds;
+			const judged = {
+				...base,
+				rounds: [
+					{
+						...round,
+						code: {
+							verdicts: {
+								...round.code.verdicts,
+								TRUNC: { outcome: "pass" as const },
+								A5: { outcome: "unchecked" as const, reason: "names to judge" },
+								A2: { outcome: "pass" as const },
+							},
+						},
+						judge: {
+							verdicts: {
+								A5: {
+									outcome: "fail" as const,
+									evidence: "Resident Gordon Pruitt asked about paving",
+								},
+								A2: {
+									outcome: "fail" as const,
+									evidence: "Gordon Pruitt asked about paving",
+								},
+							},
+						},
+						judgeFingerprint: "judge-fp-1",
+					},
+				],
+			};
+			await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: { ...testMeetingInput.summary, publication: judged },
+				}),
+			);
+
+			const [row] = await run(db, (s) => s.listHeldSummaries());
+
+			expect(row?.gateFails.map((fail) => fail.id)).toEqual(["A2", "A5"]);
+			expect(JSON.stringify(row?.gateFails)).not.toContain("Pruitt");
+		});
+
+		it("keeps an unchecked gate's reason out of a held summary's evidence when A5 fails", async () => {
+			const db = await createTestDb();
+			const base = held("run-unchecked-a5");
+			const [round] = base.rounds;
+			const withA5 = {
+				...base,
+				rounds: [
+					{
+						...round,
+						code: {
+							verdicts: {
+								...round.code.verdicts,
+								TRUNC: { outcome: "pass" as const },
+								A1: {
+									outcome: "unchecked" as const,
+									reason:
+										'cannot be counted from the record: "Gordon Pruitt asked about paving."',
+								},
+								A5: {
+									outcome: "fail" as const,
+									evidence: "a resident at public comment is named: [name]",
+								},
+							},
+						},
+					},
+				],
+			};
+			await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: { ...testMeetingInput.summary, publication: withA5 },
+				}),
+			);
+
+			const [row] = await run(db, (s) => s.listHeldSummaries());
+
+			expect(row?.gateFails).toContainEqual({
+				id: "A1",
+				evidence: "unchecked",
+			});
+			expect(JSON.stringify(row?.gateFails)).not.toContain("Pruitt");
+		});
+
 		it("stores a published summary as published", async () => {
 			const db = await createTestDb();
 			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));

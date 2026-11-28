@@ -90,9 +90,9 @@ function applyRecheckEntry(
 
 /**
  * The preview `summaries:recheck` prints: the outcome kind, each failing gate
- * with its evidence, and the new headline. Only A5 blanks resident names in
- * its evidence and the headline is not checked for them, so when A5 fails the
- * gates are printed as ids alone and the headline is withheld.
+ * with its evidence, and the new headline. The evidence is redacted by
+ * `gateEvidence`; the headline is not checked for resident names, so when A5
+ * fails it is withheld.
  */
 function describeRecheck(outcome: PrePublishOutcome): string[] {
 	const kind =
@@ -106,11 +106,9 @@ function describeRecheck(outcome: PrePublishOutcome): string[] {
 	const gates =
 		outcome.kind !== "held" || outcome.gateFails.length === 0
 			? "-"
-			: namesResident
-				? outcome.gateFails.join(", ")
-				: gateEvidence(outcome)
-						.map((line) => line.replace(/\s*\n\s*/g, " / "))
-						.join("  |  ");
+			: gateEvidence(outcome)
+					.map((line) => line.replace(/\s*\n\s*/g, " / "))
+					.join("  |  ");
 	const headline = namesResident
 		? "(withheld: A5 fails)"
 		: (outcome.best.highlights[0] ?? "(no highlights)");

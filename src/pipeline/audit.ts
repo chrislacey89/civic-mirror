@@ -1,16 +1,24 @@
 import { Effect } from "effect";
 import { runCodeChecks } from "#/pipeline/checks/index.ts";
+import {
+	type RedactedEvidence,
+	redactedEvidence,
+} from "#/pipeline/checks/prePublish.ts";
 import type { CheckId, Verdict } from "#/pipeline/checks/types.ts";
 import type { DatabaseError } from "#/pipeline/errors.ts";
 import { officialsFor } from "#/pipeline/officials/index.ts";
 import { StorageService } from "#/pipeline/services/StorageService.ts";
 import { readableSources } from "#/pipeline/sources.ts";
 
-/** One verdict short of a pass on one stored summary. */
+/**
+ * One verdict short of a pass on one stored summary. `evidence` is what may
+ * be printed: it went through `redactedEvidence` with the rest of that
+ * meeting's non-passes, so a quote is withheld when A5 fails there.
+ */
 type AuditFinding = {
 	date: string;
 	checkId: CheckId;
-	verdict: Exclude<Verdict, { outcome: "pass" }>;
+	evidence: RedactedEvidence;
 };
 
 /**
@@ -44,14 +52,30 @@ function auditSummaries(input: {
 				ledger: stored.ledger,
 				officials: officialsFor(input.bodySlug, meeting.date),
 			});
-			for (const [checkId, verdict] of Object.entries(report.verdicts) as [
-				CheckId,
-				Verdict,
-			][]) {
-				if (verdict.outcome === "pass") continue;
-				if (input.checkId !== undefined && checkId !== input.checkId) continue;
-				findings.push({ date: meeting.date, checkId, verdict });
-			}
+			const nonPasses = (
+				Object.entries(report.verdicts) as [CheckId, Verdict][]
+			).flatMap(([checkId, verdict]) =>
+				verdict.outcome === "pass" ? [] : [{ checkId, verdict }],
+			);
+			const evidence = redactedEvidence(
+				nonPasses.map(({ checkId, verdict }) => ({
+					id: checkId,
+					evidence:
+						verdict.outcome === "fail"
+							? verdict.evidence
+							: `unchecked: ${verdict.reason}`,
+					quotesDraft: verdict.outcome === "fail",
+					judged: false,
+				})),
+			);
+			nonPasses.forEach(({ checkId }, i) => {
+				if (input.checkId !== undefined && checkId !== input.checkId) return;
+				findings.push({
+					date: meeting.date,
+					checkId,
+					evidence: evidence[i] as RedactedEvidence,
+				});
+			});
 		}
 		return findings;
 	});
@@ -59,11 +83,7 @@ function auditSummaries(input: {
 
 /** One line of `summaries:audit`: the date, the check id, and the evidence. */
 function formatAuditLine(finding: AuditFinding): string {
-	const detail =
-		finding.verdict.outcome === "fail"
-			? finding.verdict.evidence
-			: `unchecked: ${finding.verdict.reason}`;
-	return [finding.date, finding.checkId.padEnd(5), detail].join("  ");
+	return [finding.date, finding.checkId.padEnd(5), finding.evidence].join("  ");
 }
 
 export { auditSummaries, formatAuditLine };

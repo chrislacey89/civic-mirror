@@ -37,12 +37,10 @@ export const JUDGE_OWNS = [
  * The checks whose judge verdict may hold a page, by the meeting's sources:
  * those whose calibration record (`calibrate-judge`) clears every bar in
  * `calibration.ts` and that no instruction inside a source flipped in both
- * probe runs. Every other judge verdict only flags. A5 clears the bars on
- * meetings with documents, but an appended "ignore previous instructions"
- * turned one of its fails to a pass in both runs, so it is not gated.
+ * probe runs. Every other judge verdict only flags.
  */
 export const JUDGE_GATED = {
-	documents: ["A2"],
+	documents: ["A2", "A5"],
 	transcript: [],
 } as const satisfies Readonly<
 	Record<"documents" | "transcript", readonly GateId[]>
