@@ -9,6 +9,7 @@ import * as schema from "#/db/schema.ts";
 import { checkDraft } from "#/pipeline/checks/prePublish.ts";
 import { publicationOf } from "#/pipeline/checks/test-outcomes.ts";
 import type {
+	CodeCheck,
 	PrePublishOutcome,
 	WrittenDraft,
 } from "#/pipeline/checks/types.ts";
@@ -449,19 +450,43 @@ describe("describeRecheck", () => {
 	});
 
 	it("withholds the headline and redacts gate evidence when A5 fails, so a resident's name is never printed", () => {
-		const outcome: PrePublishOutcome = {
-			kind: "held",
-			reason: "gate-failed",
-			best: { highlights: ["Jane Roe speaks against paving"], prose: "x." },
-			gateFails: ["A5", "TRUNC"],
-			rounds: [],
+		const namesAResident: CodeCheck = {
+			owns: ["A1", "A5"],
+			run: () => ({
+				A1: {
+					outcome: "fail",
+					evidence:
+						'"Jane Roe" is in no source: "Jane Roe speaks against paving."',
+				},
+				A5: {
+					outcome: "fail",
+					evidence: "a resident at public comment is named: [name]",
+				},
+			}),
 		};
+		const outcome = checkDraft({
+			draft: {
+				...WHOLE,
+				highlights: ["Jane Roe speaks against paving"],
+				prose: "Jane Roe speaks against paving.",
+			},
+			context: {
+				input: {
+					sources: [{ kind: "documents", text: MINUTES }],
+					meetingContext: "",
+				},
+				ledger: [PAVING],
+				officials: [],
+			},
+			checks: [namesAResident],
+		});
+		expect(outcome).toMatchObject({ kind: "held", gateFails: ["A1", "A5"] });
 
 		const lines = describeRecheck(outcome);
 
 		expect(lines).toEqual([
 			"  outcome:       held (gate-failed)",
-			"  gate failures: A5: no verdict  |  TRUNC: no verdict",
+			"  gate failures: A1: quote withheld, A5 also fails  |  A5: a resident at public comment is named: [name]",
 			"  headline:      (withheld: A5 fails)",
 		]);
 		expect(lines.join("\n")).not.toContain("Jane Roe");
