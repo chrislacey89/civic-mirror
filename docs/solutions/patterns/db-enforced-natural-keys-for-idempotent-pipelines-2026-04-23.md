@@ -161,6 +161,7 @@ uniqueIndex("transcripts_meeting_id_source_unique").on(
 
 - `docs/solutions/patterns/boundary-map-drift-between-slices-2026-04-10.md` — same sibling directory; different failure mode (stubs at slice boundaries) but same underlying principle (enforce invariants at the boundary, not in prose).
 - `docs/solutions/patterns/empty-output-silent-degradation-2026-04-11.md` — also about pipeline-stage invariants that need to be enforced in code, not conventions.
+- `docs/solutions/patterns/saved-outcome-must-round-trip-exactly-2026-11-27.md` — the same pattern recurring: once `summary_rounds.run_id` came from a saved preview file instead of being minted at write time, `(run_id, round)` needed a unique index to refuse a double apply (PR #245).
 - Issue #37 — https://github.com/chrislacey89/civic-mirror/issues/37 (the duplicate-meetings bug)
 - PR #38 — https://github.com/chrislacey89/civic-mirror/pull/38 (this fix)
 - Issue #25 — 2-year selective backfill; was blocked by this bug, now unblocked.
