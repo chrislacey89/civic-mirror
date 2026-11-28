@@ -206,14 +206,16 @@ const FINGERPRINT_PROBES: readonly JudgeInput[] = [
 ];
 
 /**
- * The fingerprint of the judge `createGeminiJudge` builds for `modelId`. It
- * covers the system prompt, the user prompt as built for each fixed input
- * (template, writer inputs and closing line), the output schema as the model
- * receives it, and the call settings.
+ * What the fingerprint hashes besides the model id: the system prompt and the
+ * user prompt as built for each fixed input (template, writer inputs and
+ * closing line), and the call settings with the output schema as the model
+ * receives it.
  */
-export function geminiJudgeFingerprint(modelId: string): string {
-	return judgeFingerprint({
-		model: modelId,
+export function judgeFingerprintMaterial(): {
+	prompt: string;
+	settings: Record<string, unknown>;
+} {
+	return {
 		prompt: [
 			JUDGE_INSTRUCTIONS,
 			...FINGERPRINT_PROBES.map((probe) => buildJudgePrompt(probe)),
@@ -222,7 +224,12 @@ export function geminiJudgeFingerprint(modelId: string): string {
 			...JUDGE_SETTINGS,
 			outputSchema: asSchema(judgeOutputSchema).jsonSchema,
 		},
-	});
+	};
+}
+
+/** The fingerprint of the judge `createGeminiJudge` builds for `modelId`. */
+export function geminiJudgeFingerprint(modelId: string): string {
+	return judgeFingerprint({ model: modelId, ...judgeFingerprintMaterial() });
 }
 
 /**

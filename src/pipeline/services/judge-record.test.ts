@@ -10,17 +10,12 @@ import {
 	JUDGE_CLOSING,
 	JUDGE_INSTRUCTIONS,
 	JUDGE_MODEL_ID,
+	judgeFingerprintMaterial,
 } from "./GeminiJudge.ts";
 
-// Pass-throughs that let a test see what the fingerprint hashes and change
-// what the writer prompt returns, without a parameter the product code lacks.
+// Lets a test change what the writer prompt returns, without a parameter the
+// product code lacks.
 const writer = vi.hoisted(() => ({ suffix: "" }));
-
-vi.mock("#/pipeline/checks/judge.ts", async (importOriginal) => {
-	const original =
-		await importOriginal<typeof import("#/pipeline/checks/judge.ts")>();
-	return { ...original, judgeFingerprint: vi.fn(original.judgeFingerprint) };
-});
 
 vi.mock("./GeminiSummarizer.ts", async (importOriginal) => {
 	const original =
@@ -56,23 +51,21 @@ describe("the production judge's calibration record", () => {
 	});
 
 	it("hashes the whole judge prompt as built, not only its fixed text", () => {
-		geminiJudgeFingerprint(JUDGE_MODEL_ID);
-		const hashed = vi.mocked(judgeFingerprint).mock.lastCall?.[0];
-		expect(hashed?.prompt).toContain(JUDGE_INSTRUCTIONS);
+		const hashed = judgeFingerprintMaterial();
+		expect(hashed.prompt).toContain(JUDGE_INSTRUCTIONS);
 		// The judge's own template, and the closing line.
-		expect(hashed?.prompt).toContain("OFFICIALS:");
-		expect(hashed?.prompt).toContain("DRAFT:");
-		expect(hashed?.prompt).toContain("HEADLINE: ");
-		expect(hashed?.prompt).toContain(JUDGE_CLOSING);
+		expect(hashed.prompt).toContain("OFFICIALS:");
+		expect(hashed.prompt).toContain("DRAFT:");
+		expect(hashed.prompt).toContain("HEADLINE: ");
+		expect(hashed.prompt).toContain(JUDGE_CLOSING);
 		// The writer's inputs, as `buildWritingPrompt` renders them.
 		for (const label of ["DOCUMENTS:", "TRANSCRIPT:", "LEDGER:", "GLOSSARY:"]) {
-			expect(hashed?.prompt).toContain(label);
+			expect(hashed.prompt).toContain(label);
 		}
 	});
 
 	it("hashes the prompt's other branches: several documents, an empty ledger and roster, a roster line without variants, a headline-only draft", () => {
-		geminiJudgeFingerprint(JUDGE_MODEL_ID);
-		const prompt = vi.mocked(judgeFingerprint).mock.lastCall?.[0].prompt ?? "";
+		const { prompt } = judgeFingerprintMaterial();
 		// Two documents of one kind, joined by a blank line.
 		expect(prompt).toContain(
 			"Council approved the paving bid.\n\nSecond document",
@@ -88,10 +81,21 @@ describe("the production judge's calibration record", () => {
 	});
 
 	it("hashes the output schema as the model receives it, descriptions included", () => {
-		geminiJudgeFingerprint(JUDGE_MODEL_ID);
-		const hashed = vi.mocked(judgeFingerprint).mock.lastCall?.[0];
-		expect(JSON.stringify(hashed?.settings.outputSchema)).toContain(
+		const hashed = judgeFingerprintMaterial();
+		expect(JSON.stringify(hashed.settings.outputSchema)).toContain(
 			"the failing words of the draft, quoted exactly",
+		);
+	});
+
+	it("hashes exactly the material it exposes, and the model id", () => {
+		expect(geminiJudgeFingerprint(JUDGE_MODEL_ID)).toBe(
+			judgeFingerprint({
+				model: JUDGE_MODEL_ID,
+				...judgeFingerprintMaterial(),
+			}),
+		);
+		expect(geminiJudgeFingerprint("another-model")).not.toBe(
+			geminiJudgeFingerprint(JUDGE_MODEL_ID),
 		);
 	});
 
