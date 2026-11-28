@@ -326,19 +326,29 @@ export function newPublication(outcome: PrePublishOutcome): SummaryPublication {
  * One line per gate a held outcome failed, from the round its best draft came
  * from: the gate id and the quoted text, or why it went unchecked. A gate the
  * judge failed is marked "(judge)". A judge's A5 fail quotes nothing, since
- * its quote would name the resident.
+ * its quote would name the resident. Only A5 blanks names in its own evidence,
+ * so when A5 is among the failures no other gate quotes the draft either: a
+ * judge's A2 quote of the sentence that names the resident would print it.
  */
 export function gateEvidence(outcome: PrePublishOutcome): string[] {
 	if (outcome.kind !== "held") return [];
 	const round = outcome.rounds.find((r) => r.draft === outcome.best);
+	const namesResident = outcome.gateFails.includes("A5");
 	return outcome.gateFails.map((id) => {
 		const verdict = round?.code.verdicts[id];
-		if (verdict?.outcome === "fail") return `${id}: ${verdict.evidence}`;
+		if (verdict?.outcome === "fail") {
+			return namesResident && id !== "A5"
+				? `${id}: quote withheld, A5 also fails`
+				: `${id}: ${verdict.evidence}`;
+		}
 		const judged =
 			typeof round?.judge === "object" ? round.judge.verdicts[id] : undefined;
 		if (judged?.outcome === "fail") {
-			return id === "A5"
-				? "A5 (judge): a person named in the draft spoke as a member of the public"
+			if (id === "A5") {
+				return "A5 (judge): a person named in the draft spoke as a member of the public";
+			}
+			return namesResident
+				? `${id} (judge): quote withheld, A5 also fails`
 				: `${id} (judge): ${judged.evidence}`;
 		}
 		if (verdict?.outcome === "unchecked") {

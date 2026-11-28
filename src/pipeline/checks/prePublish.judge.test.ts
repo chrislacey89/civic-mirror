@@ -240,6 +240,31 @@ describe("prePublish with a judge", () => {
 			expect(evidence).not.toContain("Jane Doe");
 		});
 
+		it("when the judge fails A2 and A5 on one sentence, no line quotes the draft", async () => {
+			const { judge } = judging(() =>
+				report({
+					A2: fail("resident Jane Doe asked about the bid"),
+					A5: fail("resident Jane Doe asked about the bid"),
+				}),
+			);
+			const outcome = await prePublish({
+				draft,
+				context: documentsMeeting,
+				revise: noRevision,
+				cap: 1,
+				checks: unresolvedName,
+				judge,
+			});
+			expect(outcome).toMatchObject({
+				kind: "held",
+				gateFails: ["A2", "A5"],
+			});
+			const evidence = gateEvidence(outcome);
+			expect(evidence).toHaveLength(2);
+			expect(evidence.join("\n")).toContain("A2 (judge)");
+			expect(evidence.join("\n")).not.toContain("Jane Doe");
+		});
+
 		it("on a transcript-only meeting, a name code cannot resolve holds without asking the judge", async () => {
 			const { judge, calls } = judging(() => report());
 			const outcome = await prePublish({
