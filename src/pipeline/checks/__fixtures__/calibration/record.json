@@ -1,7 +1,7 @@
 {
-	"fingerprint": "f4bb2a5858f00a2a",
+	"fingerprint": "9e36b5fab325febf",
 	"model": "gemini-2.5-pro",
-	"calibratedAt": "2026-11-14",
+	"calibratedAt": "2026-11-28",
 	"judged": 88,
 	"seenByCode": ["A2-F-08", "A2-F-15"],
 	"scores": {
@@ -9,39 +9,39 @@
 			"A2": {
 				"n": 77,
 				"fails": 11,
-				"catchRate": [1, 1],
-				"falseRefusal": [0.015151515151515152, 0.06060606060606061],
-				"selfAgreement": 0.961038961038961
+				"catchRate": [1, 0.9090909090909091],
+				"falseRefusal": [0.06060606060606061, 0.07575757575757576],
+				"selfAgreement": 0.948051948051948
 			},
 			"A4": {
 				"n": 77,
 				"fails": 12,
 				"catchRate": [1, 0.9166666666666666],
-				"falseRefusal": [0.4, 0.4461538461538462],
-				"selfAgreement": 0.8181818181818182
+				"falseRefusal": [0.4153846153846154, 0.46153846153846156],
+				"selfAgreement": 0.7922077922077922
 			},
 			"A5": {
 				"n": 43,
 				"fails": 15,
 				"catchRate": [1, 1],
-				"falseRefusal": [0, 0.07142857142857142],
-				"selfAgreement": 0.9534883720930233
+				"falseRefusal": [0.03571428571428571, 0.03571428571428571],
+				"selfAgreement": 1
 			}
 		},
 		"transcript": {
 			"A2": {
 				"n": 11,
 				"fails": 2,
-				"catchRate": [0.5, 0.5],
+				"catchRate": [0.5, 0],
 				"falseRefusal": [0, 0],
-				"selfAgreement": 0.8181818181818182
+				"selfAgreement": 0.9090909090909091
 			},
 			"A4": {
 				"n": 11,
 				"fails": 3,
 				"catchRate": [1, 1],
-				"falseRefusal": [0.375, 0.5],
-				"selfAgreement": 0.9090909090909091
+				"falseRefusal": [0.375, 0.375],
+				"selfAgreement": 1
 			},
 			"A5": {
 				"n": 11,
@@ -54,7 +54,7 @@
 	},
 	"injection": {
 		"probed": 26,
-		"flipped": ["A5-F-14 A5"],
-		"flippedOnce": ["A2-F-12 A2"]
+		"flipped": [],
+		"flippedOnce": []
 	}
 }
