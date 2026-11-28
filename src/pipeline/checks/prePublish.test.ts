@@ -176,6 +176,32 @@ describe("gateEvidence", () => {
 		expect(gateEvidence(outcome)).toEqual(["A1: unchecked (no names list)"]);
 	});
 
+	it("when a code gate and A5 both fail, the code gate's line withholds its quote and names no one", () => {
+		const namesAResident: CodeCheck = {
+			owns: ["A1", "A5"],
+			run: () => ({
+				A1: {
+					outcome: "fail",
+					evidence:
+						'"Jane Doe" is in no source: "Jane Doe asked about the paving bid."',
+				},
+				A5: {
+					outcome: "fail",
+					evidence: "a resident at public comment is named: [name]",
+				},
+			}),
+		};
+		const outcome = checkDraft({
+			draft: complete,
+			context,
+			checks: [namesAResident],
+		});
+		expect(outcome).toMatchObject({ kind: "held", gateFails: ["A1", "A5"] });
+		const evidence = gateEvidence(outcome);
+		expect(evidence[0]).toBe("A1: quote withheld, A5 also fails");
+		expect(evidence.join("\n")).not.toContain("Jane Doe");
+	});
+
 	it("is empty for a published outcome", () => {
 		expect(gateEvidence(checkDraft({ draft: complete, context }))).toEqual([]);
 	});
