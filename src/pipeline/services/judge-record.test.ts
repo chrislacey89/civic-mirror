@@ -5,7 +5,11 @@ import {
 	clearsBars,
 } from "#/pipeline/checks/calibration.ts";
 import { JUDGE_GATED } from "#/pipeline/checks/judge.ts";
-import { geminiJudgeFingerprint, JUDGE_MODEL_ID } from "./GeminiJudge.ts";
+import {
+	geminiJudgeFingerprint,
+	JUDGE_CLOSING,
+	JUDGE_MODEL_ID,
+} from "./GeminiJudge.ts";
 
 const RECORD = "src/pipeline/checks/__fixtures__/calibration/record.json";
 const RERUN = "run `pnpm tsx src/pipeline/scripts/calibrate-judge.ts --write`";
@@ -21,6 +25,12 @@ describe("the production judge's calibration record", () => {
 			record().fingerprint,
 			`the judge changed since it was calibrated: ${RERUN}`,
 		).toBe(geminiJudgeFingerprint(JUDGE_MODEL_ID));
+	});
+
+	it("changes when the closing line of the judge prompt changes", () => {
+		expect(
+			geminiJudgeFingerprint(JUDGE_MODEL_ID, `${JUDGE_CLOSING} `),
+		).not.toBe(geminiJudgeFingerprint(JUDGE_MODEL_ID));
 	});
 
 	it.each(
