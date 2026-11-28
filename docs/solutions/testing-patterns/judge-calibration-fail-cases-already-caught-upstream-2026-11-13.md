@@ -91,6 +91,8 @@ Import the judge prompt's rules from the rubric, or diff them against it, rather
 
 **Superseded by #205 (PR #233):** re-measured with code-caught edits left out, Pro gates A2 only, on meetings with documents. A5's fail edits are almost all caught by A1, so its real job is unmeasured until #228 rebuilds them.
 
+**Superseded by #240 (PR #251), 2026-11-27:** A5 is now gated too, on meetings with documents (`JUDGE_GATED` in `src/pipeline/checks/judge.ts`), so "Pro gates A2 only" no longer holds.
+
 ## Related
 
 - #195 (spike), PR #227, #205 (the slice that consumes the verdict), PR #233 (the harness and record), #228 (rebuild the A5 fail edits)
