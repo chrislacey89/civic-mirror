@@ -1,5 +1,5 @@
 import { google } from "@ai-sdk/google";
-import { generateText, Output } from "ai";
+import { asSchema, generateText, Output } from "ai";
 import { z } from "zod";
 import {
 	JUDGE_OWNS,
@@ -137,17 +137,61 @@ export function reportOf(output: unknown): CheckReport | "unavailable" {
 }
 
 /**
- * The fingerprint of the judge `createGeminiJudge` builds for `modelId`. It
- * covers the system prompt and the closing line of the user prompt.
+ * A fixed input the fingerprint builds the judge prompt from, so it covers the
+ * prompt as the model reads it: the judge's template, the writer's inputs and
+ * the officials roster. Every kind of writer input is present, so a change to
+ * how one is rendered changes the prompt built from this.
  */
-export function geminiJudgeFingerprint(
-	modelId: string,
-	closingLine: string = JUDGE_CLOSING,
-): string {
+const FINGERPRINT_PROBE: JudgeInput = {
+	context: {
+		input: {
+			meetingContext: "Town Council, 2026-05-11",
+			sources: [
+				{ kind: "documents", text: "Council approved the paving bid." },
+				{ kind: "transcript", text: "we approve the paving bid" },
+			],
+			glossary: ["CCD: Cumulative Capital Development fund"],
+		},
+		ledger: [
+			{
+				title: "Paving bid",
+				description: "Paving",
+				amount: 212400,
+				originalAmount: "$212,400",
+				status: "approved",
+				confidence: 0.95,
+				isRecurring: false,
+			},
+		],
+		officials: [
+			{
+				name: "Dan Swafford",
+				role: "Vice President",
+				variants: ["Daniel Swafford"],
+				served: { from: "2024-01-01", to: null },
+			},
+		],
+	},
+	draft: {
+		highlights: ["Council accepts the paving bid", "Vote was 4-1"],
+		prose: "The council approved the paving bid.",
+	},
+};
+
+/**
+ * The fingerprint of the judge `createGeminiJudge` builds for `modelId`. It
+ * covers the system prompt, the user prompt as built for a fixed input
+ * (template, writer inputs and closing line), the output schema as the model
+ * receives it, and the call settings.
+ */
+export function geminiJudgeFingerprint(modelId: string): string {
 	return judgeFingerprint({
 		model: modelId,
-		prompt: `${JUDGE_INSTRUCTIONS}\n\n${closingLine}`,
-		settings: JUDGE_SETTINGS,
+		prompt: `${JUDGE_INSTRUCTIONS}\n\n${buildJudgePrompt(FINGERPRINT_PROBE)}`,
+		settings: {
+			...JUDGE_SETTINGS,
+			outputSchema: asSchema(judgeOutputSchema).jsonSchema,
+		},
 	});
 }
 

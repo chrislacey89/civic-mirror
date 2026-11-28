@@ -1,15 +1,43 @@
 import { existsSync, readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	type CalibrationRecord,
 	clearsBars,
 } from "#/pipeline/checks/calibration.ts";
-import { JUDGE_GATED } from "#/pipeline/checks/judge.ts";
+import { JUDGE_GATED, judgeFingerprint } from "#/pipeline/checks/judge.ts";
 import {
 	geminiJudgeFingerprint,
 	JUDGE_CLOSING,
+	JUDGE_INSTRUCTIONS,
 	JUDGE_MODEL_ID,
 } from "./GeminiJudge.ts";
+
+// Pass-throughs that let a test see what the fingerprint hashes and change
+// what the writer prompt returns, without a parameter the product code lacks.
+const writer = vi.hoisted(() => ({ suffix: "" }));
+
+vi.mock("#/pipeline/checks/judge.ts", async (importOriginal) => {
+	const original =
+		await importOriginal<typeof import("#/pipeline/checks/judge.ts")>();
+	return { ...original, judgeFingerprint: vi.fn(original.judgeFingerprint) };
+});
+
+vi.mock("./GeminiSummarizer.ts", async (importOriginal) => {
+	const original =
+		await importOriginal<typeof import("./GeminiSummarizer.ts")>();
+	return {
+		...original,
+		buildWritingPrompt: (
+			...args: Parameters<typeof original.buildWritingPrompt>
+		) => {
+			const prompt = original.buildWritingPrompt(...args);
+			return prompt.replace(
+				"Write the highlights and prose",
+				`${writer.suffix}Write the highlights and prose`,
+			);
+		},
+	};
+});
 
 const RECORD = "src/pipeline/checks/__fixtures__/calibration/record.json";
 const RERUN = "run `pnpm tsx src/pipeline/scripts/calibrate-judge.ts --write`";
@@ -27,10 +55,37 @@ describe("the production judge's calibration record", () => {
 		).toBe(geminiJudgeFingerprint(JUDGE_MODEL_ID));
 	});
 
-	it("changes when the closing line of the judge prompt changes", () => {
-		expect(
-			geminiJudgeFingerprint(JUDGE_MODEL_ID, `${JUDGE_CLOSING} `),
-		).not.toBe(geminiJudgeFingerprint(JUDGE_MODEL_ID));
+	it("hashes the whole judge prompt as built, not only its fixed text", () => {
+		geminiJudgeFingerprint(JUDGE_MODEL_ID);
+		const hashed = vi.mocked(judgeFingerprint).mock.lastCall?.[0];
+		expect(hashed?.prompt).toContain(JUDGE_INSTRUCTIONS);
+		// The judge's own template, and the closing line.
+		expect(hashed?.prompt).toContain("OFFICIALS:");
+		expect(hashed?.prompt).toContain("DRAFT:");
+		expect(hashed?.prompt).toContain("HEADLINE: ");
+		expect(hashed?.prompt).toContain(JUDGE_CLOSING);
+		// The writer's inputs, as `buildWritingPrompt` renders them.
+		for (const label of ["DOCUMENTS:", "TRANSCRIPT:", "LEDGER:", "GLOSSARY:"]) {
+			expect(hashed?.prompt).toContain(label);
+		}
+	});
+
+	it("hashes the output schema as the model receives it, descriptions included", () => {
+		geminiJudgeFingerprint(JUDGE_MODEL_ID);
+		const hashed = vi.mocked(judgeFingerprint).mock.lastCall?.[0];
+		expect(JSON.stringify(hashed?.settings.outputSchema)).toContain(
+			"the failing words of the draft, quoted exactly",
+		);
+	});
+
+	it("changes when the writer's inputs are rendered differently", () => {
+		const before = geminiJudgeFingerprint(JUDGE_MODEL_ID);
+		writer.suffix = "NEW WRITER INPUT\n\n";
+		try {
+			expect(geminiJudgeFingerprint(JUDGE_MODEL_ID)).not.toBe(before);
+		} finally {
+			writer.suffix = "";
+		}
 	});
 
 	it.each(
