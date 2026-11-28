@@ -331,8 +331,8 @@ export function newPublication(outcome: PrePublishOutcome): SummaryPublication {
 export type RedactedEvidence = string & { readonly __redacted: unique symbol };
 
 /** One failed gate's evidence before redaction. */
-export interface GateFailEvidence {
-	readonly id: GateId;
+export interface GateFailEvidence<Id extends CheckId = GateId> {
+	readonly id: Id;
 	readonly evidence: string;
 	/** True when `evidence` quotes the draft; false for "unchecked (why)". */
 	readonly quotesDraft: boolean;
@@ -351,7 +351,7 @@ export interface GateFailEvidence {
  * text from here, in the order of `fails`.
  */
 export function redactedEvidence(
-	fails: readonly GateFailEvidence[],
+	fails: readonly GateFailEvidence<CheckId>[],
 ): RedactedEvidence[] {
 	const namesResident = fails.some((fail) => fail.id === "A5");
 	return fails.map((fail): RedactedEvidence => {

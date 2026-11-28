@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 import * as schema from "#/db/schema.ts";
 import { auditSummaries, formatAuditLine } from "#/pipeline/audit.ts";
+import type { RedactedEvidence } from "#/pipeline/checks/prePublish.ts";
 import { PUBLISHED } from "#/pipeline/checks/test-outcomes.ts";
 import {
 	StorageService,
@@ -63,10 +64,7 @@ describe("auditSummaries", () => {
 			{
 				date: "2025-05-27",
 				checkId: "TRUNC",
-				verdict: {
-					outcome: "fail",
-					evidence: "The council approved the paving bid for",
-				},
+				evidence: "The council approved the paving bid for",
 			},
 		]);
 	});
@@ -95,13 +93,66 @@ describe("auditSummaries", () => {
 	});
 });
 
+describe("auditSummaries when A5 fails", () => {
+	it("prints no resident name: a code gate's quote is withheld", async () => {
+		const db = await createMigratedTestDb();
+		await db
+			.insert(schema.governingBodies)
+			.values({ name: BODY.name, slug: BODY.slug, type: "town" })
+			.run();
+		const prose =
+			"The council approved the paving bid. Ada Lovelace asked the council about flooding on";
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const storage = yield* StorageService;
+				return yield* storage.storeMeeting({
+					bodySlug: BODY.slug,
+					date: "2025-05-27",
+					meetingType: "regular",
+					documents: [
+						{
+							sourceUrl: "https://example.com/2025-05-27.pdf",
+							rawText: [
+								"Privilege of the Floor",
+								"Ada Lovelace, 12 Elm Street, asked about flooding on Elm Street.",
+								"Supervisor Comments",
+							].join("\n"),
+							documentType: "minutes",
+							extractionMethod: "text-layer",
+						},
+					],
+					summary: {
+						highlights: ["Council approves paving bid"],
+						prose,
+						model: "m",
+						publication: PUBLISHED,
+					},
+					fiscalDecisions: [],
+					budgetDiscussions: [],
+				});
+			}).pipe(Effect.provide(StorageServiceLive(db))),
+		);
+
+		const findings = await Effect.runPromise(
+			auditSummaries({ bodySlug: BODY.slug }).pipe(
+				Effect.provide(StorageServiceLive(db)),
+			),
+		);
+		const printed = findings.map(formatAuditLine).join("\n");
+
+		expect(findings.map((f) => f.checkId)).toContain("A5");
+		expect(findings.map((f) => f.checkId)).toContain("TRUNC");
+		expect(printed).not.toContain("Lovelace");
+	});
+});
+
 describe("formatAuditLine", () => {
 	it("gives the date, the check id and the evidence", () => {
 		expect(
 			formatAuditLine({
 				date: "2025-05-27",
 				checkId: "TRUNC",
-				verdict: { outcome: "fail", evidence: "approved the paving bid for" },
+				evidence: "approved the paving bid for" as RedactedEvidence,
 			}),
 		).toBe("2025-05-27  TRUNC  approved the paving bid for");
 	});
@@ -111,7 +162,7 @@ describe("formatAuditLine", () => {
 			formatAuditLine({
 				date: "2025-05-27",
 				checkId: "A1",
-				verdict: { outcome: "unchecked", reason: "no names list" },
+				evidence: "unchecked: no names list" as RedactedEvidence,
 			}),
 		).toBe("2025-05-27  A1     unchecked: no names list");
 	});
