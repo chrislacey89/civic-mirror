@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from "effect";
+import type { RedactedEvidence } from "#/pipeline/checks/prePublish.ts";
 import type { GateId, SummaryHeldReason } from "#/pipeline/checks/types.ts";
 import { NetworkError } from "#/pipeline/errors.ts";
 import type { HeldReason } from "#/pipeline/held.ts";
@@ -186,7 +187,7 @@ function formatSummaryHeldAlert(input: {
 	reason: SummaryHeldReason;
 	gateFails: readonly GateId[];
 	/** One line per failed gate: its id and the quoted text. */
-	evidence: readonly string[];
+	evidence: readonly RedactedEvidence[];
 }): AlertInput {
 	return {
 		subject: `[Civic Mirror] Summary held for ${input.bodyName} ${input.meetingDate}: ${input.gateFails.join(", ") || input.reason}`,

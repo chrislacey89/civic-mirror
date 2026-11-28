@@ -324,6 +324,12 @@ export function newPublication(outcome: PrePublishOutcome): SummaryPublication {
 	return toPublication(outcome, crypto.randomUUID());
 }
 
+/**
+ * Evidence text that came out of `redactedEvidence`. Printers of held
+ * evidence take this type, so raw verdict text does not compile there.
+ */
+export type RedactedEvidence = string & { readonly __redacted: unique symbol };
+
 /** One failed gate's evidence before redaction. */
 export interface GateFailEvidence {
 	readonly id: GateId;
@@ -344,22 +350,27 @@ export interface GateFailEvidence {
  * evidence (`gateEvidence`, `summaries:held`, `summaries:recheck`) takes its
  * text from here, in the order of `fails`.
  */
-export function redactedEvidence(fails: readonly GateFailEvidence[]): string[] {
+export function redactedEvidence(
+	fails: readonly GateFailEvidence[],
+): RedactedEvidence[] {
 	const namesResident = fails.some((fail) => fail.id === "A5");
-	return fails.map((fail) => {
-		if (!namesResident) return fail.evidence;
+	return fails.map((fail): RedactedEvidence => {
+		if (!namesResident) return fail.evidence as RedactedEvidence;
 		if (fail.id !== "A5") {
 			// An unchecked reason can quote the draft too (A1's tally check does),
 			// so it keeps only its outcome while A5 fails.
-			if (fail.quotesDraft) return "quote withheld, A5 also fails";
-			return fail.evidence.startsWith("unchecked")
-				? "unchecked"
-				: fail.evidence;
+			if (fail.quotesDraft)
+				return "quote withheld, A5 also fails" as RedactedEvidence;
+			return (
+				fail.evidence.startsWith("unchecked") ? "unchecked" : fail.evidence
+			) as RedactedEvidence;
 		}
-		if (!fail.quotesDraft) return fail.evidence;
-		return fail.judged
-			? "a name in the draft fails A5; quote withheld"
-			: fail.evidence;
+		if (!fail.quotesDraft) return fail.evidence as RedactedEvidence;
+		return (
+			fail.judged
+				? "a name in the draft fails A5; quote withheld"
+				: fail.evidence
+		) as RedactedEvidence;
 	});
 }
 
@@ -368,7 +379,7 @@ export function redactedEvidence(fails: readonly GateFailEvidence[]): string[] {
  * from: the gate id and the quoted text, or why it went unchecked. A gate the
  * judge failed is marked "(judge)". Quotes are redacted by `redactedEvidence`.
  */
-export function gateEvidence(outcome: PrePublishOutcome): string[] {
+export function gateEvidence(outcome: PrePublishOutcome): RedactedEvidence[] {
 	if (outcome.kind !== "held") return [];
 	const round = outcome.rounds.find((r) => r.draft === outcome.best);
 	const fails = outcome.gateFails.map((id): GateFailEvidence => {
@@ -398,6 +409,7 @@ export function gateEvidence(outcome: PrePublishOutcome): string[] {
 	});
 	const redacted = redactedEvidence(fails);
 	return fails.map(
-		(fail, i) => `${fail.id}${fail.judged ? " (judge)" : ""}: ${redacted[i]}`,
+		(fail, i) =>
+			`${fail.id}${fail.judged ? " (judge)" : ""}: ${redacted[i]}` as RedactedEvidence,
 	);
 }

@@ -39,8 +39,8 @@ export function parseReleaseFile(text: string): WriteUp | null {
  * held, then each failing gate with its evidence. Evidence that spans lines
  * is joined with " / " so a meeting stays one line.
  *
- * The evidence arrives already redacted (`redactedEvidence`), so a list never
- * un-redacts a name.
+ * `HeldSummary` carries only `RedactedEvidence`, so a list cannot print raw
+ * verdict text.
  */
 export function formatHeldSummaryLine(held: HeldSummary): string {
 	const where =

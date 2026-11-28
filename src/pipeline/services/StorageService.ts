@@ -14,6 +14,7 @@ import { JUDGE_GATED } from "#/pipeline/checks/judge.ts";
 import {
 	decided,
 	type GateFailEvidence,
+	type RedactedEvidence,
 	redactedEvidence,
 } from "#/pipeline/checks/prePublish.ts";
 import {
@@ -161,8 +162,8 @@ interface SummaryRoundRow {
 
 /**
  * A meeting whose summary the pre-publish check held, and the gates its
- * latest check run's best round failed. Evidence is as the check stored it,
- * so a resident's name is already redacted.
+ * latest check run's best round failed. Evidence is `RedactedEvidence`: the
+ * stored round keeps raw verdict text, and `gateFailsOfBestRound` redacts it.
  */
 interface HeldSummary {
 	readonly meetingId: number;
@@ -173,7 +174,7 @@ interface HeldSummary {
 	readonly heldReason: SummaryHeldReason;
 	readonly gateFails: readonly {
 		readonly id: GateId;
-		readonly evidence: string;
+		readonly evidence: RedactedEvidence;
 	}[];
 }
 
@@ -1255,7 +1256,10 @@ function gateFailsOfBestRound(
 		];
 	});
 	const evidence = redactedEvidence(fails);
-	return fails.map((fail, i) => ({ id: fail.id, evidence: evidence[i] ?? "" }));
+	return fails.map((fail, i) => ({
+		id: fail.id,
+		evidence: evidence[i] ?? ("" as RedactedEvidence),
+	}));
 }
 
 async function getMatchableSummaryQuery(
