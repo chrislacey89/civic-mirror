@@ -91,7 +91,7 @@ Import the judge prompt's rules from the rubric, or diff them against it, rather
 
 ## Related
 
-- #195 (spike), PR #227, #205 (the slice that consumes the verdict), PR #233 (the harness and record), #228 (rebuild the A5 fail edits)
+- #195 (spike), PR #227, #205 (the slice that consumes the verdict), PR #233 (the harness and record)
 
 ## Shelf Life
 
