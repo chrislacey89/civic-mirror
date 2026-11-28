@@ -89,8 +89,6 @@ Import the judge prompt's rules from the rubric, or diff them against it, rather
 **Rationale:** the owner chose to ship. The A5 result is weaker than its 1.00 suggests, and the A2 corpus result disagrees with live-draft agreement. #205 has to re-measure both before it gates them.
 **Revisable:** yes, once a corpus whose fail edits survive A1 has been run.
 
-**Superseded by #205 (PR #233):** re-measured with code-caught edits left out, Pro gates A2 only, on meetings with documents. A5's fail edits are almost all caught by A1, so its real job is unmeasured until #228 rebuilds them.
-
 ## Related
 
 - #195 (spike), PR #227, #205 (the slice that consumes the verdict), PR #233 (the harness and record), #228 (rebuild the A5 fail edits)
