@@ -2395,6 +2395,49 @@ describe("StorageService", () => {
 			expect(JSON.stringify(row?.gateFails)).not.toContain("Pruitt");
 		});
 
+		it("keeps an unchecked gate's reason out of a held summary's evidence when A5 fails", async () => {
+			const db = await createTestDb();
+			const base = held("run-unchecked-a5");
+			const [round] = base.rounds;
+			const withA5 = {
+				...base,
+				rounds: [
+					{
+						...round,
+						code: {
+							verdicts: {
+								...round.code.verdicts,
+								TRUNC: { outcome: "pass" as const },
+								A1: {
+									outcome: "unchecked" as const,
+									reason:
+										'cannot be counted from the record: "Gordon Pruitt asked about paving."',
+								},
+								A5: {
+									outcome: "fail" as const,
+									evidence: "a resident at public comment is named: [name]",
+								},
+							},
+						},
+					},
+				],
+			};
+			await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: { ...testMeetingInput.summary, publication: withA5 },
+				}),
+			);
+
+			const [row] = await run(db, (s) => s.listHeldSummaries());
+
+			expect(row?.gateFails).toContainEqual({
+				id: "A1",
+				evidence: "unchecked",
+			});
+			expect(JSON.stringify(row?.gateFails)).not.toContain("Pruitt");
+		});
+
 		it("stores a published summary as published", async () => {
 			const db = await createTestDb();
 			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));

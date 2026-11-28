@@ -339,15 +339,24 @@ export interface GateFailEvidence {
  * judge's A5 fail quotes nothing, since its quote would name the resident.
  * Only code's A5 blanks names in its own evidence, so when A5 is among the
  * failures no other gate quotes the draft either: a judge's A2 quote of the
- * sentence that names the resident would print it. Every printer of held
+ * sentence that names the resident would print it, and so would an unchecked
+ * gate's reason, which keeps only the word "unchecked". Every printer of held
  * evidence (`gateEvidence`, `summaries:held`, `summaries:recheck`) takes its
  * text from here, in the order of `fails`.
  */
 export function redactedEvidence(fails: readonly GateFailEvidence[]): string[] {
 	const namesResident = fails.some((fail) => fail.id === "A5");
 	return fails.map((fail) => {
-		if (!fail.quotesDraft || !namesResident) return fail.evidence;
-		if (fail.id !== "A5") return "quote withheld, A5 also fails";
+		if (!namesResident) return fail.evidence;
+		if (fail.id !== "A5") {
+			// An unchecked reason can quote the draft too (A1's tally check does),
+			// so it keeps only its outcome while A5 fails.
+			if (fail.quotesDraft) return "quote withheld, A5 also fails";
+			return fail.evidence.startsWith("unchecked")
+				? "unchecked"
+				: fail.evidence;
+		}
+		if (!fail.quotesDraft) return fail.evidence;
 		return fail.judged
 			? "a name in the draft fails A5; quote withheld"
 			: fail.evidence;

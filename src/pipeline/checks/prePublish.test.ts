@@ -202,6 +202,31 @@ describe("gateEvidence", () => {
 		expect(evidence.join("\n")).not.toContain("Jane Doe");
 	});
 
+	it("when an unchecked gate's reason quotes the draft and A5 fails, the line keeps only unchecked", () => {
+		const uncheckedQuotingDraft: CodeCheck = {
+			owns: ["A1", "A5"],
+			run: () => ({
+				A1: {
+					outcome: "unchecked",
+					reason:
+						'cannot be counted from the record: "Jane Doe asked about the paving bid."',
+				},
+				A5: {
+					outcome: "fail",
+					evidence: "a resident at public comment is named: [name]",
+				},
+			}),
+		};
+		const outcome = checkDraft({
+			draft: complete,
+			context,
+			checks: [uncheckedQuotingDraft],
+		});
+		const evidence = gateEvidence(outcome);
+		expect(evidence[0]).toBe("A1: unchecked");
+		expect(evidence.join("\n")).not.toContain("Jane Doe");
+	});
+
 	it("is empty for a published outcome", () => {
 		expect(gateEvidence(checkDraft({ draft: complete, context }))).toEqual([]);
 	});
