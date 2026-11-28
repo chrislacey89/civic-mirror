@@ -285,7 +285,7 @@ describe("prePublish with a judge", () => {
 			});
 		});
 
-		it("the judge's A5 fail flags and does not hold", async () => {
+		it("when code resolved every name, the judge's A5 fail flags and does not hold", async () => {
 			const { judge } = judging(() =>
 				report({ A5: fail("Town Manager Mike Farmer said") }),
 			);
