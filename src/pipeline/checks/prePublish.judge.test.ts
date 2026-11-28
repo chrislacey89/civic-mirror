@@ -204,14 +204,47 @@ describe("prePublish with a judge", () => {
 			},
 		];
 
-		it.each([
-			["a meeting with documents", documentsMeeting],
-			["a transcript-only meeting", transcriptMeeting],
-		])("on %s, a name code cannot resolve holds without asking the judge", async (_, context) => {
+		it("on a meeting with documents, a name code cannot resolve goes to the judge, and its pass publishes", async () => {
 			const { judge, calls } = judging(() => report());
 			const outcome = await prePublish({
 				draft,
-				context,
+				context: documentsMeeting,
+				revise: noRevision,
+				cap: 1,
+				checks: unresolvedName,
+				judge,
+			});
+			expect(calls).toHaveLength(1);
+			expect(outcome.kind).toBe("publish");
+		});
+
+		it("on a meeting with documents, the judge's fail on an unresolved name holds, and the evidence names no one", async () => {
+			const { judge } = judging(() =>
+				report({ A5: fail("resident Jane Doe asked about the bid") }),
+			);
+			const outcome = await prePublish({
+				draft,
+				context: documentsMeeting,
+				revise: noRevision,
+				cap: 1,
+				checks: unresolvedName,
+				judge,
+			});
+			expect(outcome).toMatchObject({
+				kind: "held",
+				reason: "gate-failed",
+				gateFails: ["A5"],
+			});
+			const evidence = gateEvidence(outcome).join("\n");
+			expect(evidence).toContain("A5 (judge)");
+			expect(evidence).not.toContain("Jane Doe");
+		});
+
+		it("on a transcript-only meeting, a name code cannot resolve holds without asking the judge", async () => {
+			const { judge, calls } = judging(() => report());
+			const outcome = await prePublish({
+				draft,
+				context: transcriptMeeting,
 				revise: noRevision,
 				cap: 1,
 				checks: unresolvedName,
@@ -274,6 +307,35 @@ describe("prePublish with a judge", () => {
 				},
 			]);
 			expect(outcome).toMatchObject({ kind: "publish", best: plain });
+		});
+
+		it("on a meeting with documents, a revision whose name only the judge can clear is not worse, and publishes when the judge passes it", async () => {
+			const first = drafted("The council sensibly approved the paving bid.");
+			const second = drafted("Clerk Ann Lee read the paving bid.");
+			const { judge } = judging(({ prose }) =>
+				prose === first.prose
+					? report({ A2: fail("sensibly approved") })
+					: report(),
+			);
+			const nameOnSecond: CodeCheck = {
+				owns: ["A2", "A5"],
+				run: (d) => ({
+					A2: pass,
+					A5:
+						d.prose === second.prose
+							? { outcome: "unchecked", reason: "a name is on no list" }
+							: pass,
+				}),
+			};
+			const outcome = await prePublish({
+				draft: first,
+				context: documentsMeeting,
+				revise: async () => second,
+				cap: 2,
+				checks: [nameOnSecond],
+				judge,
+			});
+			expect(outcome).toMatchObject({ kind: "publish", best: second });
 		});
 
 		it("does not count the judge's fails in whether a round is worse: a round the judge alone fails more still replaces the best", async () => {
