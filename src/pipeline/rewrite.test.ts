@@ -448,7 +448,7 @@ describe("describeRecheck", () => {
 		expect(describeRecheck(outcome)[1]).toMatch(/TRUNC: /);
 	});
 
-	it("prints gate ids only and withholds the headline when A5 fails, so a resident's name is never printed", () => {
+	it("withholds the headline and redacts gate evidence when A5 fails, so a resident's name is never printed", () => {
 		const outcome: PrePublishOutcome = {
 			kind: "held",
 			reason: "gate-failed",
@@ -461,7 +461,7 @@ describe("describeRecheck", () => {
 
 		expect(lines).toEqual([
 			"  outcome:       held (gate-failed)",
-			"  gate failures: A5, TRUNC",
+			"  gate failures: A5: no verdict  |  TRUNC: no verdict",
 			"  headline:      (withheld: A5 fails)",
 		]);
 		expect(lines.join("\n")).not.toContain("Jane Roe");

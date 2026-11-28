@@ -11,7 +11,11 @@ import {
 	type ScoredDramaCategory,
 } from "#/lib/drama-levels.ts";
 import { JUDGE_GATED } from "#/pipeline/checks/judge.ts";
-import { decidedReport } from "#/pipeline/checks/prePublish.ts";
+import {
+	decidedReport,
+	type GateFailEvidence,
+	redactedEvidence,
+} from "#/pipeline/checks/prePublish.ts";
 import {
 	GATE_IDS,
 	type GateId,
@@ -1221,7 +1225,9 @@ function gateFailsOfBestRound(
 		best.verdicts.judge,
 		JUDGE_GATED.documents,
 	).verdicts;
-	return GATE_IDS.flatMap((id) => {
+	const judged =
+		typeof best.verdicts.judge === "object" ? best.verdicts.judge : null;
+	const fails = GATE_IDS.flatMap((id): GateFailEvidence[] => {
 		const verdict = verdicts[id];
 		if (verdict === undefined || verdict.outcome === "pass") return [];
 		return [
@@ -1231,9 +1237,13 @@ function gateFailsOfBestRound(
 					verdict.outcome === "fail"
 						? verdict.evidence
 						: `unchecked (${verdict.reason})`,
+				quotesDraft: verdict.outcome === "fail",
+				judged: verdict === judged?.verdicts[id],
 			},
 		];
 	});
+	const evidence = redactedEvidence(fails);
+	return fails.map((fail, i) => ({ id: fail.id, evidence: evidence[i] ?? "" }));
 }
 
 async function getMatchableSummaryQuery(

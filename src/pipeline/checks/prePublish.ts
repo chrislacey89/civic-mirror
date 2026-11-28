@@ -330,38 +330,71 @@ export function newPublication(outcome: PrePublishOutcome): SummaryPublication {
 	return toPublication(outcome, crypto.randomUUID());
 }
 
+/** One failed gate's evidence before redaction. */
+export interface GateFailEvidence {
+	readonly id: GateId;
+	readonly evidence: string;
+	/** True when `evidence` quotes the draft; false for "unchecked (why)". */
+	readonly quotesDraft: boolean;
+	/** True when the judge's verdict, not code's, is the one that failed. */
+	readonly judged: boolean;
+}
+
+/**
+ * The one place a resident's name is kept out of printed gate evidence. A
+ * judge's A5 fail quotes nothing, since its quote would name the resident.
+ * Only code's A5 blanks names in its own evidence, so when A5 is among the
+ * failures no other gate quotes the draft either: a judge's A2 quote of the
+ * sentence that names the resident would print it. Every printer of held
+ * evidence (`gateEvidence`, `summaries:held`, `summaries:recheck`) takes its
+ * text from here, in the order of `fails`.
+ */
+export function redactedEvidence(fails: readonly GateFailEvidence[]): string[] {
+	const namesResident = fails.some((fail) => fail.id === "A5");
+	return fails.map((fail) => {
+		if (!fail.quotesDraft || !namesResident) return fail.evidence;
+		if (fail.id !== "A5") return "quote withheld, A5 also fails";
+		return fail.judged
+			? "a name in the draft fails A5; quote withheld"
+			: fail.evidence;
+	});
+}
+
 /**
  * One line per gate a held outcome failed, from the round its best draft came
  * from: the gate id and the quoted text, or why it went unchecked. A gate the
- * judge failed is marked "(judge)". A judge's A5 fail quotes nothing, since
- * its quote would name the resident. Only A5 blanks names in its own evidence,
- * so when A5 is among the failures no other gate quotes the draft either: a
- * judge's A2 quote of the sentence that names the resident would print it.
+ * judge failed is marked "(judge)". Quotes are redacted by `redactedEvidence`.
  */
 export function gateEvidence(outcome: PrePublishOutcome): string[] {
 	if (outcome.kind !== "held") return [];
 	const round = outcome.rounds.find((r) => r.draft === outcome.best);
-	const namesResident = outcome.gateFails.includes("A5");
-	return outcome.gateFails.map((id) => {
+	const fails = outcome.gateFails.map((id): GateFailEvidence => {
 		const verdict = round?.code.verdicts[id];
 		if (verdict?.outcome === "fail") {
-			return namesResident && id !== "A5"
-				? `${id}: quote withheld, A5 also fails`
-				: `${id}: ${verdict.evidence}`;
+			return {
+				id,
+				evidence: verdict.evidence,
+				quotesDraft: true,
+				judged: false,
+			};
 		}
 		const judged =
 			typeof round?.judge === "object" ? round.judge.verdicts[id] : undefined;
 		if (judged?.outcome === "fail") {
-			if (id === "A5") {
-				return "A5 (judge): a name in the draft fails A5; quote withheld";
-			}
-			return namesResident
-				? `${id} (judge): quote withheld, A5 also fails`
-				: `${id} (judge): ${judged.evidence}`;
+			return { id, evidence: judged.evidence, quotesDraft: true, judged: true };
 		}
-		if (verdict?.outcome === "unchecked") {
-			return `${id}: unchecked (${verdict.reason})`;
-		}
-		return `${id}: no verdict`;
+		return {
+			id,
+			evidence:
+				verdict?.outcome === "unchecked"
+					? `unchecked (${verdict.reason})`
+					: "no verdict",
+			quotesDraft: false,
+			judged: false,
+		};
 	});
+	const redacted = redactedEvidence(fails);
+	return fails.map(
+		(fail, i) => `${fail.id}${fail.judged ? " (judge)" : ""}: ${redacted[i]}`,
+	);
 }

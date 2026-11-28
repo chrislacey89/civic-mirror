@@ -2349,6 +2349,52 @@ describe("StorageService", () => {
 			expect(row?.gateFails).toEqual([{ id: "A2", evidence: "a stray claim" }]);
 		});
 
+		it("names no resident in a held summary's evidence when A5 fails", async () => {
+			const db = await createTestDb();
+			const base = held("run-judged");
+			const [round] = base.rounds;
+			const judged = {
+				...base,
+				rounds: [
+					{
+						...round,
+						code: {
+							verdicts: {
+								...round.code.verdicts,
+								TRUNC: { outcome: "pass" as const },
+								A5: { outcome: "unchecked" as const, reason: "names to judge" },
+								A2: { outcome: "pass" as const },
+							},
+						},
+						judge: {
+							verdicts: {
+								A5: {
+									outcome: "fail" as const,
+									evidence: "Resident Gordon Pruitt asked about paving",
+								},
+								A2: {
+									outcome: "fail" as const,
+									evidence: "Gordon Pruitt asked about paving",
+								},
+							},
+						},
+						judgeFingerprint: "judge-fp-1",
+					},
+				],
+			};
+			await run(db, (s) =>
+				s.storeMeeting({
+					...testMeetingInput,
+					summary: { ...testMeetingInput.summary, publication: judged },
+				}),
+			);
+
+			const [row] = await run(db, (s) => s.listHeldSummaries());
+
+			expect(row?.gateFails.map((fail) => fail.id)).toEqual(["A2", "A5"]);
+			expect(JSON.stringify(row?.gateFails)).not.toContain("Pruitt");
+		});
+
 		it("stores a published summary as published", async () => {
 			const db = await createTestDb();
 			const meeting = await run(db, (s) => s.storeMeeting(testMeetingInput));
