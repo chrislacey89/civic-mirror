@@ -137,57 +137,87 @@ export function reportOf(output: unknown): CheckReport | "unavailable" {
 }
 
 /**
- * A fixed input the fingerprint builds the judge prompt from, so it covers the
+ * Fixed inputs the fingerprint builds the judge prompt from, so it covers the
  * prompt as the model reads it: the judge's template, the writer's inputs and
  * the officials roster. Every kind of writer input is present, so a change to
- * how one is rendered changes the prompt built from this.
+ * how one is rendered changes the prompt built from these. The first probe
+ * carries every populated branch (two documents joined, a roster line with
+ * variants and one without, a draft with bullets); the second carries the
+ * empty ones (no glossary, an empty ledger, an empty roster, a headline-only
+ * draft).
  */
-const FINGERPRINT_PROBE: JudgeInput = {
-	context: {
-		input: {
-			meetingContext: "Town Council, 2026-05-11",
-			sources: [
-				{ kind: "documents", text: "Council approved the paving bid." },
-				{ kind: "transcript", text: "we approve the paving bid" },
+const FINGERPRINT_PROBES: readonly JudgeInput[] = [
+	{
+		context: {
+			input: {
+				meetingContext: "Town Council, 2026-05-11",
+				sources: [
+					{ kind: "documents", text: "Council approved the paving bid." },
+					{ kind: "documents", text: "Second document of the packet." },
+					{ kind: "transcript", text: "we approve the paving bid" },
+				],
+				glossary: ["CCD: Cumulative Capital Development fund"],
+			},
+			ledger: [
+				{
+					title: "Paving bid",
+					description: "Paving",
+					amount: 212400,
+					originalAmount: "$212,400",
+					status: "approved",
+					confidence: 0.95,
+					isRecurring: false,
+				},
 			],
-			glossary: ["CCD: Cumulative Capital Development fund"],
+			officials: [
+				{
+					name: "Dan Swafford",
+					role: "Vice President",
+					variants: ["Daniel Swafford"],
+					served: { from: "2024-01-01", to: null },
+				},
+				{
+					name: "Ann Marsh",
+					role: "President",
+					variants: [],
+					served: { from: "2024-01-01", to: null },
+				},
+			],
 		},
-		ledger: [
-			{
-				title: "Paving bid",
-				description: "Paving",
-				amount: 212400,
-				originalAmount: "$212,400",
-				status: "approved",
-				confidence: 0.95,
-				isRecurring: false,
-			},
-		],
-		officials: [
-			{
-				name: "Dan Swafford",
-				role: "Vice President",
-				variants: ["Daniel Swafford"],
-				served: { from: "2024-01-01", to: null },
-			},
-		],
+		draft: {
+			highlights: ["Council accepts the paving bid", "Vote was 4-1"],
+			prose: "The council approved the paving bid.",
+		},
 	},
-	draft: {
-		highlights: ["Council accepts the paving bid", "Vote was 4-1"],
-		prose: "The council approved the paving bid.",
+	{
+		context: {
+			input: {
+				meetingContext: "Town Council, 2026-05-25",
+				sources: [{ kind: "documents", text: "Council met briefly." }],
+			},
+			ledger: [],
+			officials: [],
+		},
+		draft: {
+			highlights: ["Council met"],
+			prose: "The council met.",
+		},
 	},
-};
+];
 
 /**
  * The fingerprint of the judge `createGeminiJudge` builds for `modelId`. It
- * covers the system prompt, the user prompt as built for a fixed input
+ * covers the system prompt, the user prompt as built for each fixed input
  * (template, writer inputs and closing line), the output schema as the model
  * receives it, and the call settings.
  */
 export function geminiJudgeFingerprint(modelId: string): string {
 	return judgeFingerprint({
 		model: modelId,
-		prompt: `${JUDGE_INSTRUCTIONS}\n\n${buildJudgePrompt(FINGERPRINT_PROBE)}`,
+		prompt: [
+			JUDGE_INSTRUCTIONS,
+			...FINGERPRINT_PROBES.map((probe) => buildJudgePrompt(probe)),
+		].join("\n\n"),
 		settings: {
 			...JUDGE_SETTINGS,
 			outputSchema: asSchema(judgeOutputSchema).jsonSchema,

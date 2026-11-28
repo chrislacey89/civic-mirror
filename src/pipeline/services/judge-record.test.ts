@@ -70,6 +70,23 @@ describe("the production judge's calibration record", () => {
 		}
 	});
 
+	it("hashes the prompt's other branches: several documents, an empty ledger and roster, a roster line without variants, a headline-only draft", () => {
+		geminiJudgeFingerprint(JUDGE_MODEL_ID);
+		const prompt = vi.mocked(judgeFingerprint).mock.lastCall?.[0].prompt ?? "";
+		// Two documents of one kind, joined by a blank line.
+		expect(prompt).toContain(
+			"Council approved the paving bid.\n\nSecond document",
+		);
+		// An empty ledger and an empty roster, each with its placeholder.
+		expect(prompt).toContain("(no fiscal decisions)");
+		expect(prompt).toContain("(none listed)");
+		// A roster line with variants and one without.
+		expect(prompt).toContain("; also written Daniel Swafford");
+		expect(prompt).toMatch(/^- \w[^;\n]* \([^)\n]*\)$/m);
+		// A headline-only draft: nothing between the headline and the prose.
+		expect(prompt).toMatch(/HEADLINE: [^\n]+\n\n\n[^-\n]/);
+	});
+
 	it("hashes the output schema as the model receives it, descriptions included", () => {
 		geminiJudgeFingerprint(JUDGE_MODEL_ID);
 		const hashed = vi.mocked(judgeFingerprint).mock.lastCall?.[0];
