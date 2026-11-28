@@ -12,7 +12,7 @@ import {
 } from "#/lib/drama-levels.ts";
 import { JUDGE_GATED } from "#/pipeline/checks/judge.ts";
 import {
-	decidedReport,
+	decided,
 	type GateFailEvidence,
 	redactedEvidence,
 } from "#/pipeline/checks/prePublish.ts";
@@ -1220,11 +1220,7 @@ function gateFailsOfBestRound(
 		) ?? run.reduce((a, b) => (b.gateFailures < a.gateFailures ? b : a));
 	// A held summary with a judge's verdict is a documents meeting: the judge
 	// runs only when code left no other gate failed, and only that split gates.
-	const verdicts = decidedReport(
-		best.verdicts.code,
-		best.verdicts.judge,
-		JUDGE_GATED.documents,
-	).verdicts;
+	const verdicts = decided(best.verdicts, JUDGE_GATED.documents).verdicts;
 	const judged =
 		typeof best.verdicts.judge === "object" ? best.verdicts.judge : null;
 	const fails = GATE_IDS.flatMap((id): GateFailEvidence[] => {

@@ -76,14 +76,8 @@ function codeGateFails(code: CheckReport, gated: readonly GateId[]): GateId[] {
  * code left unchecked, and one code passed unless it is in
  * `JUDGE_DECIDES_UNCHECKED_ONLY`.
  */
-function decided(round: Round, gated: readonly GateId[]): CheckReport {
-	return decidedReport(round.code, round.judge, gated);
-}
-
-/** `decided`, from a round's stored reports rather than the round itself. */
-export function decidedReport(
-	code: CheckReport,
-	judge: CheckReport | "unavailable" | "skipped",
+export function decided(
+	{ code, judge }: Pick<Round, "code" | "judge">,
 	gated: readonly GateId[],
 ): CheckReport {
 	if (typeof judge === "string") return code;
