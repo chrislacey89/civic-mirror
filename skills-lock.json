@@ -1,11 +1,18 @@
 {
-  "version": 1,
+  "version": 2,
   "skills": {
+    "effect": {
+      "source": "kitlangton/skills",
+      "commit": "71195e36024ebd2e66c5beac946e81eafd5abc43",
+      "sourceType": "github",
+      "skillPath": "skills/effect/SKILL.md",
+      "computedHash": "08df6d7dd3d3f3d5a6658c17b90f6b776912fd566d15c85ac6140030fafc1a9c"
+    },
     "effect-ts": {
       "source": "Effect-TS/skills",
       "sourceType": "github",
       "skillPath": "skills/effect-ts/SKILL.md",
-      "computedHash": "6bdb9b95aa83071eca2f67ae947b7d398a22e9e6e08f6cfa35de9516b03efa6e"
+      "computedHash": "cf4b8976c8848147b52f3580bd20cc1d2f29ee8d85a502d4f4f1e2ef612073e3"
     }
   }
 }
